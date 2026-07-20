@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DevSpace - Портфолио разработчика с трекером проектов">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icons/icon-192x192.png">
+    
+    <title>DevSpace | Портфолио разработчика</title>
+    
+    <!-- Vendor CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- App CSS -->
+    <link href="css/theme.css" rel="stylesheet">
+    <link href="css/main.css" rel="stylesheet">
+    <link href="css/animations.css" rel="stylesheet">
+    <link href="css/components/navbar.css" rel="stylesheet">
+    <link href="css/components/hero.css" rel="stylesheet">
+    <link href="css/components/cards.css" rel="stylesheet">
+    <link href="css/components/checklist.css" rel="stylesheet">
+    <link href="css/components/modal.css" rel="stylesheet">
+    <link href="css/components/buttons.css" rel="stylesheet">
+    <link href="css/components/project-detail.css" rel="stylesheet">
+    <link href="css/components/notes.css" rel="stylesheet">
+    <link href="css/components/widgets.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Particles Background -->
+    <div id="particles-js"></div>
+    
+    <div class="content-wrapper">
+        <!-- Navigation -->
+        <nav class="navbar navbar-expand-lg fixed-top" id="mainNavbar">
+            <div class="container">
+                <a class="navbar-brand" href="#">
+                    <i class="bi bi-code-slash me-2"></i>
+                    <span class="brand-text">DevSpace</span>
+                </a>
+                
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                
+                <div class="collapse navbar-collapse" id="navbarContent">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link scroll-to-projects" href="#projects">
+                                <i class="bi bi-house me-1"></i>Главная
+                            </a>
+                        </li>
+                        
+                        <!-- Быстрый доступ -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="quickAccessDropdown" role="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-lightning-charge me-1"></i>Быстрый доступ
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-dark" id="quickAccessMenu">
+                                <li><span class="dropdown-item-text text-muted small">Загрузка...</span></li>
+                            </ul>
+                        </li>
+                    </ul>
+                    
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="search-box">
+                            <i class="bi bi-search search-icon"></i>
+                            <input type="text" class="search-input" id="searchProjects" placeholder="Поиск..." autocomplete="off">
+                        </div>
+                        
+                        <button class="theme-toggle" id="authBtn" title="Войти">
+                            <i class="bi bi-lock-fill"></i>
+                        </button>
+                        
+                        <button class="theme-toggle" id="themeToggle" title="Переключить тему">
+                            <i class="bi bi-moon-stars"></i>
+                        </button>
+                        
+                        <button class="btn btn-gradient btn-sm" data-bs-toggle="modal" data-bs-target="#projectModal" id="newProjectBtn" style="display:none;">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Hero Section -->
+        <section id="hero" class="hero-section">
+            <div class="container">
+                <div class="row align-items-center min-vh-100">
+                    <div class="col-lg-6" data-aos="fade-right">
+                        <div class="hero-badge">
+                            <i class="bi bi-stars me-2"></i>Портфолио разработчика
+                        </div>
+                        <h1 class="hero-title">
+                            Создаю<br>
+                            <span id="typed-text" class="gradient-text"></span>
+                        </h1>
+                        <p class="hero-description">
+                            Трекер проектов с чек-листами, заметками, галереей скриншотов и системой достижений.
+                        </p>
+                        <div class="hero-actions">
+                            <a href="#projects" class="btn btn-gradient btn-lg scroll-to-projects">
+                                <i class="bi bi-arrow-down me-2"></i>Проекты
+                            </a>
+                            <button class="btn btn-glass btn-lg owner-only" data-bs-toggle="modal" data-bs-target="#projectModal" id="heroAddProjectBtn" style="display:none;">
+                                <i class="bi bi-plus-lg me-2"></i>Добавить
+                            </button>
+                        </div>
+                        <div class="hero-stats">
+                            <div class="hero-stat">
+                                <span class="hero-stat-number" id="heroTotalProjects">0</span>
+                                <span class="hero-stat-label">Проектов</span>
+                            </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-number" id="heroCompletedTasks">0</span>
+                                <span class="hero-stat-label">Задач</span>
+                            </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-number" id="heroUpdatesCount">0</span>
+                                <span class="hero-stat-label">Обновлений</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6 text-center" data-aos="fade-left">
+                        <div class="hero-visual">
+                            <div class="floating-card card-1"><i class="bi bi-code-slash"></i></div>
+                            <div class="floating-card card-2"><i class="bi bi-git-branch"></i></div>
+                            <div class="floating-card card-3"><i class="bi bi-braces"></i></div>
+                            <div class="hero-laptop"><i class="bi bi-laptop"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Projects Section с табами -->
+        <section id="projects" class="projects-section">
+            <div class="container">
+                <div class="section-header" data-aos="fade-up">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div>
+                            <h2 class="section-title" id="tabTitleContainer">
+                                <i class="bi bi-grid me-2 gradient-text"></i>
+                                <span id="tabTitle">Мои проекты</span>
+                            </h2>
+                            <p class="section-subtitle" id="tabSubtitle">
+                                <span id="filteredCount">0</span> проектов
+                            </p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-glass owner-only" id="importGithubBtn" title="Импорт из GitHub" style="display:none;">
+                                <i class="bi bi-github me-1"></i>GitHub
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Табы -->
+                    <div class="tab-nav mt-3">
+                        <button class="tab-btn active" data-tab="projects">
+                            <i class="bi bi-grid me-1"></i>Проекты
+                        </button>
+                        <button class="tab-btn" data-tab="stats">
+                            <i class="bi bi-graph-up me-1"></i>Статистика
+                        </button>
+                        <button class="tab-btn" data-tab="achievements">
+                            <i class="bi bi-trophy me-1"></i>Достижения
+                        </button>
+                    </div>
+                    
+                    <!-- Фильтры проектов -->
+                    <div class="projects-filters mt-3" id="projectsFilters">
+                        <button class="filter-btn active" data-filter="all">Все</button>
+                        <button class="filter-btn" data-filter="development">В разработке</button>
+                        <button class="filter-btn" data-filter="completed">Завершённые</button>
+                        <button class="filter-btn" data-filter="planning">Планируются</button>
+                        <button class="filter-btn" data-filter="favorites">
+                            <i class="bi bi-star me-1"></i>Избранное
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Контент табов -->
+                <div class="tab-content" id="tabProjects">
+                    <div id="projectsContainer" class="row"></div>
+                    <div id="emptyState" class="empty-state" style="display:none;">
+                        <i class="bi bi-folder2-open empty-icon"></i>
+                        <h3>Нет проектов</h3>
+                        <p>Создайте первый проект</p>
+                        <button class="btn btn-gradient owner-only" data-bs-toggle="modal" data-bs-target="#projectModal" style="display:none;">
+                            <i class="bi bi-plus-lg me-2"></i>Создать
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="tabStats" style="display:none;">
+                    <div class="row g-4">
+                        <div class="col-md-3" data-aos="fade-up">
+                            <div class="stat-card">
+                                <div class="stat-icon"><i class="bi bi-folder2-open"></i></div>
+                                <div class="stat-number" id="totalProjects">0</div>
+                                <div class="stat-label">Проектов</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3" data-aos="fade-up">
+                            <div class="stat-card">
+                                <div class="stat-icon"><i class="bi bi-check2-circle"></i></div>
+                                <div class="stat-number" id="completedTasks">0</div>
+                                <div class="stat-label">Задач выполнено</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3" data-aos="fade-up">
+                            <div class="stat-card">
+                                <div class="stat-icon"><i class="bi bi-clock-history"></i></div>
+                                <div class="stat-number" id="inProgress">0</div>
+                                <div class="stat-label">В разработке</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3" data-aos="fade-up">
+                            <div class="stat-card">
+                                <div class="stat-icon"><i class="bi bi-journal-text"></i></div>
+                                <div class="stat-number" id="totalUpdates">0</div>
+                                <div class="stat-label">Обновлений</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="tabAchievements" style="display:none;">
+                    <div id="achievementsContainer" class="row g-4"></div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="container">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <p class="footer-text mb-0">
+                            <i class="bi bi-code-slash me-2"></i>DevSpace &copy; 2026
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-center">
+                        <span style="font-size: 11px; color: var(--text-muted);" id="lastSyncDisplay">
+                            Синхронизация: никогда
+                        </span>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <span style="font-size: 11px; color: var(--text-muted);" id="appVersion">v2.1.0</span>
+                        <button class="footer-link ms-3 owner-only" id="footerExportBtn" title="Экспорт проектов" style="display:none;">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button class="footer-link me-1 owner-only" id="footerImportBtn" title="Импорт проектов" style="display:none;">
+                            <i class="bi bi-upload"></i>
+                        </button>
+                        <button class="footer-link me-1 owner-only" id="footerBackupBtn" title="Создать бэкап" style="display:none;">
+                            <i class="bi bi-cloud-upload"></i>
+                        </button>
+                        <button class="footer-link me-1" onclick="window.print()" title="Печать">
+                            <i class="bi bi-printer"></i>
+                        </button>
+                        <button class="footer-link" id="scrollTopBtn" title="Наверх">
+                            <i class="bi bi-arrow-up"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Project Modal (Create/Edit) -->
+    <div class="modal fade" id="projectModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-plus-circle me-2 gradient-text"></i>
+                        <span id="modalTitle">Новый проект</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="projectForm" autocomplete="off">
+                        <input type="hidden" id="projectId">
+                        
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label class="form-label">Название *</label>
+                                    <input type="text" class="form-control" id="projectName" 
+                                           placeholder="E-commerce платформа" required autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Статус</label>
+                                    <select class="form-select" id="projectStatus">
+                                        <option value="planning">Планирование</option>
+                                        <option value="development">В разработке</option>
+                                        <option value="completed">Завершен</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" id="projectDescription" rows="6" 
+                                      placeholder="Опишите ваш проект..." autocomplete="off"></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">GitHub</label>
+                                    <input type="url" class="form-control" id="projectGithub" 
+                                           placeholder="https://github.com/..." autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Supabase</label>
+                                    <input type="url" class="form-control" id="projectSupabase" 
+                                           placeholder="https://supabase.com/..." autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Демо</label>
+                                    <input type="url" class="form-control" id="projectDemo" 
+                                           placeholder="https://..." autocomplete="off">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Технологии (через запятую)</label>
+                            <input type="text" class="form-control" id="projectTech" 
+                                   placeholder="React, Node.js, MongoDB" autocomplete="off">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Этапы (через запятую)</label>
+                            <input type="text" class="form-control" id="projectMilestones" 
+                                   placeholder="Дизайн, Верстка, Бэкенд, Тестирование, Деплой" autocomplete="off">
+                            <small class="text-muted">Каждый этап можно будет отметить как выполненный</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-gradient" id="saveProjectBtn">
+                        <i class="bi bi-check-lg me-2"></i>Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Project Detail Modal -->
+    <div class="modal fade" id="projectDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailTitle"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="detailBody"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- GitHub Import Modal -->
+    <div class="modal fade" id="githubModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-github me-2"></i>Импорт из GitHub</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="githubReposList">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">Загрузка репозиториев...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close">&times;</span>
+        <img class="lightbox-content" id="lightboxImage" alt="">
+        <div class="lightbox-caption" id="lightboxCaption"></div>
+        <div class="lightbox-nav">
+            <button class="lightbox-prev"><i class="bi bi-chevron-left"></i></button>
+            <button class="lightbox-next"><i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+    
+    <!-- Notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="notificationsContainer"></div>
+    
+    <!-- Vendor JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/typed.js@2.0.12"></script>
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-auth-compat.js"></script>
+    
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- App JS - Core -->
+    <script src="js/core/events.js"></script>
+    <script src="js/core/storage.js"></script>
+    <script src="js/core/state.js"></script>
+    
+    <!-- Services -->
+    <script src="js/services/localStorage.js"></script>
+    <script src="js/services/firebase.js"></script>
+    <script src="js/services/auth.js"></script>
+    <script src="js/services/github.js"></script>
+    <script src="js/services/supabase.js"></script>
+    
+    <!-- Sync -->
+    <script src="js/core/sync.js"></script>
+    
+    <!-- Utils -->
+    <script src="js/utils/helpers.js"></script>
+    <script src="js/utils/validators.js"></script>
+    
+    <!-- UI -->
+    <script src="js/ui/notifications.js"></script>
+    <script src="js/ui/renderer.js"></script>
+    
+    <!-- Modules -->
+    <script src="js/modules/theme.js"></script>
+    <script src="js/modules/projects.js"></script>
+    <script src="js/modules/checklist.js"></script>
+    <script src="js/modules/updates.js"></script>
+    <script src="js/modules/stats.js"></script>
+    <script src="js/modules/notes.js"></script>
+    <script src="js/modules/tags.js"></script>
+    <script src="js/modules/favorites.js"></script>
+    <script src="js/modules/gallery.js"></script>
+    <script src="js/modules/project-detail.js"></script>
+    <script src="js/modules/export.js"></script>
+    <script src="js/modules/share.js"></script>
+    <script src="js/modules/achievements.js"></script>
+    <script src="js/modules/timetracker.js"></script>
+    
+    <!-- App Entry -->
+    <script src="js/app.js"></script>
+</body>
+</html>

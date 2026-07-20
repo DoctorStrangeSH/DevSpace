@@ -1,0 +1,236 @@
+/* ============================================
+   NOTES COMPONENT STYLES
+   ============================================ */
+
+/* Статистика заметок */
+.notes-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-primary);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+}
+
+.notes-stat-item {
+    text-align: center;
+    flex: 1;
+}
+
+.notes-stat-count {
+    display: block;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.notes-stat-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+/* Фильтры */
+.notes-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.notes-filter-btn {
+    padding: 4px 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border-radius: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.notes-filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.notes-filter-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* Список заметок */
+.notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+/* Карточка заметки */
+.note-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 16px;
+    transition: all 0.3s;
+    border-left: 3px solid transparent;
+}
+
+.note-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-card);
+}
+
+.note-card.note-priority-critical {
+    border-left-color: #ef4444;
+}
+
+.note-card.note-priority-high {
+    border-left-color: #f97316;
+}
+
+.note-card.note-priority-medium {
+    border-left-color: #fbbf24;
+}
+
+.note-card.note-priority-low {
+    border-left-color: #6b7280;
+}
+
+.note-card.note-completed {
+    opacity: 0.6;
+    background: var(--bg-primary);
+}
+
+.note-card.note-completed .note-title {
+    text-decoration: line-through;
+}
+
+/* Заголовок заметки */
+.note-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.note-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+}
+
+.note-priority {
+    font-size: 14px;
+    margin-left: auto;
+}
+
+.note-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.note-card:hover .note-actions {
+    opacity: 1;
+}
+
+.note-action-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.note-action-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.note-action-btn.delete-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Контент заметки */
+.note-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+.note-description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+/* Футер заметки */
+.note-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.note-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.note-tag {
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.note-date {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Пустое состояние */
+.notes-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-muted);
+}
+
+.notes-empty i {
+    font-size: 40px;
+    margin-bottom: 12px;
+    display: block;
+}
+
+/* Форма добавления */
+.note-form {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 16px;
+    margin-bottom: 20px;
+}
