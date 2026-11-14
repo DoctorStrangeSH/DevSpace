@@ -336,3 +336,24 @@ test('project card actions remain visible on touch devices and keyboard focus', 
   assert.ok(css.includes('@media (hover: none), (pointer: coarse)'));
   assert.ok(css.includes('grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr))'));
 });
+
+
+test('project detail dialog traps Tab across every control, not only links', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  assert.ok(source.includes('button:not([disabled])'));
+  assert.ok(source.includes('focusIsOutside = !shell.contains(document.activeElement)'));
+  assert.ok(source.includes('focusable[focusable.length - 1]'));
+});
+
+test('screenshot viewer keeps keyboard focus inside when focus starts outside', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  assert.ok(source.includes('focusIsOutside = !viewer.contains(document.activeElement)'));
+  assert.ok(source.includes('closeButton.focus()'));
+});
+
+test('3.8 cache and visible application version are aligned', () => {
+  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(app.includes("version: '3.8.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.8'"));
+});
