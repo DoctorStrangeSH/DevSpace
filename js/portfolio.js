@@ -115,9 +115,21 @@
         });
         buttons.forEach(button => {
             const active = button.dataset.section === activeId;
+            const wasActive = button.classList.contains('is-active');
             button.classList.toggle('is-active', active);
             if (active) button.setAttribute('aria-current', 'location');
             else button.removeAttribute('aria-current');
+            if (active && !wasActive) {
+                const nav = button.closest('.showcase-section-nav');
+                if (nav && nav.scrollWidth > nav.clientWidth) {
+                    const navRect = nav.getBoundingClientRect();
+                    const buttonRect = button.getBoundingClientRect();
+                    nav.scrollTo({
+                        left: nav.scrollLeft + buttonRect.left - navRect.left - (nav.clientWidth - buttonRect.width) / 2,
+                        behavior: 'auto'
+                    });
+                }
+            }
         });
     }
 
