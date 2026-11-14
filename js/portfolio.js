@@ -23,7 +23,9 @@
             gallery: [
                 { file: 'greenreach_village.png', caption: 'Поселение Зелёные пределы' },
                 { file: 'greenreach_waterfall.png', caption: 'Кромка острова и водопад' },
-                { file: 'greenreach_grove.jpg', caption: 'Лесная локация' }
+                { file: 'greenreach_grove.jpg', caption: 'Лесная локация' },
+                { file: 'greenreach_preview.jpg', caption: 'Общий вид Зелёных пределов' },
+                { file: 'resource_growth.gif', caption: 'Анимация восстановления ресурсов', kind: 'animation' }
             ]
         },
         workpilot: {
@@ -172,20 +174,22 @@
             relatedGrid.append(card);
         });
         related.append(relatedGrid);
-        if (project.gallery && project.repository === 'Skyward-Tales') {
+        if (project.gallery && project.gallery.length) {
             const section = node('section', 'showcase-gallery');
-            section.setAttribute('aria-label', 'Скриншоты игры');
-            section.append(node('span', 'portfolio-kicker', 'РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
+            section.setAttribute('aria-label', 'Медиа из репозитория проекта');
+            section.append(node('span', 'portfolio-kicker', 'МАТЕРИАЛЫ ИЗ РЕПОЗИТОРИЯ'));
+            section.append(node('p', 'showcase-gallery-note', 'Скриншоты и анимации из открытого репозитория, без сгенерированных подмен. Нажмите на кадр, чтобы открыть оригинал.'));
             const grid = node('div', 'showcase-gallery-grid');
             project.gallery.forEach((item, index) => {
-                const url = `https://raw.githubusercontent.com/DoctorStrangeSH/Skyward-Tales/main/docs/screenshots/${encodeURIComponent(item.file)}`;
+                const folder = project.galleryFolder || 'docs/screenshots';
+                const url = `https://raw.githubusercontent.com/DoctorStrangeSH/${encodeURIComponent(project.repository)}/main/${folder}/${encodeURIComponent(item.file)}`;
                 const link = node('a', index === 0 ? 'showcase-gallery-item showcase-gallery-featured' : 'showcase-gallery-item');
                 link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-                link.setAttribute('aria-label', `Открыть скриншот: ${item.caption}`);
+                link.setAttribute('aria-label', `Открыть ${item.kind === 'animation' ? 'анимацию' : 'скриншот'}: ${item.caption}`);
                 const img = node('img');
                 img.src = url; img.alt = item.caption;
                 img.loading = 'lazy'; img.decoding = 'async';
-                const description = node('span', '', (index === 0 ? 'ГЛАВНЫЙ КАДР · ' : '') + item.caption + ' ↗');
+                const description = node('span', '', (item.kind === 'animation' ? 'АНИМАЦИЯ · ' : index === 0 ? 'ГЛАВНЫЙ КАДР · ' : '') + item.caption + ' ↗');
                 link.append(img, description);
                 grid.append(link);
             });
