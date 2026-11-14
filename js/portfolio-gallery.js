@@ -15,6 +15,19 @@
     let index = 0;
     let returnFocus = null;
     let touchStart = null;
+    let backgroundInert = [];
+
+    function isolateViewer() {
+        backgroundInert = Array.from(document.body.children)
+            .filter(element => element !== viewer)
+            .map(element => ({ element, inert: element.inert }));
+        backgroundInert.forEach(({ element }) => { element.inert = true; });
+    }
+
+    function restoreBackground() {
+        backgroundInert.forEach(({ element, inert }) => { element.inert = inert; });
+        backgroundInert = [];
+    }
 
     function display() {
         const item = items[index];
@@ -32,6 +45,7 @@
         if (viewer.hidden) return;
         viewer.hidden = true;
         document.body.classList.remove('portfolio-viewer-open');
+        restoreBackground();
         image.removeAttribute('src');
         items = [];
         if (returnFocus && returnFocus.isConnected) returnFocus.focus();
@@ -62,6 +76,7 @@
         returnFocus = link;
         viewer.hidden = false;
         document.body.classList.add('portfolio-viewer-open');
+        isolateViewer();
         display();
         closeButton.focus();
     });
