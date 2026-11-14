@@ -165,3 +165,28 @@ test('Skyward Tales uses a verified screenshot as the leading visual', () => {
   assert.ok(source.includes('greenreach_village.png'));
   assert.ok(css.includes('.showcase-gallery-grid { grid-template-columns:repeat(2'));
 });
+
+test('offline page fallback respects GitHub Pages subpath', async () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.start_url, './');
+  assert.equal(manifest.scope, './');
+  const callbacks = {};
+  const seen = [];
+  const offlinePage = { ok: true, source: 'cached-home' };
+  const scope = 'https://doctorstrangesh.github.io/DevSpace/';
+  const sandbox = {
+    console, Promise, URL, Response,
+    self: { registration: { scope }, addEventListener: (name, callback) => { callbacks[name] = callback; } },
+    caches: { match: async key => { seen.push(key); return key === scope + 'index.html' ? offlinePage : undefined; } },
+    fetch: async () => { throw new Error('offline'); }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+  let response;
+  callbacks.fetch({
+    request: { url: scope + 'unknown', method: 'GET', mode: 'navigate', headers: { get: () => 'text/html' } },
+    respondWith: value => { response = value; }
+  });
+  assert.equal(await response, offlinePage);
+  assert.ok(seen.includes(scope + 'index.html'));
+  assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
+});
