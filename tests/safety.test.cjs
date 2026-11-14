@@ -155,3 +155,13 @@ test('each featured story explains its intent, current focus and next step', () 
   assert.ok(css.includes('.showcase-journey-grid'));
   assert.ok(css.includes('grid-template-columns:1fr'));
 });
+
+test('Skyward Tales uses a verified screenshot as the leading visual', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(source.includes('showcase-gallery-item showcase-gallery-featured'));
+  assert.ok(source.includes('ГЛАВНЫЙ КАДР'));
+  assert.ok(css.includes('.showcase-gallery-featured img'));
+  assert.ok(source.includes('greenreach_village.png'));
+  assert.ok(css.includes('.showcase-gallery-grid { grid-template-columns:repeat(2'));
+});
