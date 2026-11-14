@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.20.0',
+        version: '3.21.0',
         debug: false
     },
 
@@ -135,8 +135,10 @@ var App = {
         if (typeof AOS !== 'undefined') {
             AOS.init({ duration: 600, easing: 'ease-out', once: true, offset: 30, disable: !!prefersReducedMotion });
         }
-        if (typeof particlesJS !== 'undefined' && !prefersReducedMotion && !compactViewport) {
-            particlesJS('particles-js', {
+        if (!prefersReducedMotion && !compactViewport && document.getElementById('particles-js')) {
+            var startParticles = function () {
+                if (document.hidden || typeof particlesJS === 'undefined') return;
+                particlesJS('particles-js', {
                 particles: {
                     number: { value: 30, density: { enable: true, value_area: 800 } },
                     color: { value: '#6366f1' }, shape: { type: 'circle' },
@@ -146,7 +148,28 @@ var App = {
                 },
                 interactivity: { detect_on: 'canvas', events: { onhover: { enable: true, mode: 'grab' } } },
                 retina_detect: true
-            });
+                });
+            };
+            var loadParticles = function () {
+                if (document.hidden) {
+                    document.addEventListener('visibilitychange', function onVisible() {
+                        if (document.hidden) return;
+                        document.removeEventListener('visibilitychange', onVisible);
+                        loadParticles();
+                    });
+                    return;
+                }
+                var script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js';
+                script.async = true;
+                script.onload = startParticles;
+                document.head.appendChild(script);
+            };
+            if ('requestIdleCallback' in window) {
+                window.requestIdleCallback(loadParticles, { timeout: 2500 });
+            } else {
+                window.setTimeout(loadParticles, 1200);
+            }
         }
     },
 
