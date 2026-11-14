@@ -5,6 +5,7 @@
     if (!viewer) return;
 
     const image = document.getElementById('portfolioGalleryImage');
+    const imageError = document.getElementById('portfolioGalleryError');
     const caption = document.getElementById('portfolioGalleryCaption');
     const count = document.getElementById('portfolioGalleryCount');
     const original = document.getElementById('portfolioGalleryOriginal');
@@ -32,6 +33,8 @@
     function display() {
         const item = items[index];
         if (!item) return;
+        image.hidden = false;
+        imageError.hidden = true;
         image.src = item.src;
         image.alt = item.alt;
         caption.textContent = item.caption;
@@ -41,12 +44,20 @@
         next.disabled = items.length < 2;
     }
 
+    image.addEventListener('error', () => {
+        if (viewer.hidden) return;
+        image.hidden = true;
+        imageError.hidden = false;
+    });
+
     function close() {
         if (viewer.hidden) return;
         viewer.hidden = true;
         document.body.classList.remove('portfolio-viewer-open');
         restoreBackground();
         image.removeAttribute('src');
+        image.hidden = false;
+        imageError.hidden = true;
         items = [];
         if (returnFocus && returnFocus.isConnected) returnFocus.focus();
         returnFocus = null;
