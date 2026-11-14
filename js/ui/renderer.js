@@ -27,7 +27,7 @@ var RendererModule = {
             navbar: document.getElementById('mainNavbar')
         };
         var self = this;
-        var focus = document.getElementById('focusProjects');
+        var focus = document.getElementById('focusPanel');
         if (focus) focus.addEventListener('click', function(event) {
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
@@ -87,13 +87,21 @@ var RendererModule = {
     _renderFocus: function() {
         var panel = document.getElementById('focusPanel');
         var container = document.getElementById('focusProjects');
+        var taskArea = document.getElementById('focusTaskArea');
+        var taskList = document.getElementById('focusTaskList');
+        var taskCount = document.getElementById('focusTaskCount');
         if (!panel || !container) return;
         var all = StateManager.get('projects') || [];
         var byId = {};
         all.forEach(function(project) { byId[String(project.id)] = project; });
         var pinned = this._pinnedIds.map(function(id) { return byId[id]; }).filter(Boolean);
         panel.hidden = pinned.length === 0;
-        if (!pinned.length) { container.innerHTML = ''; return; }
+        if (!pinned.length) {
+            container.innerHTML = '';
+            if (taskArea) taskArea.hidden = true;
+            if (taskList) taskList.innerHTML = '';
+            return;
+        }
         container.innerHTML = pinned.slice(0, 4).map(function(project) {
             var tasks = Array.isArray(project.checklist) ? project.checklist : [];
             var completed = tasks.filter(function(task) { return task.completed; }).length;
@@ -105,6 +113,23 @@ var RendererModule = {
                 '<span class="focus-project-progress"><span class="focus-project-bar" style="width:' + progress + '%"></span></span>' +
                 '<span class="focus-project-bottom"><span class="focus-project-next"><i class="bi bi-check2-square" aria-hidden="true"></i> ' + Helpers.escapeHtml(Helpers.truncateText(taskText, 66)) + '</span><span>' + progress + '%</span></span></button>';
         }).join('') + (pinned.length > 4 ? '<p class="focus-project-extra">И ещё ' + (pinned.length - 4) + ' закреплённых проектов ниже</p>' : '');
+        if (taskArea && taskList) {
+            var upcoming = [];
+            pinned.forEach(function(project) {
+                var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+                tasks.filter(function(task) { return !task.completed && task.text; }).slice(0, 2).forEach(function(task) {
+                    upcoming.push({ project: project, text: task.text });
+                });
+            });
+            taskArea.hidden = upcoming.length === 0;
+            if (taskCount) taskCount.textContent = '(' + upcoming.length + ')';
+            taskList.innerHTML = upcoming.slice(0, 8).map(function(item) {
+                return '<button type="button" class="focus-task" data-focus-project="' + Helpers.escapeHtml(String(item.project.id)).replace(/"/g, '&quot;') + '">' +
+                    '<span class="focus-task-check" aria-hidden="true"><i class="bi bi-circle"></i></span>' +
+                    '<span class="focus-task-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>';
+            }).join('') + (upcoming.length > 8 ? '<p class="focus-task-more">Ещё задач: ' + (upcoming.length - 8) + '</p>' : '');
+        }
     },
 
     _bindEvents: function() {
