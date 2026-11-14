@@ -81,7 +81,7 @@ test('visual galleries use confirmed public repository screenshot paths', () => 
     assert.ok(stories.includes(file));
   }
   assert.ok(html.includes('Настоящие тестовые скриншоты'));
-  assert.ok(stories.includes('РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
+  assert.ok(stories.includes('МАТЕРИАЛЫ ИЗ РЕПОЗИТОРИЯ'));
 });
 
 test('portfolio has a dedicated accessible screenshot viewer', () => {
@@ -280,4 +280,16 @@ test('each project detail explains its real core gameplay or work loop', () => {
   for (const step of ['ИССЛЕДОВАТЬ', 'ПОДТВЕРДИТЬ РЕЗУЛЬТАТ', 'ПРОВЕРИТЬ ВЕРСИИ', 'ВЫЖИТЬ НОЧЬ']) assert.ok(source.includes(step));
   assert.ok(css.includes('.showcase-loop-grid'));
   assert.ok(css.includes('@media(max-width:700px){.showcase-loop{margin-top:58px}.showcase-loop-grid{grid-template-columns:1fr}'));
+});
+
+test('Skyward Tales gallery links five genuine repository visuals, including resource animation', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  for (const asset of ['greenreach_village.png', 'greenreach_waterfall.png', 'greenreach_grove.jpg', 'greenreach_preview.jpg', 'resource_growth.gif']) {
+    assert.ok(source.includes(`file: '${asset}'`));
+  }
+  assert.ok(source.includes("kind: 'animation'"));
+  assert.ok(source.includes('project.gallery && project.gallery.length'));
+  assert.ok(source.includes('encodeURIComponent(project.repository)'));
+  assert.ok(css.includes('.showcase-gallery-note'));
 });
