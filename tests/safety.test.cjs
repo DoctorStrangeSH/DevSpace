@@ -253,3 +253,19 @@ test('project stories offer accessible links to the other three projects', () =>
   assert.ok(css.includes('.showcase-related-card:focus-visible'));
   assert.ok(css.includes('.showcase-related-grid{grid-template-columns:1fr}'));
 });
+
+test('public portfolio search filters featured and web cards without touching tracker', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(root, 'js/portfolio-search.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(html.includes('id="portfolioSearch"'));
+  assert.ok(html.includes('id="webProjectsGrid"'));
+  assert.ok(html.includes('id="featuredGrid"'));
+  assert.ok(html.includes('role="status" aria-live="polite"'));
+  assert.ok(source.includes("#featuredGrid .feature-card"));
+  assert.ok(source.includes("#webProjectsGrid .web-project-card"));
+  assert.doesNotMatch(source, /StateManager|StorageService|localStorage|searchProjects/);
+  assert.ok(css.includes('.web-project-card[hidden]'));
+  assert.ok(worker.includes("'js/portfolio-search.js'"));
+});
