@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.19.0',
+        version: '3.20.0',
         debug: false
     },
 
@@ -134,12 +134,6 @@ var App = {
         var compactViewport = window.matchMedia && window.matchMedia('(max-width: 670px)').matches;
         if (typeof AOS !== 'undefined') {
             AOS.init({ duration: 600, easing: 'ease-out', once: true, offset: 30, disable: !!prefersReducedMotion });
-        }
-        if (typeof Typed !== 'undefined' && document.getElementById('typed-text')) {
-            new Typed('#typed-text', {
-                strings: ['веб-приложения', 'лендинги', 'интерфейсы', 'сайты', 'API'],
-                typeSpeed: 80, backSpeed: 50, backDelay: 2000, startDelay: 500, loop: true
-            });
         }
         if (typeof particlesJS !== 'undefined' && !prefersReducedMotion && !compactViewport) {
             particlesJS('particles-js', {
