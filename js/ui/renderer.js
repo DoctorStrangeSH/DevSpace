@@ -10,6 +10,8 @@ var RendererModule = {
     _sortMode: 'updated',
     _viewMode: 'grid',
     _pinnedIds: [],
+    _scheduleMonth: null,
+    _scheduleSelected: null,
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
@@ -54,6 +56,31 @@ var RendererModule = {
         if (overview) overview.addEventListener('click', function(event) {
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
+        });
+        var schedule = document.getElementById('scheduleCalendar');
+        if (schedule) schedule.addEventListener('click', function(event) {
+            var project = event.target.closest('[data-focus-project]');
+            if (project) {
+                if (typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.focusProject);
+                return;
+            }
+            var day = event.target.closest('[data-schedule-day]');
+            if (day) {
+                self._scheduleSelected = day.dataset.scheduleDay;
+                self._renderSchedule();
+                return;
+            }
+            var nav = event.target.closest('#schedulePrev, #scheduleNext, #scheduleToday');
+            if (!nav) return;
+            if (nav.id === 'scheduleToday') {
+                self._scheduleMonth = null;
+                self._scheduleSelected = null;
+            } else {
+                var base = self._scheduleMonth || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+                self._scheduleMonth = new Date(base.getFullYear(), base.getMonth() + (nav.id === 'scheduleNext' ? 1 : -1), 1);
+                self._scheduleSelected = null;
+            }
+            self._renderSchedule();
         });
         var goal = document.getElementById('productivityGoal');
         if (goal) {
@@ -311,6 +338,67 @@ var RendererModule = {
         });
     },
 
+    _collectScheduleItems: function(projects) {
+        var result = [];
+        var validDate = function(value) {
+            if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+            var date = new Date(value + 'T12:00:00');
+            return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(value.slice(0, 4)) && date.getMonth() + 1 === Number(value.slice(5, 7)) && date.getDate() === Number(value.slice(8, 10));
+        };
+        (projects || []).forEach(function(project) {
+            var checklist = Array.isArray(project.checklist) ? project.checklist : [];
+            var stages = Array.isArray(project.milestones) ? project.milestones : [];
+            var completedStages = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
+            var deadlines = project.milestoneDeadlines && typeof project.milestoneDeadlines === 'object' && !Array.isArray(project.milestoneDeadlines) ? project.milestoneDeadlines : {};
+            checklist.forEach(function(task) {
+                if (!task || task.completed || !validDate(task.deadline)) return;
+                result.push({ date: task.deadline, projectId: project.id, projectName: project.name || 'Без названия', name: task.text || 'Задача', type: 'task' });
+            });
+            stages.forEach(function(stage) {
+                if (typeof stage !== 'string' || !validDate(deadlines[stage])) return;
+                var linked = checklist.filter(function(task) { return task && task.milestone === stage; });
+                var completed = linked.length ? linked.every(function(task) { return task.completed; }) : completedStages.includes(stage);
+                if (!completed) result.push({ date: deadlines[stage], projectId: project.id, projectName: project.name || 'Без названия', name: stage, type: 'stage' });
+            });
+        });
+        return result.sort(function(a, b) { return a.date.localeCompare(b.date) || a.projectName.localeCompare(b.projectName); });
+    },
+
+    _renderSchedule: function() {
+        var grid = document.getElementById('scheduleGrid');
+        if (!grid) return;
+        var now = new Date();
+        var month = this._scheduleMonth || new Date(now.getFullYear(), now.getMonth(), 1);
+        var year = month.getFullYear(), index = month.getMonth();
+        var pad = function(value) { return String(value).padStart(2, '0'); };
+        var prefix = year + '-' + pad(index + 1) + '-';
+        var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+        var days = new Date(year, index + 1, 0).getDate();
+        var start = (new Date(year, index, 1).getDay() + 6) % 7;
+        var items = this._collectScheduleItems(StateManager.get('projects') || []);
+        var byDay = {};
+        items.forEach(function(item) { (byDay[item.date] || (byDay[item.date] = [])).push(item); });
+        var monthLabel = document.getElementById('scheduleMonth');
+        if (monthLabel) monthLabel.textContent = new Date(year, index, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+        var chosen = this._scheduleSelected && this._scheduleSelected.startsWith(prefix) ? this._scheduleSelected : (today.startsWith(prefix) ? today : prefix + '01');
+        this._scheduleSelected = chosen;
+        var html = '';
+        for (var empty = 0; empty < start; empty++) html += '<span class="schedule-gap" aria-hidden="true"></span>';
+        for (var day = 1; day <= days; day++) {
+            var key = prefix + pad(day);
+            var count = (byDay[key] || []).length;
+            html += '<button type="button" class="schedule-day' + (key === today ? ' is-today' : '') + (key === chosen ? ' is-selected' : '') + '" data-schedule-day="' + key + '" aria-label="' + day + ' ' + new Date(year, index, day).toLocaleDateString('ru-RU', { month: 'long' }) + (count ? ', событий: ' + count : ', без сроков') + '" aria-pressed="' + (key === chosen) + '"><span>' + day + '</span>' + (count ? '<small>' + count + '</small>' : '') + '</button>';
+        }
+        grid.innerHTML = html;
+        var agenda = document.getElementById('scheduleAgenda');
+        if (!agenda) return;
+        var selectedItems = byDay[chosen] || [];
+        var heading = '<h4>' + new Date(chosen + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + '</h4>';
+        agenda.innerHTML = heading + (selectedItems.length ? '<div class="schedule-agenda-list">' + selectedItems.map(function(item) {
+            return '<button type="button" class="schedule-agenda-item" data-focus-project="' + Helpers.escapeHtml(String(item.projectId)).replace(/"/g, '&quot;') + '"><span class="schedule-kind">' + (item.type === 'stage' ? 'Этап' : 'Задача') + '</span><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>' + Helpers.escapeHtml(item.projectName) + '</small></button>';
+        }).join('') + '</div>' : '<p class="schedule-empty">На этот день сроков нет. Выбери дату с отметкой, чтобы увидеть задачи.</p>');
+    },
+
     _bindEvents: function() {
         var self = this;
 
@@ -400,6 +488,7 @@ var RendererModule = {
         this._renderFocus();
         this._renderProductivity();
         this._renderRoadmapOverview();
+        this._renderSchedule();
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
