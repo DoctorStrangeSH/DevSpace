@@ -93,10 +93,19 @@
         else if (event.key === 'ArrowLeft') { event.preventDefault(); event.stopImmediatePropagation(); move(-1); }
         else if (event.key === 'ArrowRight') { event.preventDefault(); event.stopImmediatePropagation(); move(1); }
         else if (event.key === 'Tab') {
-            const controls = [closeButton, prev, next, original].filter(el => !el.disabled);
+            const controls = [closeButton, prev, next, original].filter(el => !el.disabled && !el.hidden);
             const first = controls[0], last = controls[controls.length - 1];
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+            const focusIsOutside = !viewer.contains(document.activeElement);
+            if (!first) {
+                event.preventDefault();
+                closeButton.focus();
+            } else if (event.shiftKey && (document.activeElement === first || focusIsOutside)) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || focusIsOutside)) {
+                event.preventDefault();
+                first.focus();
+            }
         }
     }, true);
 
