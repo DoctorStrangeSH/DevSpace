@@ -283,18 +283,24 @@ var ProjectDetailModule = {
         var tasks = Array.isArray(project.checklist) ? project.checklist : [];
         var completedStages = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
         var escape = function(text) { return Helpers.escapeHtml(String(text)).replace(/"/g, '&quot;'); };
-        return '<div class="roadmap-list">' + stages.map(function(stage, index) {
+        var stagePercent = function(stage) {
+            var linked = tasks.filter(function(task) { return task.milestone === stage; });
+            if (linked.length) return Math.round(linked.filter(function(task) { return task.completed; }).length / linked.length * 100);
+            return completedStages.indexOf(stage) !== -1 ? 100 : 0;
+        };
+        var overall = Math.round(stages.reduce(function(sum, stage) { return sum + stagePercent(stage); }, 0) / stages.length);
+        return '<div class="roadmap-summary"><div><strong>Общий прогресс</strong><span>' + overall + '% · ' + stages.length + ' этапов</span></div><div class="roadmap-progress" role="progressbar" aria-label="Общий прогресс дорожной карты" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + overall + '"><span style="width:' + overall + '%"></span></div></div>' +
+        '<div class="roadmap-list">' + stages.map(function(stage, index) {
             var linked = tasks.filter(function(task) { return task.milestone === stage; });
             var done = linked.length ? linked.filter(function(task) { return task.completed; }).length : (completedStages.indexOf(stage) !== -1 ? 1 : 0);
-            var total = linked.length || 1;
-            var percent = Math.round(done / total * 100);
+            var percent = stagePercent(stage);
             var status = percent === 100 ? 'Готово' : done > 0 ? 'В процессе' : 'Запланировано';
             return '<article class="roadmap-stage"><header><span class="roadmap-stage-number">' + (index + 1) + '</span><strong>' + Helpers.escapeHtml(stage) + '</strong><span class="roadmap-stage-status">' + status + '</span><span class="roadmap-stage-percent">' + percent + '%</span></header>' +
                 '<div class="roadmap-progress"><span style="width:' + percent + '%"></span></div>' +
                 (linked.length ? '<ul>' + linked.map(function(task) { return '<li>' + (task.completed ? '✅ ' : '◯ ') + Helpers.escapeHtml(task.text || '') + '</li>'; }).join('') + '</ul>' : '<p class="roadmap-empty">Задачи пока не привязаны</p>') +
                 (owner ? '<form class="roadmap-inline-form" data-roadmap-task-create="' + escape(stage) + '"><input name="task" maxlength="240" required placeholder="Новая задача для этапа" aria-label="Новая задача для этапа ' + escape(stage) + '"><button type="submit">+ Задача</button></form>' : '') +
                 (owner ? '<form class="roadmap-inline-form roadmap-rename" data-roadmap-rename="' + escape(stage) + '"><input name="name" maxlength="100" required value="' + escape(stage) + '" aria-label="Переименовать этап ' + escape(stage) + '"><button type="submit">Сохранить название</button></form>' : '') +
-                (owner ? '<div class="roadmap-stage-actions"><button type="button" data-roadmap-move="up" data-roadmap-index="' + index + '" aria-label="Переместить этап вверх"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-roadmap-move="down" data-roadmap-index="' + index + '" aria-label="Переместить этап вниз"' + (index === stages.length - 1 ? ' disabled' : '') + '>↓</button></div>' : '') +
+                (owner ? '<div class="roadmap-stage-actions"><button type="button" data-roadmap-move="up" data-roadmap-index="' + index + '" aria-label="Переместить этап вверх"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-roadmap-move="down" data-roadmap-index="' + index + '" aria-label="Переместить этап вниз"' + (index === stages.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" class="roadmap-remove" data-roadmap-remove="' + escape(stage) + '" aria-label="Удалить этап ' + escape(stage) + '">Удалить этап</button></div>' : '') +
                 (owner && !linked.length ? '<button type="button" class="roadmap-stage-toggle" data-roadmap-stage="' + escape(stage) + '">' + (percent === 100 ? 'Вернуть в работу' : 'Отметить этап завершённым') + '</button>' : '') +
                 '</article>';
         }).join('') + '</div>' + createForm +
@@ -359,6 +365,23 @@ var ProjectDetailModule = {
         return true;
     },
 
+    removeRoadmapStage: function(projectId, stage) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.milestones) || project.milestones.indexOf(stage) === -1) return false;
+        var milestones = project.milestones.filter(function(name) { return name !== stage; });
+        var checklist = (project.checklist || []).map(function(task) {
+            if (task.milestone !== stage) return task;
+            var copy = Object.assign({}, task);
+            delete copy.milestone;
+            return copy;
+        });
+        var completed = (project.completedMilestones || []).filter(function(name) { return name !== stage; });
+        StateManager.updateProject(projectId, { milestones: milestones, checklist: checklist, completedMilestones: completed });
+        this._refreshRoadmap(projectId);
+        return true;
+    },
+
     addRoadmapTask: function(projectId, stage, value) {
         if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         var project = StateManager.getProject(projectId);
@@ -415,6 +438,12 @@ var ProjectDetailModule = {
             if (control) self.assignTaskStage(projectId, control.dataset.roadmapTask, control.value);
         });
         section.addEventListener('click', function(event) {
+            var remove = event.target.closest('[data-roadmap-remove]');
+            if (remove) {
+                var stage = remove.dataset.roadmapRemove;
+                if (confirm('Удалить этап «' + stage + '»? Задачи останутся в общем чек-листе.')) self.removeRoadmapStage(projectId, stage);
+                return;
+            }
             var move = event.target.closest('[data-roadmap-move]');
             if (move) { self.moveRoadmapStage(projectId, Number(move.dataset.roadmapIndex), move.dataset.roadmapMove); return; }
             var control = event.target.closest('[data-roadmap-stage]');
