@@ -18,6 +18,32 @@
 .projects-sort-select:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
 @media (max-width: 600px) { .projects-sort-label { width:100%;justify-content:space-between;margin-left:0; } .projects-sort-select { max-width:65%; } }
 
+.projects-view-switch { display:inline-flex;gap:4px;padding:4px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card);vertical-align:middle; }
+.projects-view-btn { display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:7px 12px;border:0;border-radius:9px;background:transparent;color:var(--text-secondary);font-size:13px;cursor:pointer; }
+.projects-view-btn:hover,.projects-view-btn.active { color:var(--text-primary);background:var(--accent-light); }
+.projects-view-btn:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+
+#projectsContainer.list-view { grid-template-columns:minmax(0,1fr);gap:10px; }
+#projectsContainer.list-view .project-card { min-width:0; }
+#projectsContainer.list-view .project-card-inner { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 16px;padding:14px 18px;align-items:center; }
+#projectsContainer.list-view .project-name { grid-column:1;grid-row:1;margin:0;font-size:16px; }
+#projectsContainer.list-view .project-header { grid-column:2;grid-row:1;margin:0;gap:8px; }
+#projectsContainer.list-view .project-actions { opacity:1; }
+#projectsContainer.list-view .project-description-wrapper { grid-column:1/-1;margin:0;min-width:0; }
+#projectsContainer.list-view .project-description { -webkit-line-clamp:1; }
+#projectsContainer.list-view .project-links { grid-column:2;grid-row:2;margin:0; }
+#projectsContainer.list-view .project-tech { grid-column:1;grid-row:3;margin:0; }
+#projectsContainer.list-view .card-mini-sections,#projectsContainer.list-view .milestones-list,#projectsContainer.list-view .mini-section-header { display:none; }
+#projectsContainer.list-view .project-footer { grid-column:1/-1;margin:4px 0 0;padding-top:7px; }
+@media (max-width:600px) {
+    .projects-view-switch { width:100%; }
+    .projects-view-btn { flex:1; }
+    #projectsContainer.list-view .project-card-inner { gap:8px; }
+    #projectsContainer.list-view .project-header { grid-column:1/-1;grid-row:2;justify-content:space-between; }
+    #projectsContainer.list-view .project-description-wrapper { grid-row:3; }
+    #projectsContainer.list-view .project-links,#projectsContainer.list-view .project-tech { grid-column:1/-1;grid-row:auto; }
+}
+
 @media (max-width: 768px) {
     #projectsContainer {
         grid-template-columns: 1fr;
