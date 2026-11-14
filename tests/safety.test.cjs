@@ -383,13 +383,21 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.13 cache, HTML fallback and visible application version are aligned', () => {
+test('3.14 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.13.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.13'"));
-  assert.ok(html.includes('id="appVersion">v3.13.0</span>'));
+  assert.ok(app.includes("version: '3.14.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.14'"));
+  assert.ok(html.includes('id="appVersion">v3.14.0</span>'));
+});
+
+test('public header and hero remain legible with a light tracker theme', () => {
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(css.includes('#mainNavbar .nav-link { color:#d5d0dc!important; }'));
+  assert.ok(css.includes('.hero-section .hero-title { color:#f3eef1; }'));
+  assert.ok(css.includes('.hero-section .btn-glass { color:#ece6f1;'));
+  assert.ok(css.includes('#mainNavbar .navbar-collapse.show'));
 });
 
 test('featured portfolio cards expose a consistent visible action and flexible content', () => {
