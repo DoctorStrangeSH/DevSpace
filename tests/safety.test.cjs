@@ -293,3 +293,16 @@ test('Skyward Tales gallery links five genuine repository visuals, including res
   assert.ok(source.includes('encodeURIComponent(project.repository)'));
   assert.ok(css.includes('.showcase-gallery-note'));
 });
+
+test('project stories expose keyboard-friendly local section navigation with graceful image failure', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(source.includes("sectionNav.setAttribute('aria-label', 'Разделы проекта')"));
+  for (const label of ['О проекте', 'Галерея', 'Как работает', 'Путь проекта', 'Другие работы']) assert.ok(source.includes(label));
+  for (const id of ['showcase-overview', 'showcase-media', 'showcase-process', 'showcase-progress', 'showcase-more']) assert.ok(source.includes(id));
+  assert.ok(source.includes("button.type = 'button'"));
+  assert.ok(source.includes("img.addEventListener('error'"));
+  assert.ok(source.includes('link.replaceWith(unavailable)'));
+  assert.ok(css.includes('.showcase-section-link:focus-visible'));
+  assert.ok(css.includes('.showcase-gallery-unavailable'));
+});
