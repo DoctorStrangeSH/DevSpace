@@ -42,6 +42,18 @@
 .focus-project-bar { display:block;height:100%;border-radius:inherit;background:var(--accent); }
 .focus-project-next { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .focus-project-extra { align-self:center;margin:0;color:var(--text-secondary);font-size:12px; }
+.focus-task-area { margin-top:20px;padding-top:16px;border-top:1px solid var(--border-color); }
+.focus-task-area[hidden] { display:none!important; }
+.focus-task-area h4 { margin:0 0 12px;font-size:14px;font-weight:750;color:var(--text-primary); }
+.focus-task-area h4 span { color:var(--text-secondary);font-weight:500; }
+.focus-task-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:8px; }
+.focus-task { display:flex;align-items:center;gap:10px;min-width:0;min-height:46px;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;text-align:left;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
+.focus-task:hover { border-color:var(--accent); }
+.focus-task:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.focus-task-check { color:var(--accent); }
+.focus-task-text { flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.focus-task-source { max-width:110px;font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.focus-task-more { margin:0;color:var(--text-secondary);font-size:11px; }
 @media (max-width:600px) { .focus-panel { padding:15px; } .focus-panel-heading { align-items:start;flex-direction:column; } .focus-panel-caption { text-align:left; } }
 
 #projectsContainer.list-view { grid-template-columns:minmax(0,1fr);gap:10px; }
