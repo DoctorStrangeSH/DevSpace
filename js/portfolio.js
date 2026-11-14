@@ -99,6 +99,19 @@
     };
     let previousFocus = null;
     let wasOpen = false;
+    let backgroundInert = [];
+
+    function isolateShowcase() {
+        backgroundInert = Array.from(shell.parentElement.children)
+            .filter(element => element !== shell)
+            .map(element => ({ element, inert: element.inert }));
+        backgroundInert.forEach(({ element }) => { element.inert = true; });
+    }
+
+    function restoreBackground() {
+        backgroundInert.forEach(({ element, inert }) => { element.inert = inert; });
+        backgroundInert = [];
+    }
 
     function render(project) {
         content.replaceChildren();
@@ -232,12 +245,16 @@
             if (wasOpen) {
                 shell.hidden = true;
                 document.body.classList.remove('showcase-open');
+                restoreBackground();
                 wasOpen = false;
                 if (previousFocus && previousFocus.isConnected) previousFocus.focus();
             }
             return;
         }
-        if (!wasOpen) previousFocus = document.activeElement;
+        if (!wasOpen) {
+            previousFocus = document.activeElement;
+            isolateShowcase();
+        }
         render(project);
         shell.hidden = false;
         document.body.classList.add('showcase-open');
