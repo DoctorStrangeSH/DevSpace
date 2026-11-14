@@ -270,3 +270,10 @@
 .roadmap-assign label>span { min-width:0;overflow:hidden;text-overflow:ellipsis; }
 .roadmap-assign select { max-width:50%;min-width:112px;padding:6px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary); }
 .roadmap-stage-toggle:focus-visible,.roadmap-assign select:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.roadmap-create { display:flex;gap:8px;flex-wrap:wrap;margin:15px 0; }
+.roadmap-create input { flex:1;min-width:160px;padding:9px 11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:9px; }
+.roadmap-create button { padding:9px 13px;border:0;border-radius:9px;background:var(--accent);color:white;font-weight:600;cursor:pointer; }
+.roadmap-stage-actions { display:flex;gap:6px;margin-top:10px; }
+.roadmap-stage-actions button { padding:4px 11px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer; }
+.roadmap-stage-actions button:disabled { opacity:.35;cursor:default; }
+.roadmap-create :focus-visible,.roadmap-stage-actions button:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
