@@ -205,3 +205,13 @@ body { background: #090b12; }
 @media(max-width:670px){.featured-grid,.about-grid{grid-template-columns:1fr}.featured-section,.about-section{padding:80px 0}.hero-section .hero-title{font-size:clamp(3.1rem,12vw,4.5rem)}.feature-art,.feature-large .feature-art{height:210px}.feature-copy{padding:23px}.portfolio-more{align-items:flex-start;flex-direction:column}.contact-panel{padding:55px 28px}.hero-specialties{gap:9px;font-size:.59rem}.hero-specialties span:not(:last-child)::after{margin-left:9px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.feature-card,.hero-section .btn-gradient{transition:none}}
 @media(prefers-reduced-motion:reduce){.feature-art-screenshot img{transition:none}.feature-card:hover .feature-art-screenshot img{transform:none}}
+
+/* Explain the product/gameplay loop on every project detail page. */
+.showcase-loop { margin-top:78px;padding-top:42px;border-top:1px solid #393341; }
+.showcase-loop h2 { color:#f3eef0;font-size:clamp(1.9rem,3vw,2.7rem);letter-spacing:-.045em;margin:0 0 28px; }
+.showcase-loop-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.showcase-loop-step { min-width:0;min-height:210px;padding:27px;border:1px solid #454052;border-radius:18px;background:linear-gradient(145deg,#1d1c2b,#151621); }
+.showcase-loop-index { display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid #78664f;border-radius:10px;color:#e2c7a5;font-size:.76rem;font-weight:800; }
+.showcase-loop-step h3 { color:#f1e9e6;font-size:1rem;letter-spacing:.09em;margin:25px 0 12px; }
+.showcase-loop-step p { color:#b9b5c5;line-height:1.75;margin:0;font-size:.93rem; }
+@media(max-width:700px){.showcase-loop{margin-top:58px}.showcase-loop-grid{grid-template-columns:1fr}.showcase-loop-step{min-height:0;padding:23px}.showcase-loop-step h3{margin-top:18px}}
