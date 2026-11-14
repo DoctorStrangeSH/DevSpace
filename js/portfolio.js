@@ -270,12 +270,22 @@
             window.location.hash = '#featured';
         }
         if (event.key === 'Tab') {
-            const links = Array.from(shell.querySelectorAll('a[href]'));
-            const first = links[0], last = links[links.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault(); last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault(); first.focus();
+            const focusable = Array.from(shell.querySelectorAll('a[href], area[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), iframe, object, embed, [contenteditable="true"], [tabindex]:not([tabindex="-1"])'))
+                .filter(element => !element.closest('[hidden]') && element.getAttribute('aria-hidden') !== 'true');
+            if (!focusable.length) {
+                event.preventDefault();
+                shell.focus();
+                return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            const focusIsOutside = !shell.contains(document.activeElement);
+            if (event.shiftKey && (document.activeElement === first || focusIsOutside)) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || focusIsOutside)) {
+                event.preventDefault();
+                first.focus();
             }
         }
     });
