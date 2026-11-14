@@ -9,6 +9,35 @@ var SyncModule = {
     _lastSyncTime: null,
     _syncTimer: null,
     _mode: 'read-only',
+    _sdkPromise: null,
+
+    _loadFirebaseSDK: function() {
+        if (typeof firebase !== 'undefined' && firebase.firestore) return Promise.resolve(true);
+        if (this._sdkPromise) return this._sdkPromise;
+
+        this._sdkPromise = new Promise(function(resolve) {
+            var urls = [
+                'https://www.gstatic.com/firebasejs/10.0.0/firebase-app-compat.js',
+                'https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore-compat.js'
+            ];
+            var loadNext = function(index) {
+                if (index >= urls.length) { resolve(true); return; }
+                var script = document.createElement('script');
+                script.src = urls[index];
+                script.async = true;
+                script.onload = function() { loadNext(index + 1); };
+                script.onerror = function() { resolve(false); };
+                document.head.appendChild(script);
+            };
+            // Cloud reads can wait until the first screen is interactive.
+            if ('requestIdleCallback' in window) {
+                window.requestIdleCallback(function() { loadNext(0); }, { timeout: 2500 });
+            } else {
+                window.setTimeout(function() { loadNext(0); }, 350);
+            }
+        });
+        return this._sdkPromise;
+    },
 
     init: function() {
         var self = this;
@@ -17,8 +46,14 @@ var SyncModule = {
         this._lastSyncTime = LocalStorageService.get('last_sync', null);
         this._updateSyncDisplay();
 
-        return FirebaseService.init()
+        if (this._mode === 'local') return Promise.resolve();
+        return this._loadFirebaseSDK()
+            .then(function(ready) {
+                if (!ready) return;
+                return FirebaseService.init();
+            })
             .then(function() {
+                if (!FirebaseService._initialized) return;
                 return self._syncFromCloud();
             });
     },
