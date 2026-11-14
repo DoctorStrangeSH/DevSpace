@@ -319,3 +319,20 @@ test('nested project and image dialogs isolate background content and restore pr
   assert.ok(stories.includes('isolateShowcase()'));
   assert.ok(gallery.includes('isolateViewer()'));
 });
+
+
+test('mobile navbar controls fill the available width without affecting unrelated flex layouts', () => {
+  const css = fs.readFileSync(path.join(root, 'css/components/navbar.css'), 'utf8');
+  assert.ok(css.includes('.navbar-collapse > .d-flex.align-items-center'));
+  assert.ok(css.includes('.navbar-collapse .search-box'));
+  assert.ok(css.includes('.navbar-collapse .search-input:focus'));
+  assert.ok(css.includes('flex: 0 0 40px'));
+  assert.doesNotMatch(css, /\.d-flex\.align-items-center\s*\{\s*flex-wrap:\s*wrap/);
+});
+
+test('project card actions remain visible on touch devices and keyboard focus', () => {
+  const css = fs.readFileSync(path.join(root, 'css/components/cards.css'), 'utf8');
+  assert.ok(css.includes('.project-card:focus-within .project-actions'));
+  assert.ok(css.includes('@media (hover: none), (pointer: coarse)'));
+  assert.ok(css.includes('grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr))'));
+});
