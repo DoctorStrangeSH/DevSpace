@@ -82,6 +82,9 @@ var RendererModule = {
             }
             self._renderSchedule();
         });
+        if (schedule) schedule.addEventListener('change', function(event) {
+            if (event.target.matches('#scheduleProjectFilter, #scheduleTypeFilter')) self._renderSchedule();
+        });
         var goal = document.getElementById('productivityGoal');
         if (goal) {
             var savedGoal = typeof StorageService !== 'undefined' ? Number(StorageService.get('weeklyGoal', 5)) : 5;
@@ -364,6 +367,12 @@ var RendererModule = {
         return result.sort(function(a, b) { return a.date.localeCompare(b.date) || a.projectName.localeCompare(b.projectName); });
     },
 
+    _filterScheduleItems: function(items, projectId, type) {
+        return (items || []).filter(function(item) {
+            return (projectId === 'all' || String(item.projectId) === String(projectId)) && (type === 'all' || item.type === type);
+        });
+    },
+
     _renderSchedule: function() {
         var grid = document.getElementById('scheduleGrid');
         if (!grid) return;
@@ -375,7 +384,18 @@ var RendererModule = {
         var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
         var days = new Date(year, index + 1, 0).getDate();
         var start = (new Date(year, index, 1).getDay() + 6) % 7;
-        var items = this._collectScheduleItems(StateManager.get('projects') || []);
+        var projects = StateManager.get('projects') || [];
+        var projectFilter = document.getElementById('scheduleProjectFilter');
+        var typeFilter = document.getElementById('scheduleTypeFilter');
+        if (projectFilter) {
+            var chosenProject = projectFilter.value || 'all';
+            projectFilter.innerHTML = '<option value="all">Все проекты</option>' + projects.filter(function(project) { return project && project.id != null; }).slice().sort(function(a, b) { return String(a.name || '').localeCompare(String(b.name || '')); }).map(function(project) {
+                return '<option value="' + Helpers.escapeHtml(String(project.id)).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(project.name || 'Без названия') + '</option>';
+            }).join('');
+            projectFilter.value = chosenProject;
+            if (projectFilter.selectedIndex === -1) projectFilter.value = 'all';
+        }
+        var items = this._filterScheduleItems(this._collectScheduleItems(projects), projectFilter ? projectFilter.value : 'all', typeFilter ? typeFilter.value : 'all');
         var byDay = {};
         items.forEach(function(item) { (byDay[item.date] || (byDay[item.date] = [])).push(item); });
         var monthLabel = document.getElementById('scheduleMonth');
@@ -387,7 +407,7 @@ var RendererModule = {
         for (var day = 1; day <= days; day++) {
             var key = prefix + pad(day);
             var count = (byDay[key] || []).length;
-            html += '<button type="button" class="schedule-day' + (key === today ? ' is-today' : '') + (key === chosen ? ' is-selected' : '') + '" data-schedule-day="' + key + '" aria-label="' + day + ' ' + new Date(year, index, day).toLocaleDateString('ru-RU', { month: 'long' }) + (count ? ', событий: ' + count : ', без сроков') + '" aria-pressed="' + (key === chosen) + '"><span>' + day + '</span>' + (count ? '<small>' + count + '</small>' : '') + '</button>';
+            html += '<button type="button" class="schedule-day' + (key === today ? ' is-today' : '') + (key === chosen ? ' is-selected' : '') + (key < today && count ? ' is-overdue' : '') + '" data-schedule-day="' + key + '" aria-label="' + day + ' ' + new Date(year, index, day).toLocaleDateString('ru-RU', { month: 'long' }) + (count ? ', событий: ' + count : ', без сроков') + '" aria-pressed="' + (key === chosen) + '"><span>' + day + '</span>' + (count ? '<small>' + count + '</small>' : '') + '</button>';
         }
         grid.innerHTML = html;
         var agenda = document.getElementById('scheduleAgenda');
@@ -395,8 +415,15 @@ var RendererModule = {
         var selectedItems = byDay[chosen] || [];
         var heading = '<h4>' + new Date(chosen + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) + '</h4>';
         agenda.innerHTML = heading + (selectedItems.length ? '<div class="schedule-agenda-list">' + selectedItems.map(function(item) {
-            return '<button type="button" class="schedule-agenda-item" data-focus-project="' + Helpers.escapeHtml(String(item.projectId)).replace(/"/g, '&quot;') + '"><span class="schedule-kind">' + (item.type === 'stage' ? 'Этап' : 'Задача') + '</span><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>' + Helpers.escapeHtml(item.projectName) + '</small></button>';
+            return '<button type="button" class="schedule-agenda-item' + (item.date < today ? ' is-overdue' : '') + '" data-focus-project="' + Helpers.escapeHtml(String(item.projectId)).replace(/"/g, '&quot;') + '"><span class="schedule-kind">' + (item.type === 'stage' ? 'Этап' : 'Задача') + (item.date < today ? ' · Просрочено' : '') + '</span><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>' + Helpers.escapeHtml(item.projectName) + '</small></button>';
         }).join('') + '</div>' : '<p class="schedule-empty">На этот день сроков нет. Выбери дату с отметкой, чтобы увидеть задачи.</p>');
+        var upcoming = document.getElementById('scheduleUpcoming');
+        if (upcoming) {
+            var next = items.filter(function(item) { return item.date >= today; }).slice(0, 7);
+            upcoming.innerHTML = '<h4>Ближайшие дела</h4>' + (next.length ? '<div class="schedule-upcoming-list">' + next.map(function(item) {
+                return '<button type="button" class="schedule-upcoming-item" data-focus-project="' + Helpers.escapeHtml(String(item.projectId)).replace(/"/g, '&quot;') + '"><time datetime="' + item.date + '">' + item.date.slice(8, 10) + '.' + item.date.slice(5, 7) + '</time><span><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>' + Helpers.escapeHtml(item.projectName) + ' · ' + (item.type === 'stage' ? 'этап' : 'задача') + '</small></span></button>';
+            }).join('') + '</div>' : '<p class="schedule-empty">Нет запланированных сроков. Укажи даты задач или этапов в проектах.</p>');
+        }
     },
 
     _bindEvents: function() {
