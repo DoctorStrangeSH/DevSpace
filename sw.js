@@ -3,7 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.14';
+const CACHE_VERSION = 'devspace-v3.15';
+const ASSET_VERSION = '3.15.0';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -26,6 +27,7 @@ const PRECACHE_URLS = [
     'css/components/modal.css',
     'css/components/buttons.css',
     'css/components/project-detail.css',
+    'css/components/notes.css',
     'css/components/widgets.css',
     'js/app.js',
     'js/portfolio.js',
@@ -36,12 +38,20 @@ const PRECACHE_URLS = [
     'js/core/events.js',
     'js/core/storage.js',
     'js/core/state.js',
+    'js/core/sync.js',
+    'js/services/localStorage.js',
+    'js/services/firebase.js',
+    'js/services/auth.js',
+    'js/services/github.js',
+    'js/services/supabase.js',
     'js/utils/helpers.js',
+    'js/utils/validators.js',
     'js/ui/notifications.js',
     'js/ui/renderer.js',
     'js/modules/theme.js',
     'js/modules/projects.js',
     'js/modules/checklist.js',
+    'js/modules/notes.js',
     'js/modules/updates.js',
     'js/modules/stats.js',
     'js/modules/tags.js',
@@ -53,7 +63,7 @@ const PRECACHE_URLS = [
     'js/modules/achievements.js',
     'js/modules/timetracker.js',
     'data/initial-projects.json'
-];
+].map(url => /^(css|js)\//.test(url) ? `${url}?v=${ASSET_VERSION}` : url);
 
 // ========== INSTALL ==========
 self.addEventListener('install', (event) => {
