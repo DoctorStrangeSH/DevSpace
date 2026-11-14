@@ -107,6 +107,21 @@
         const title = node('h1', '', project.title);
         title.id = 'showcaseTitle';
         header.append(title, node('p', 'showcase-tagline', project.tagline));
+        const sectionNav = node('nav', 'showcase-section-nav');
+        sectionNav.setAttribute('aria-label', 'Разделы проекта');
+        const sections = [
+            ['О проекте', 'showcase-overview'],
+            ...(project.gallery?.length ? [['Галерея', 'showcase-media']] : []),
+            ['Как работает', 'showcase-process'],
+            ['Путь проекта', 'showcase-progress'],
+            ['Другие работы', 'showcase-more']
+        ];
+        sections.forEach(([label, id]) => {
+            const button = node('button', 'showcase-section-link', label);
+            button.type = 'button';
+            button.addEventListener('click', () => content.querySelector(`#${id}`)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }));
+            sectionNav.append(button);
+        });
         const art = node('div', `showcase-art art-${project.art}`);
         art.setAttribute('aria-label', 'Декоративная концептуальная иллюстрация проекта');
         if (project.coverTagline) art.append(node('span', 'showcase-art-theme', project.coverTagline));
@@ -115,6 +130,7 @@
         art.append(figcaption);
 
         const main = node('div', 'showcase-columns');
+        main.id = 'showcase-overview';
         const story = node('div', 'showcase-story');
         story.append(node('span', 'portfolio-kicker', 'О ПРОЕКТЕ'));
         story.append(node('p', 'showcase-intro', project.intro));
@@ -136,6 +152,7 @@
         aside.append(link);
         main.append(story, aside);
         const loop = node('section', 'showcase-loop');
+        loop.id = 'showcase-process';
         loop.setAttribute('aria-label', 'Основной игровой или рабочий цикл');
         loop.append(node('span', 'portfolio-kicker', 'ОСНОВНОЙ ЦИКЛ'));
         loop.append(node('h2', '', 'Как это работает'));
@@ -149,6 +166,7 @@
         });
         loop.append(loopGrid);
         const journey = node('section', 'showcase-journey');
+        journey.id = 'showcase-progress';
         journey.setAttribute('aria-label', 'Путь развития проекта');
         journey.append(node('span', 'portfolio-kicker', 'ПУТЬ ПРОЕКТА'));
         journey.append(node('h2', '', 'От идеи к следующему этапу'));
@@ -161,6 +179,7 @@
         });
         journey.append(journeyGrid);
         const related = node('nav', 'showcase-related');
+        related.id = 'showcase-more';
         related.setAttribute('aria-label', 'Другие проекты');
         related.append(node('span', 'portfolio-kicker', 'СМОТРЕТЬ ДАЛЬШЕ'));
         related.append(node('h2', '', 'Каждый мир — другая история'));
@@ -176,6 +195,7 @@
         related.append(relatedGrid);
         if (project.gallery && project.gallery.length) {
             const section = node('section', 'showcase-gallery');
+            section.id = 'showcase-media';
             section.setAttribute('aria-label', 'Медиа из репозитория проекта');
             section.append(node('span', 'portfolio-kicker', 'МАТЕРИАЛЫ ИЗ РЕПОЗИТОРИЯ'));
             section.append(node('p', 'showcase-gallery-note', 'Скриншоты и анимации из открытого репозитория, без сгенерированных подмен. Нажмите на кадр, чтобы открыть оригинал.'));
@@ -189,14 +209,19 @@
                 const img = node('img');
                 img.src = url; img.alt = item.caption;
                 img.loading = 'lazy'; img.decoding = 'async';
+                img.addEventListener('error', () => {
+                    const unavailable = node('div', 'showcase-gallery-unavailable', `Не удалось загрузить: ${item.caption}`);
+                    unavailable.setAttribute('role', 'status');
+                    link.replaceWith(unavailable);
+                }, { once: true });
                 const description = node('span', '', (item.kind === 'animation' ? 'АНИМАЦИЯ · ' : index === 0 ? 'ГЛАВНЫЙ КАДР · ' : '') + item.caption + ' ↗');
                 link.append(img, description);
                 grid.append(link);
             });
             section.append(grid);
-            content.append(header, section, main, loop, journey, related);
+            content.append(header, sectionNav, section, main, loop, journey, related);
         } else {
-            content.append(header, art, main, loop, journey, related);
+            content.append(header, sectionNav, art, main, loop, journey, related);
         }
     }
 
