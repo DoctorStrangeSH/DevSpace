@@ -3,49 +3,49 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v1.2';
+const CACHE_VERSION = 'devspace-v1.3';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
 
 // Файлы для предварительного кеширования
 const PRECACHE_URLS = [
-    '/',
-    '/index.html',
-    '/manifest.json',
-    '/css/theme.css',
-    '/css/main.css',
-    '/css/animations.css',
-    '/css/components/navbar.css',
-    '/css/components/hero.css',
-    '/css/components/cards.css',
-    '/css/components/checklist.css',
-    '/css/components/modal.css',
-    '/css/components/buttons.css',
-    '/css/components/project-detail.css',
-    '/css/components/widgets.css',
-    '/js/app.js',
-    '/js/core/events.js',
-    '/js/core/storage.js',
-    '/js/core/state.js',
-    '/js/utils/helpers.js',
-    '/js/utils/validators.js',
-    '/js/ui/notifications.js',
-    '/js/ui/renderer.js',
-    '/js/modules/theme.js',
-    '/js/modules/projects.js',
-    '/js/modules/checklist.js',
-    '/js/modules/updates.js',
-    '/js/modules/stats.js',
-    '/js/modules/tags.js',
-    '/js/modules/favorites.js',
-    '/js/modules/gallery.js',
-    '/js/modules/project-detail.js',
-    '/js/modules/export.js',
-    '/js/modules/share.js',
-    '/js/modules/achievements.js',
-    '/js/modules/timetracker.js',
-    '/data/initial-projects.json'
+    './',
+    'index.html',
+    'manifest.json',
+    'css/theme.css',
+    'css/main.css',
+    'css/portfolio.css',
+    'css/animations.css',
+    'css/components/navbar.css',
+    'css/components/hero.css',
+    'css/components/cards.css',
+    'css/components/checklist.css',
+    'css/components/modal.css',
+    'css/components/buttons.css',
+    'css/components/project-detail.css',
+    'css/components/widgets.css',
+    'js/app.js',
+    'js/core/events.js',
+    'js/core/storage.js',
+    'js/core/state.js',
+    'js/utils/helpers.js',
+    'js/ui/notifications.js',
+    'js/ui/renderer.js',
+    'js/modules/theme.js',
+    'js/modules/projects.js',
+    'js/modules/checklist.js',
+    'js/modules/updates.js',
+    'js/modules/stats.js',
+    'js/modules/tags.js',
+    'js/modules/favorites.js',
+    'js/modules/gallery.js',
+    'js/modules/project-detail.js',
+    'js/modules/export.js',
+    'js/modules/share.js',
+    'js/modules/achievements.js',
+    'js/modules/timetracker.js',
+    'data/initial-projects.json'
 ];
 
 // ========== INSTALL ==========

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="DevSpace - Портфолио разработчика с трекером проектов">
+    <meta name="description" content="DevSpace — портфолио Sherlock: игры, интеллектуальные инструменты и цифровые продукты. Изучайте проекты, идеи и исходный код.">
     <meta name="theme-color" content="#6366f1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -31,6 +31,7 @@
     <link href="css/components/project-detail.css" rel="stylesheet">
     <link href="css/components/notes.css" rel="stylesheet">
     <link href="css/components/widgets.css" rel="stylesheet">
+    <link href="css/portfolio.css" rel="stylesheet">
 </head>
 <body>
     <!-- Particles Background -->
@@ -40,8 +41,8 @@
         <!-- Navigation -->
         <nav class="navbar navbar-expand-lg fixed-top" id="mainNavbar">
             <div class="container">
-                <a class="navbar-brand" href="#">
-                    <i class="bi bi-code-slash me-2"></i>
+                <a class="navbar-brand" href="#hero" aria-label="DevSpace — главная">
+                    <span class="brand-monogram">D<span>.</span></span>
                     <span class="brand-text">DevSpace</span>
                 </a>
                 
@@ -51,9 +52,11 @@
                 
                 <div class="collapse navbar-collapse" id="navbarContent">
                     <ul class="navbar-nav me-auto">
+                        <li class="nav-item"><a class="nav-link" href="#featured">Работы</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#about">Обо мне</a></li>
                         <li class="nav-item">
                             <a class="nav-link scroll-to-projects" href="#projects">
-                                <i class="bi bi-house me-1"></i>Главная
+                                <i class="bi bi-grid me-1"></i>Трекер
                             </a>
                         </li>
                         
@@ -95,50 +98,46 @@
             <div class="container">
                 <div class="row align-items-center min-vh-100">
                     <div class="col-lg-6" data-aos="fade-right">
-                        <div class="hero-badge">
-                            <i class="bi bi-stars me-2"></i>Портфолио разработчика
-                        </div>
-                        <h1 class="hero-title">
-                            Создаю<br>
-                            <span id="typed-text" class="gradient-text"></span>
-                        </h1>
+                        <div class="hero-badge"><span class="live-dot"></span> DIGITAL PORTFOLIO / 2026</div>
+                        <p class="hero-eyebrow">Привет, я Sherlock <span aria-hidden="true">↗</span></p>
+                        <h1 class="hero-title">Идеи превращаю<br>в <span class="gradient-text">целые миры.</span></h1>
                         <p class="hero-description">
-                            Трекер проектов с чек-листами, заметками, галереей скриншотов и системой достижений.
+                            Разрабатываю игры, AI-инструменты и веб-продукты. Люблю продумывать не только код, но и то, какие эмоции и возможности получает человек по другую сторону экрана.
                         </p>
                         <div class="hero-actions">
-                            <a href="#projects" class="btn btn-gradient btn-lg scroll-to-projects">
-                                <i class="bi bi-arrow-down me-2"></i>Проекты
+                            <a href="#featured" class="btn btn-gradient btn-lg">
+                                Смотреть работы <i class="bi bi-arrow-up-right ms-2"></i>
                             </a>
+                            <a href="https://github.com/DoctorStrangeSH" class="btn btn-glass btn-lg" target="_blank" rel="noopener noreferrer"><i class="bi bi-github me-2"></i>GitHub</a>
                             <button class="btn btn-glass btn-lg owner-only" data-bs-toggle="modal" data-bs-target="#projectModal" id="heroAddProjectBtn" style="display:none;">
                                 <i class="bi bi-plus-lg me-2"></i>Добавить
                             </button>
                         </div>
-                        <div class="hero-stats">
-                            <div class="hero-stat">
-                                <span class="hero-stat-number" id="heroTotalProjects">0</span>
-                                <span class="hero-stat-label">Проектов</span>
-                            </div>
-                            <div class="hero-stat">
-                                <span class="hero-stat-number" id="heroCompletedTasks">0</span>
-                                <span class="hero-stat-label">Задач</span>
-                            </div>
-                            <div class="hero-stat">
-                                <span class="hero-stat-number" id="heroUpdatesCount">0</span>
-                                <span class="hero-stat-label">Обновлений</span>
-                            </div>
-                        </div>
+                        <div class="hero-specialties"><span>GAME DEVELOPMENT</span><span>AI AUTOMATION</span><span>PRODUCT DESIGN</span></div>
                     </div>
                     <div class="col-lg-6 text-center" data-aos="fade-left">
-                        <div class="hero-visual">
-                            <div class="floating-card card-1"><i class="bi bi-code-slash"></i></div>
-                            <div class="floating-card card-2"><i class="bi bi-git-branch"></i></div>
-                            <div class="floating-card card-3"><i class="bi bi-braces"></i></div>
-                            <div class="hero-laptop"><i class="bi bi-laptop"></i></div>
-                        </div>
+                        <div class="portfolio-orbit" aria-hidden="true"><div class="orbit-ring orbit-ring-one"></div><div class="orbit-ring orbit-ring-two"></div><div class="orbit-center">DS<span>✳</span></div><span class="orbit-label orbit-label-top">BUILD / IMAGINE</span><span class="orbit-label orbit-label-bottom">PLAY / CREATE</span></div>
                     </div>
                 </div>
             </div>
         </section>
+
+        <section id="featured" class="featured-section" aria-labelledby="featured-title">
+            <div class="container">
+                <div class="portfolio-section-heading"><div><span class="portfolio-kicker">01 / ИЗБРАННЫЕ РАБОТЫ</span><h2 id="featured-title">Проекты, в которых<br><em>есть характер.</em></h2></div><p>От фэнтезийных миров до инструментов, которые берут на себя рутину. Каждый проект — отдельная история.</p></div>
+                <div class="featured-grid">
+                    <a class="feature-card feature-large feature-game" href="https://github.com/DoctorStrangeSH/Skyward-Tales" target="_blank" rel="noopener noreferrer"><div class="feature-art art-sky"><span class="art-icon">✦</span><span class="art-landscape">SKYWARD<br>TALES</span></div><div class="feature-copy"><div class="feature-meta"><span>01 / RPG · GODOT</span><span>В РАЗРАБОТКЕ</span></div><h3>Skyward Tales <i class="bi bi-arrow-up-right"></i></h3><p>Фэнтезийная RPG про летающие острова: исследование, магия, герои и собственный мир.</p><div class="feature-tags"><span>Godot</span><span>Pixel art</span><span>RPG</span></div></div></a>
+                    <a class="feature-card feature-automation" href="https://github.com/DoctorStrangeSH/WorkPilot" target="_blank" rel="noopener noreferrer"><div class="feature-art art-work"><span class="art-signal">◎</span><span class="art-caption">MALENIA / AUTOMATION</span></div><div class="feature-copy"><div class="feature-meta"><span>02 / AI · AUTOMATION</span><span>В РАЗРАБОТКЕ</span></div><h3>WorkPilot <i class="bi bi-arrow-up-right"></i></h3><p>Настольный AI-ассистент для автоматизации задач в браузере и рабочих сервисах.</p><div class="feature-tags"><span>Python</span><span>Desktop</span><span>AI</span></div></div></a>
+                    <a class="feature-card feature-detective" href="https://github.com/DoctorStrangeSH/GhostSignal" target="_blank" rel="noopener noreferrer"><div class="feature-art art-ghost"><span class="art-signal">⌁</span><span class="art-caption">TRUTH IS NEVER SIMPLE</span></div><div class="feature-copy"><div class="feature-meta"><span>03 / NARRATIVE GAME</span><span>В РАЗРАБОТКЕ</span></div><h3>Ghost Signal <i class="bi bi-arrow-up-right"></i></h3><p>Детектив, где слова свидетелей, доверие и последствия решений действительно имеют значение.</p><div class="feature-tags"><span>JavaScript</span><span>Story systems</span></div></div></a>
+                    <a class="feature-card feature-ritual" href="https://github.com/DoctorStrangeSH/Last-Ritual" target="_blank" rel="noopener noreferrer"><div class="feature-art art-ritual"><span class="art-signal">✺</span><span class="art-caption">SURVIVE THE FIFTH NIGHT</span></div><div class="feature-copy"><div class="feature-meta"><span>04 / GAME · GODOT</span><span>В РАЗРАБОТКЕ</span></div><h3>Last Ritual <i class="bi bi-arrow-up-right"></i></h3><p>Стратегия с защитой крепости днём и roguelike-исследованием ночью.</p><div class="feature-tags"><span>Godot</span><span>Tower defense</span><span>Roguelike</span></div></div></a>
+                </div>
+                <div class="portfolio-more"><span>Это лишь часть моей мастерской.</span><a href="https://github.com/DoctorStrangeSH?tab=repositories" target="_blank" rel="noopener noreferrer">Все репозитории <i class="bi bi-arrow-up-right"></i></a></div>
+            </div>
+        </section>
+
+        <section id="about" class="about-section" aria-labelledby="about-title"><div class="container"><div class="about-grid"><div><span class="portfolio-kicker">02 / ОБО МНЕ</span><h2 id="about-title">Любопытство —<br><em>мой главный движок.</em></h2></div><div class="about-copy"><p>Я Sherlock, автор проектов под ником <strong>DoctorStrangeSH</strong>. Мне нравится соединять разработку, дизайн и новые технологии — от сложной игровой логики до AI-ассистентов для повседневной работы.</p><p>В своих проектах я ищу баланс между глубиной, удобством и атмосферой. Экспериментирую, постоянно улучшаю детали и не боюсь переосмысливать решения, если вижу путь интереснее.</p><div class="about-pills"><span>Godot & GDScript</span><span>JavaScript</span><span>Python</span><span>UX / UI</span><span>AI workflows</span></div></div></div></div></section>
+
+        <section class="contact-section"><div class="container"><div class="contact-panel"><span class="portfolio-kicker">03 / НА СВЯЗИ</span><h2>Давайте создадим<br><em>что-то интересное.</em></h2><p>Открыт новым идеям, технологиям и совместным экспериментам.</p><a href="https://github.com/DoctorStrangeSH" target="_blank" rel="noopener noreferrer" class="btn btn-gradient btn-lg">Связаться через GitHub <i class="bi bi-arrow-up-right ms-2"></i></a></div></div></section>
         
         <!-- Projects Section с табами -->
         <section id="projects" class="projects-section">
@@ -148,7 +147,7 @@
                         <div>
                             <h2 class="section-title" id="tabTitleContainer">
                                 <i class="bi bi-grid me-2 gradient-text"></i>
-                                <span id="tabTitle">Мои проекты</span>
+                                <span id="tabTitle">Мастерская проектов</span>
                             </h2>
                             <p class="section-subtitle" id="tabSubtitle">
                                 <span id="filteredCount">0</span> проектов
