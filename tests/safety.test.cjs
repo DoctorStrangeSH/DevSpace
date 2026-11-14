@@ -42,7 +42,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.18.0"></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.19.0"></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -72,7 +72,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.18.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.19.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -99,7 +99,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.18.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.19.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -139,7 +139,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.18.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.19.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -361,6 +361,17 @@ test('project stories update browser title and offer a safe shareable deep link'
   assert.ok(css.includes('.showcase-share:focus-visible'));
 });
 
+test('project section navigation tracks scroll position and follows visual order', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(source.includes("shell.addEventListener('scroll'"));
+  assert.ok(source.includes('requestAnimationFrame('));
+  assert.ok(source.includes("button.setAttribute('aria-current', 'location')"));
+  assert.ok(source.includes("button.removeAttribute('aria-current')"));
+  assert.ok(source.includes('content.append(header, sectionNav, main, section, loop, journey, related)'));
+  assert.ok(css.includes('.showcase-section-link.is-active'));
+});
+
 test('project stories expose keyboard-friendly local section navigation with graceful image failure', () => {
   const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
@@ -418,13 +429,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.18 cache, HTML fallback and visible application version are aligned', () => {
+test('3.19 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.18.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.18'"));
-  assert.ok(html.includes('id="appVersion">v3.18.0</span>'));
+  assert.ok(app.includes("version: '3.19.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.19'"));
+  assert.ok(html.includes('id="appVersion">v3.19.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -434,10 +445,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.18.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.19.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.18.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.19.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
