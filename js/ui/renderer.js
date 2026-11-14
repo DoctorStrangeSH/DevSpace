@@ -7,6 +7,7 @@ var RendererModule = {
     _pageSize: 24,
     _visibleCount: 24,
     _viewKey: null,
+    _sortMode: 'updated',
 
     init: function() {
         this._cacheContainers();
@@ -27,6 +28,17 @@ var RendererModule = {
             self._visibleCount += self._pageSize;
             self.renderProjects();
         });
+        var sort = document.getElementById('projectsSort');
+        if (sort) {
+            var savedSort = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('devspace_sort') : null;
+            if (['updated', 'name', 'status'].indexOf(savedSort) !== -1) self._sortMode = savedSort;
+            sort.value = self._sortMode;
+            sort.addEventListener('change', function() {
+                self._sortMode = ['updated', 'name', 'status'].indexOf(sort.value) !== -1 ? sort.value : 'updated';
+                if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('devspace_sort', self._sortMode);
+                self.renderProjects();
+            });
+        }
     },
 
     _bindEvents: function() {
@@ -122,7 +134,7 @@ var RendererModule = {
         var projects;
         var filterStatus = StateManager.get('filters.status');
         var sq = StateManager.get('filters.search');
-        var viewKey = JSON.stringify([filterStatus || 'all', sq || '']);
+        var viewKey = JSON.stringify([filterStatus || 'all', sq || '', this._sortMode]);
         if (viewKey !== this._viewKey) {
             this._viewKey = viewKey;
             this._visibleCount = this._pageSize;
@@ -139,6 +151,19 @@ var RendererModule = {
                 return [p.name, p.description].concat(p.techStack || []).join(' ').toLowerCase().indexOf(t) !== -1;
             });
         }
+
+        projects = projects.slice().sort(function(a, b) {
+            if (this._sortMode === 'name') {
+                return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+            }
+            if (this._sortMode === 'status') {
+                var statusComparison = String(a.status || '').localeCompare(String(b.status || ''), 'ru');
+                if (statusComparison) return statusComparison;
+            }
+            var aTime = Date.parse(a.updatedAt || '') || 0;
+            var bTime = Date.parse(b.updatedAt || '') || 0;
+            return bTime - aTime || String(a.id || '').localeCompare(String(b.id || ''));
+        }.bind(this));
 
         var countEl = document.getElementById('filteredCount');
         if (countEl) countEl.textContent = projects.length;
