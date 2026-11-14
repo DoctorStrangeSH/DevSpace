@@ -210,6 +210,11 @@ body { background: #090b12; }
 .github-live-meta[hidden],.github-detail-meta[hidden] { display:none!important; }
 .github-detail-meta { margin-top:23px;padding-top:18px;border-top:1px solid #3a3545;color:#b1c8ba!important;font-size:.83rem; }
 .showcase-gallery { margin:15px 0 5px; }
+.showcase-media-pending { margin:44px 0 12px;padding:28px 30px;border:1px solid #3d3a4a;border-radius:18px;background:linear-gradient(145deg,#1b1b29,#141722); }
+.showcase-media-pending h2 { color:#f0e7e9;font-size:clamp(1.35rem,2.8vw,1.8rem);margin:0 0 13px; }
+.showcase-media-pending .showcase-gallery-note { margin:0 0 20px;max-width:740px; }
+.showcase-media-pending .showcase-repo { display:inline-flex;min-height:44px;align-items:center; }
+@media(max-width:700px){.showcase-media-pending{padding:23px;margin-top:32px}}
 .showcase-gallery-note { color:#bab5c4;font-size:.88rem;line-height:1.7;max-width:680px;margin:8px 0 20px; }
 .showcase-gallery-unavailable { display:grid;place-items:center;min-height:170px;padding:25px;text-align:center;border:1px dashed #786b77;border-radius:16px;color:#d2c3cb;background:#1b1b29;font-size:.9rem; }
 .showcase-gallery-grid,.web-visual-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
