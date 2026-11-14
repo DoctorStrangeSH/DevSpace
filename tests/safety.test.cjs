@@ -383,13 +383,27 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.11 cache, HTML fallback and visible application version are aligned', () => {
+test('3.12 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.11.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.11'"));
-  assert.ok(html.includes('id="appVersion">v3.11.0</span>'));
+  assert.ok(app.includes("version: '3.12.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.12'"));
+  assert.ok(html.includes('id="appVersion">v3.12.0</span>'));
+});
+
+test('gallery failure provides a visible accessible fallback and mobile image keeps its width', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(html.includes('id="portfolioGalleryError"'));
+  assert.ok(html.includes('class="portfolio-gallery-unavailable" role="status" hidden'));
+  assert.ok(js.includes("image.addEventListener('error'"));
+  assert.ok(js.includes('imageError.hidden = false'));
+  assert.ok(js.includes('imageError.hidden = true'));
+  assert.ok(css.includes('.portfolio-gallery-unavailable[hidden]'));
+  assert.ok(css.includes('.portfolio-gallery-stage { position:relative;display:flex;'));
+  assert.ok(css.includes('#portfolioGalleryPrev { left:calc(50% - 55px); }'));
 });
 
 test('reduced motion and compact displays skip costly background animation', () => {
