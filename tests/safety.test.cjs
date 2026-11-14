@@ -136,3 +136,12 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   assert.ok(source.includes('getOrCreateInstance'));
   assert.ok(source.includes('.hide()'));
 });
+
+test('mobile screenshot gestures ignore vertical swipes and keep touch targets accessible', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(source.includes('Math.abs(dx) > Math.abs(dy) * 1.3'));
+  assert.ok(source.includes("'touchcancel'"));
+  assert.match(css, /portfolio-gallery-viewer button\{width:44px;height:44px\}/);
+  assert.ok(css.includes('safe-area-inset-bottom'));
+});
