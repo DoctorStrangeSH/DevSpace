@@ -50,6 +50,11 @@ var RendererModule = {
                 ChecklistModule.setPriority(priority.dataset.focusProjectId, priority.dataset.focusPriority, priority.value);
             }
         });
+        var overview = document.getElementById('roadmapOverview');
+        if (overview) overview.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-focus-project]');
+            if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
+        });
         var goal = document.getElementById('productivityGoal');
         if (goal) {
             var savedGoal = typeof StorageService !== 'undefined' ? Number(StorageService.get('weeklyGoal', 5)) : 5;
@@ -258,6 +263,54 @@ var RendererModule = {
         if (reward) reward.hidden = completedThisWeek < target;
     },
 
+    _collectRoadmapDeadlines: function(projects, now) {
+        var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6);
+        var end = endDate.getFullYear() + '-' + String(endDate.getMonth() + 1).padStart(2, '0') + '-' + String(endDate.getDate()).padStart(2, '0');
+        var allStages = 0, completedStages = 0, entries = [];
+        (projects || []).forEach(function(project) {
+            var stages = Array.isArray(project.milestones) ? project.milestones : [];
+            var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+            var completed = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
+            var dates = project.milestoneDeadlines && typeof project.milestoneDeadlines === 'object' && !Array.isArray(project.milestoneDeadlines) ? project.milestoneDeadlines : {};
+            stages.forEach(function(stage) {
+                if (typeof stage !== 'string' || !stage.trim()) return;
+                allStages++;
+                var linked = tasks.filter(function(task) { return task.milestone === stage; });
+                var done = linked.length ? linked.every(function(task) { return task.completed; }) : completed.indexOf(stage) !== -1;
+                if (done) { completedStages++; return; }
+                var date = Object.hasOwn(dates, stage) ? dates[stage] : '';
+                if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+                if (date < today || date <= end) entries.push({ project: project, stage: stage, date: date, overdue: date < today });
+            });
+        });
+        entries.sort(function(a, b) { return a.date.localeCompare(b.date) || String(a.project.name || '').localeCompare(String(b.project.name || '')); });
+        return { total: allStages, completed: completedStages, overdue: entries.filter(function(item) { return item.overdue; }), week: entries.filter(function(item) { return !item.overdue; }) };
+    },
+
+    _renderRoadmapOverview: function() {
+        var panel = document.getElementById('roadmapOverview');
+        if (!panel) return;
+        var overview = this._collectRoadmapDeadlines(StateManager.get('projects') || [], new Date());
+        panel.hidden = !overview.overdue.length && !overview.week.length;
+        if (panel.hidden) return;
+        var summary = document.getElementById('roadmapOverviewSummary');
+        if (summary) summary.textContent = 'Завершено ' + overview.completed + ' из ' + overview.total + ' этапов';
+        var render = function(items) { return items.slice(0, 10).map(function(item) {
+            var id = Helpers.escapeHtml(String(item.project.id)).replace(/"/g, '&quot;');
+            var formatted = item.date.slice(8, 10) + '.' + item.date.slice(5, 7);
+            return '<button type="button" class="roadmap-overview-item' + (item.overdue ? ' late' : '') + '" data-focus-project="' + id + '"><time datetime="' + item.date + '">' + formatted + '</time><span><strong>' + Helpers.escapeHtml(item.stage) + '</strong><small>' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</small></span></button>';
+        }).join('') + (items.length > 10 ? '<p class="roadmap-overview-more">Ещё этапов: ' + (items.length - 10) + '</p>' : ''); };
+        [['roadmapOverdueArea', 'roadmapOverdueCount', 'roadmapOverdueList', overview.overdue], ['roadmapWeekArea', 'roadmapWeekCount', 'roadmapWeekList', overview.week]].forEach(function(group) {
+            var area = document.getElementById(group[0]);
+            var count = document.getElementById(group[1]);
+            var list = document.getElementById(group[2]);
+            if (area) area.hidden = group[3].length === 0;
+            if (count) count.textContent = '(' + group[3].length + ')';
+            if (list) list.innerHTML = render(group[3]);
+        });
+    },
+
     _bindEvents: function() {
         var self = this;
 
@@ -346,6 +399,7 @@ var RendererModule = {
     renderProjects: function() {
         this._renderFocus();
         this._renderProductivity();
+        this._renderRoadmapOverview();
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
