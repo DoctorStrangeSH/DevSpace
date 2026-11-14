@@ -82,6 +82,21 @@ body { background: #090b12; }
 .feature-copy p { color:#aaa9b9;line-height:1.7;min-height:55px; }
 .feature-tags,.about-pills { display:flex;flex-wrap:wrap;gap:8px;margin-top:20px; }
 .feature-tags span,.about-pills span { padding:7px 12px;border-radius:40px;border:1px solid #3b394a;color:#c6bfce;font-size:.74rem; }
+.feature-card { display:flex;flex-direction:column; }
+.feature-card .feature-copy { display:flex;flex:1;flex-direction:column; }
+.feature-card .feature-art { flex-shrink:0; }
+.feature-card .feature-tags { margin-top:auto;padding-top:17px; }
+.feature-open { display:inline-flex;align-items:center;gap:10px;align-self:flex-start;margin-top:23px;padding-top:15px;border-top:1px solid #494252;color:#e9d4b7;font-size:.8rem;font-weight:700;letter-spacing:.04em; }
+.feature-open i { display:inline-block;transition:transform .2s ease; }
+.feature-card:hover .feature-open i,.feature-card:focus-visible .feature-open i { transform:translate(3px,-3px); }
+@media (max-width: 670px) {
+    .feature-card .feature-copy { padding:23px 23px 25px; }
+    .feature-card .feature-copy h3 { font-size:clamp(1.5rem,7vw,1.85rem); }
+    .feature-card .feature-copy p { min-height:0; }
+    .feature-card .feature-meta { flex-wrap:wrap;gap:6px 14px; }
+    .feature-open { margin-top:20px; }
+}
+@media (prefers-reduced-motion: reduce) { .feature-open i { transition:none; } }
 .portfolio-more { display:flex;justify-content:space-between;gap:20px;align-items:center;border-top:1px solid #30303d;margin-top:55px;padding-top:25px;color:#9e9aac; }
 .portfolio-more a { color:#e6d1b3;text-decoration:none; }
 .about-section { padding:110px 0;background:#11121d; }
