@@ -3,12 +3,23 @@ html { scroll-behavior: smooth; scroll-padding-top: 90px; }
 body { background: #090b12; }
 .content-wrapper { overflow: hidden; }
 .navbar { backdrop-filter: blur(22px); }
+/* The public portfolio uses a dark canvas even when the local tracker is in light mode. */
+#mainNavbar { background:rgba(13,14,23,.94);border-bottom:1px solid #343040; }
+#mainNavbar.scrolled { background:#11121d; }
+#mainNavbar .nav-link { color:#d5d0dc!important; }
+#mainNavbar .nav-link:hover,#mainNavbar .nav-link:focus-visible,#mainNavbar .nav-link.active { color:#fff!important;background:#2c2939; }
+#mainNavbar .navbar-collapse.show,#mainNavbar .navbar-collapse.collapsing { background:#161621; }
+#mainNavbar .navbar-toggler { border-color:#50495e; }
+#mainNavbar .dropdown-menu-dark { background:#20202b;border-color:#474052; }
+#mainNavbar .dropdown-menu-dark .dropdown-item { color:#e8e0ec; }
+#mainNavbar .dropdown-menu-dark .dropdown-item:hover { background:#363047;color:#fff; }
 .brand-monogram { display: inline-flex; width: 31px; height: 31px; align-items: center; justify-content: center; font-weight: 900; background: #e5d0ac; color: #15141d; border-radius: 9px; margin-right: 10px; letter-spacing: -2px; }
 .brand-monogram span { color: #8d5b3e; }
 .hero-section { position: relative; background: radial-gradient(ellipse at 77% 45%,rgba(90,75,144,.23),transparent 40%),radial-gradient(ellipse at 25% 100%,rgba(125,72,78,.12),transparent 45%); }
 .hero-section .container { position: relative; z-index: 2; }
 .hero-section .min-vh-100 { min-height: 760px!important; padding-top: 95px; padding-bottom: 90px; }
 .hero-section .hero-title { font-size: clamp(3.5rem,6.1vw,6.7rem); line-height: 1.05; letter-spacing: -.075em; font-weight: 800; margin-bottom: 30px; }
+.hero-section .hero-title { color:#f3eef1; }
 .hero-section .gradient-text { background: linear-gradient(100deg,#e9d6bd,#a9a7e9 60%,#8ac6ce); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero-section .hero-description { max-width: 580px; font-size: 1.08rem; line-height: 1.85; color: #adb0c2; }
 .hero-badge { border: 1px solid rgba(212,197,168,.24); background: rgba(223,210,180,.065); color: #dac9b1; letter-spacing: .16em; font-size: .7rem; }
@@ -18,6 +29,8 @@ body { background: #090b12; }
 .hero-section .hero-actions { margin-top: 30px; }
 .hero-section .btn-gradient, .contact-panel .btn-gradient { background: #e3cfb6; color: #15131d; border: 1px solid #e3cfb6; box-shadow: none; font-weight: 700; }
 .hero-section .btn-gradient:hover, .contact-panel .btn-gradient:hover { background: #f0dec8; color:#15131d; transform:translateY(-3px); }
+.hero-section .btn-glass { color:#ece6f1;background:rgba(39,36,52,.78);border:1px solid #554b65; }
+.hero-section .btn-glass:hover,.hero-section .btn-glass:focus-visible { color:#fff;background:#3b334c;border-color:#baa7d4; }
 .hero-specialties { display:flex; flex-wrap:wrap; gap:18px; margin-top:57px; font-size:.67rem; letter-spacing:.16em; color:#9391a9; }
 .hero-specialties span:not(:last-child)::after { content:'✳'; color:#84798e; margin-left:18px; }
 .portfolio-orbit { width:min(100%,480px); aspect-ratio:1; margin:auto; position:relative; display:grid; place-items:center; }
