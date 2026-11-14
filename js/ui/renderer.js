@@ -39,6 +39,12 @@ var RendererModule = {
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
         });
+        if (focus) focus.addEventListener('change', function(event) {
+            var priority = event.target.closest('[data-focus-priority]');
+            if (priority && typeof ChecklistModule !== 'undefined') {
+                ChecklistModule.setPriority(priority.dataset.focusProjectId, priority.dataset.focusPriority, priority.value);
+            }
+        });
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) loadMore.addEventListener('click', function() {
             self._visibleCount += self._pageSize;
@@ -124,20 +130,27 @@ var RendererModule = {
             var upcoming = [];
             pinned.forEach(function(project) {
                 var tasks = Array.isArray(project.checklist) ? project.checklist : [];
-                tasks.filter(function(task) { return !task.completed && task.text; }).slice(0, 2).forEach(function(task) {
-                    upcoming.push({ project: project, text: task.text, id: task.id });
+                tasks.filter(function(task) { return !task.completed && task.text; }).forEach(function(task) {
+                    upcoming.push({ project: project, text: task.text, id: task.id, priority: task.priority || 'normal' });
                 });
             });
+            var rank = { high: 0, normal: 1, low: 2 };
+            upcoming.sort(function(a, b) { return (rank[a.priority] == null ? 1 : rank[a.priority]) - (rank[b.priority] == null ? 1 : rank[b.priority]); });
             taskArea.hidden = upcoming.length === 0;
             if (taskCount) taskCount.textContent = '(' + upcoming.length + ')';
             taskList.innerHTML = upcoming.slice(0, 8).map(function(item) {
                 var projectId = Helpers.escapeHtml(String(item.project.id)).replace(/"/g, '&quot;');
                 var taskId = item.id == null ? null : Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
                 var markDone = taskId === null ? '' : '<button type="button" class="focus-task-check" data-focus-project-id="' + projectId + '" data-focus-complete="' + taskId + '" aria-label="Отметить выполненной: ' + Helpers.escapeHtml(item.text).replace(/"/g, '&quot;') + '" title="Отметить выполненной"><i class="bi bi-circle" aria-hidden="true"></i></button>';
+                var priority = ['high', 'low'].indexOf(item.priority) !== -1 ? item.priority : 'normal';
+                var select = taskId === null ? '' : '<select class="focus-task-priority priority-' + priority + '" data-focus-project-id="' + projectId + '" data-focus-priority="' + taskId + '" aria-label="Приоритет задачи: ' + Helpers.escapeHtml(item.text).replace(/"/g, '&quot;') + '" title="Приоритет задачи">' +
+                    '<option value="high"' + (priority === 'high' ? ' selected' : '') + '>🔴 Высокий</option>' +
+                    '<option value="normal"' + (priority === 'normal' ? ' selected' : '') + '>🟡 Обычный</option>' +
+                    '<option value="low"' + (priority === 'low' ? ' selected' : '') + '>🟢 Низкий</option></select>';
                 return '<div class="focus-task">' + markDone +
                     '<button type="button" class="focus-task-open" data-focus-project="' + projectId + '">' +
                     '<span class="focus-task-text">' + Helpers.escapeHtml(item.text) + '</span>' +
-                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button></div>';
+                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span></button>' + select + '</div>';
             }).join('') + (upcoming.length > 8 ? '<p class="focus-task-more">Ещё задач: ' + (upcoming.length - 8) + '</p>' : '');
         }
     },
