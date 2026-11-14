@@ -351,9 +351,19 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.8 cache and visible application version are aligned', () => {
+test('3.9 cache and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(app.includes("version: '3.8.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.8'"));
+  assert.ok(app.includes("version: '3.9.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.9'"));
+});
+
+test('mobile first screen fits content and reduced motion leaves hero text visible', () => {
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(css.includes('@media (max-width: 670px)'));
+  assert.ok(css.includes('.hero-section .min-vh-100 { min-height: 0 !important;'));
+  assert.ok(css.includes('.hero-section .col-lg-6.text-center { display: none; }'));
+  assert.ok(css.includes('.hero-section .hero-actions > a'));
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
+  assert.ok(css.includes('.hero-title, .hero-description, .hero-actions, .hero-stats, .hero-badge { animation: none; opacity: 1; }'));
 });
