@@ -3,7 +3,7 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v2.7';
+const CACHE_VERSION = 'devspace-v2.8';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -13,6 +13,8 @@ const PRECACHE_URLS = [
     './',
     'index.html',
     'manifest.json',
+    'images/icons/icon-192x192.png',
+    'images/icons/icon-512x512.png',
     'css/theme.css',
     'css/main.css',
     'css/portfolio.css',
@@ -189,8 +191,8 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
     const options = {
         body: 'Новое уведомление',
-        icon: '/images/icons/icon-192x192.png',
-        badge: '/images/icons/icon-72x72.png'
+        icon: new URL('images/icons/icon-192x192.png', self.registration.scope).href,
+        badge: new URL('images/icons/icon-72x72.png', self.registration.scope).href
     };
     
     if (event.data) {
@@ -217,7 +219,7 @@ self.addEventListener('notificationclick', (event) => {
                 for (const client of clientList) {
                     if ('focus' in client) return client.focus();
                 }
-                return clients.openWindow('/');
+                return clients.openWindow(self.registration.scope);
             })
     );
 });

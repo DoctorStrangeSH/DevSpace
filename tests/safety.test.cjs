@@ -190,3 +190,22 @@ test('offline page fallback respects GitHub Pages subpath', async () => {
   assert.ok(seen.includes(scope + 'index.html'));
   assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
 });
+
+test('PWA manifest icon declarations resolve to real PNGs', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.ok(manifest.icons.length >= 2);
+  for (const icon of manifest.icons) {
+    const file = path.join(root, icon.src);
+    assert.ok(fs.existsSync(file), `Missing app icon: ${icon.src}`);
+    const data = fs.readFileSync(file);
+    assert.equal(data.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    const [width, height] = [data.readUInt32BE(16), data.readUInt32BE(20)];
+    assert.equal(`${width}x${height}`, icon.sizes);
+  }
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.ok(html.includes('rel="icon"'));
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(worker.includes("'images/icons/icon-192x192.png'"));
+  assert.ok(worker.includes("'images/icons/icon-512x512.png'"));
+  assert.ok(worker.includes("clients.openWindow(self.registration.scope)"));
+});
