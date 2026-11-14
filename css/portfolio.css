@@ -99,6 +99,11 @@ body { background: #090b12; }
 .showcase-back { display:inline-flex;align-items:center;color:#d7c3a9;text-decoration:none;font-size:.9rem;padding:12px 0;margin-bottom:60px; }
 .showcase-back:hover,.showcase-back:focus-visible { color:#fff; }
 .showcase-header { max-width:940px;margin-bottom:48px; }
+.showcase-section-nav { position:sticky;top:0;z-index:6;display:flex;gap:9px;overflow-x:auto;padding:12px 0 14px;margin:-23px 0 24px;background:linear-gradient(#0b0c15 88%,rgba(11,12,21,.92));scrollbar-width:thin; }
+.showcase-section-link { flex:0 0 auto;padding:10px 14px;border-radius:30px;border:1px solid #514858;background:#242130;color:#e7d9cd;font-size:.8rem;cursor:pointer; }
+.showcase-section-link:hover { border-color:#c3a787;background:#3b3240; }
+.showcase-section-link:focus-visible { outline:3px solid #e6caad;outline-offset:2px; }
+#showcase-overview,#showcase-media,#showcase-process,#showcase-progress,#showcase-more { scroll-margin-top:90px; }
 .showcase-header h1 { font-size:clamp(3.2rem,9vw,7.5rem);line-height:1.02;letter-spacing:-.075em;font-weight:850;margin:0 0 20px;color:#f5f0e9; }
 .showcase-tagline { font-size:clamp(1.2rem,2.5vw,1.9rem);line-height:1.5;color:#bbb1c4;max-width:800px; }
 .showcase-art { height:clamp(230px,35vw,420px);border:1px solid rgba(231,218,203,.15);border-radius:24px;position:relative;display:grid;place-items:center;overflow:hidden; }
@@ -172,6 +177,7 @@ body { background: #090b12; }
 .github-detail-meta { margin-top:23px;padding-top:18px;border-top:1px solid #3a3545;color:#b1c8ba!important;font-size:.83rem; }
 .showcase-gallery { margin:15px 0 5px; }
 .showcase-gallery-note { color:#bab5c4;font-size:.88rem;line-height:1.7;max-width:680px;margin:8px 0 20px; }
+.showcase-gallery-unavailable { display:grid;place-items:center;min-height:170px;padding:25px;text-align:center;border:1px dashed #786b77;border-radius:16px;color:#d2c3cb;background:#1b1b29;font-size:.9rem; }
 .showcase-gallery-grid,.web-visual-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
 .showcase-gallery-item,.web-visual-grid a { display:block;border:1px solid #3b3b4a;border-radius:16px;overflow:hidden;background:#191a29;text-decoration:none;color:#d8d2df;transition:transform .2s,border-color .2s; }
 .showcase-gallery-item:hover,.web-visual-grid a:hover { transform:translateY(-4px);border-color:#9d8ba8;color:#fff; }
