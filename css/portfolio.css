@@ -129,6 +129,11 @@ body { background: #090b12; }
 .showcase-gallery-item:hover,.web-visual-grid a:hover { transform:translateY(-4px);border-color:#9d8ba8;color:#fff; }
 .showcase-gallery-item img,.web-visual-grid img { display:block;width:100%;aspect-ratio:16/10;object-fit:cover;object-position:center;background:#202134; }
 .showcase-gallery-item span,.web-visual-grid a span { display:block;padding:13px 15px;font-size:.82rem;line-height:1.45; }
+.showcase-gallery-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.showcase-gallery-featured { grid-column:1/-1;position:relative; }
+.showcase-gallery-featured img { aspect-ratio:16/7;object-position:center 48%; }
+.showcase-gallery-featured span { color:#f6e6cf;font-size:.9rem;letter-spacing:.02em;background:linear-gradient(90deg,#292536,#1b1b2b); }
+@media(max-width:700px){.showcase-gallery-grid{grid-template-columns:1fr}.showcase-gallery-featured img{aspect-ratio:16/10}}
 .web-visual-gallery { margin:70px 0 26px; }
 .web-gallery-heading { display:flex;justify-content:space-between;align-items:end;gap:30px;margin-bottom:26px; }
 .web-gallery-heading h3 { font-size:clamp(1.7rem,3vw,2.5rem);letter-spacing:-.05em;color:#eee9e8; }
