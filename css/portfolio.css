@@ -128,6 +128,17 @@ body { background: #090b12; }
 .showcase-journey-index { font-size:.7rem;letter-spacing:.13em;color:#d9bb91;font-weight:750; }
 .showcase-journey-step p { font-size:.98rem;line-height:1.7;color:#c9c4d0;margin:17px 0 0; }
 @media(max-width:700px){.showcase-journey{margin-top:60px}.showcase-journey-grid{grid-template-columns:1fr}.showcase-journey-step{padding:22px}}
+.showcase-related { margin-top:88px;padding-top:40px;border-top:1px solid #393341; }
+.showcase-related h2 { font-size:clamp(1.9rem,3vw,2.7rem);letter-spacing:-.045em;color:#f3eef0;margin:0 0 29px; }
+.showcase-related-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.showcase-related-card { min-width:0;min-height:195px;border:1px solid #494052;border-radius:17px;padding:25px;text-decoration:none;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;transition:transform .2s,border-color .2s; }
+.showcase-related-card:hover { transform:translateY(-4px);border-color:#d2b99b; }
+.showcase-related-card:focus-visible { outline:3px solid #e6caad;outline-offset:3px; }
+.showcase-related-eyebrow { color:#d6c5bb;font-size:.66rem;letter-spacing:.12em; }
+.showcase-related-card strong { color:#fff5ed;font-size:clamp(1.25rem,2vw,1.7rem);letter-spacing:-.035em;line-height:1.2; }
+.showcase-related-arrow { color:#e8d4ba;font-size:.78rem; }
+@media(max-width:700px){.showcase-related{margin-top:62px}.showcase-related-grid{grid-template-columns:1fr}.showcase-related-card{min-height:145px}}
+@media(prefers-reduced-motion:reduce){.showcase-related-card{transition:none}.showcase-related-card:hover{transform:none}}
 /* Verified Vercel deployments: distinguish a ready build from public access. */
 .web-projects-section { background:#10111b;position:relative;z-index:2;padding:110px 0 100px; }
 .web-projects-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px; }
