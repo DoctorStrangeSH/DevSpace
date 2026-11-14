@@ -96,3 +96,30 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   assert.ok(source.includes('stopImmediatePropagation'));
   assert.ok(source.includes('returnFocus.focus()'));
 });
+
+test('legacy password is discarded and editing is explicitly browser-local', () => {
+  const storage = new Map([['devspace_auth_key', 'legacy-credential']]);
+  const localStorage = {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, val) => storage.set(key, val),
+    removeItem: key => storage.delete(key)
+  };
+  const button = { style: {}, setAttribute() {} };
+  const document = {
+    getElementById: id => id === 'authBtn' ? button : null,
+    querySelectorAll: () => []
+  };
+  const ctx = execute('js/services/auth.js', { localStorage, document, confirm: () => true });
+  ctx.AuthService.init();
+  assert.equal(storage.has('devspace_auth_key'), false);
+  assert.equal(ctx.AuthService.isOwner(), false);
+  ctx.AuthService._showLoginDialog();
+  assert.equal(ctx.AuthService.isOwner(), true);
+  assert.equal(storage.get('devspace_local_edit_mode'), 'enabled');
+  assert.match(button.title, /локальное редактирование/);
+  ctx.AuthService.logout();
+  assert.equal(ctx.AuthService.isOwner(), false);
+  assert.equal(storage.has('devspace_local_edit_mode'), false);
+  const source = fs.readFileSync(path.join(root, 'js/services/auth.js'), 'utf8');
+  assert.doesNotMatch(source, /_secretKey\s*:/);
+});

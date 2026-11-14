@@ -244,9 +244,9 @@ var ProjectDetailModule = {
                 '</div>';
         } else {
             actionsHTML += '<h5><i class="bi bi-eye me-1"></i>Режим просмотра</h5>' +
-                '<p class="text-muted small mb-2">Войдите как владелец для редактирования</p>' +
+                '<p class="text-muted small mb-2">Включите локальный режим для редактирования в этом браузере</p>' +
                 '<button class="btn btn-gradient btn-sm w-100" onclick="AuthService._showLoginDialog()">' +
-                    '<i class="bi bi-unlock me-1"></i>Войти' +
+                    '<i class="bi bi-pencil me-1"></i>Редактировать локально' +
                 '</button>';
         }
         actionsHTML += '</div>';
