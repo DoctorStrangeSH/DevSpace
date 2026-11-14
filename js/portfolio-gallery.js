@@ -18,6 +18,7 @@
     let returnFocus = null;
     let touchStart = null;
     let backgroundInert = [];
+    let imageRequest = 0;
 
     function isolateViewer() {
         backgroundInert = Array.from(document.body.children)
@@ -34,34 +35,38 @@
     function display() {
         const item = items[index];
         if (!item) return;
+        // Each navigation invalidates callbacks from earlier, slower images.
+        const request = ++imageRequest;
         image.hidden = true;
         imageLoading.hidden = false;
         imageError.hidden = true;
+        image.removeAttribute('src');
         image.alt = item.alt;
         caption.textContent = item.caption;
         count.textContent = `${index + 1} / ${items.length}`;
         original.href = item.src;
         prev.disabled = items.length < 2;
         next.disabled = items.length < 2;
-        image.src = item.src;
+        const pendingImage = new Image();
+        pendingImage.onload = () => {
+            if (request !== imageRequest || viewer.hidden) return;
+            image.src = item.src;
+            image.hidden = false;
+            imageLoading.hidden = true;
+            imageError.hidden = true;
+        };
+        pendingImage.onerror = () => {
+            if (request !== imageRequest || viewer.hidden) return;
+            image.hidden = true;
+            imageLoading.hidden = true;
+            imageError.hidden = false;
+        };
+        pendingImage.src = item.src;
     }
-
-    image.addEventListener('load', () => {
-        if (viewer.hidden) return;
-        image.hidden = false;
-        imageLoading.hidden = true;
-        imageError.hidden = true;
-    });
-
-    image.addEventListener('error', () => {
-        if (viewer.hidden) return;
-        image.hidden = true;
-        imageLoading.hidden = true;
-        imageError.hidden = false;
-    });
 
     function close() {
         if (viewer.hidden) return;
+        ++imageRequest;
         viewer.hidden = true;
         document.body.classList.remove('portfolio-viewer-open');
         restoreBackground();
