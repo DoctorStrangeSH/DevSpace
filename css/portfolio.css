@@ -166,6 +166,10 @@ body { background: #090b12; }
 .showcase-aside .about-pills { margin:4px 0 30px; }
 .showcase-repo { display:block;background:#e1cdb5;border-radius:11px;padding:15px 18px;text-align:center;color:#17131b;font-weight:700;text-decoration:none;margin-top:27px; }
 .showcase-repo:hover { background:#f0dec7;color:#17131b; }
+.showcase-share { display:block;width:100%;min-height:46px;margin-top:13px;padding:11px 15px;background:transparent;border:1px solid #786c83;border-radius:11px;color:#eee2ed;font-size:.86rem;font-weight:650; }
+.showcase-share:hover { background:#302a3b;border-color:#c6afca; }
+.showcase-share:focus-visible { outline:3px solid #e6caad;outline-offset:3px; }
+.showcase-share-status { display:block;min-height:1.4em;margin-top:9px;color:#b5d2bf;font-size:.76rem;line-height:1.5; }
 .showcase-journey { margin-top:90px;border-top:1px solid #393341;padding-top:42px; }
 .showcase-journey h2 { color:#f3eef0;font-size:clamp(1.9rem,3vw,2.7rem);letter-spacing:-.045em;margin:0 0 30px; }
 .showcase-journey-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
