@@ -19,6 +19,9 @@ var FirebaseService = {
     _db: null,
     _initialized: false,
     _userId: CURRENT_USER_ID,
+    // Anonymous static pages must never be able to mutate shared data.
+    // A real server-verified owner session is required before enabling writes.
+    _writesEnabled: false,
 
     COLLECTIONS: {
         PROJECTS: 'projects',
@@ -79,6 +82,7 @@ var FirebaseService = {
     },
 
     deleteProject: function(projectId) {
+        if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve(false);
         
         return this._db
@@ -96,6 +100,7 @@ var FirebaseService = {
     },
 
     saveAllProjects: function(projects) {
+        if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve();
         
         if (!projects || !projects.length) {
@@ -139,6 +144,7 @@ var FirebaseService = {
     },
 
     saveSettings: function(settings) {
+        if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve();
         
         return this._db
@@ -151,6 +157,7 @@ var FirebaseService = {
     },
 
     clearAllProjects: function() {
+        if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve();
         
         var self = this;
@@ -175,6 +182,7 @@ var FirebaseService = {
     },
 
     clearAllData: function() {
+        if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve();
         
         var self = this;

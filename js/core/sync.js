@@ -1,24 +1,24 @@
 /* ============================================
    SYNC MODULE
-   Синхронизация с Firebase
+   Безопасное чтение опубликованных проектов из Firebase.
+   Запись отключена, пока нет серверной проверки прав доступа.
    ============================================ */
 
 var SyncModule = {
     _syncInProgress: false,
     _lastSyncTime: null,
     _syncTimer: null,
-    _mode: 'hybrid',
+    _mode: 'read-only',
 
     init: function() {
         var self = this;
         var settings = LocalStorageService.get('settings', {});
-        this._mode = settings.syncMode || 'hybrid';
+        this._mode = settings.syncMode === 'local' ? 'local' : 'read-only';
         this._lastSyncTime = LocalStorageService.get('last_sync', null);
         this._updateSyncDisplay();
 
         return FirebaseService.init()
             .then(function() {
-                self._bindEvents();
                 return self._syncFromCloud();
             });
     },
@@ -26,19 +26,12 @@ var SyncModule = {
     _bindEvents: function() {
         var self = this;
         
-        ['project:added', 'project:updated', 'project:removed',
-         'checklist:changed', 'notes:added', 'notes:updated',
-         'notes:deleted', 'favorites:updated'].forEach(function(e) {
-            EventBus.on(e, function() { self._onLocalChange(); });
-        });
-
         window.addEventListener('online', function() { self._syncFromCloud(); });
     },
 
     _onLocalChange: function() {
-        if (this._mode === 'local') return;
-        if (this._syncTimer) clearTimeout(this._syncTimer);
-        this._syncTimer = setTimeout(() => this.uploadToCloud(), 2000);
+        // Local edits are persisted by StateManager. Never auto-upload with
+        // a password embedded in public client code.
     },
 
     _syncFromCloud: function() {
@@ -57,9 +50,10 @@ var SyncModule = {
                 if (local.length === 0 && cloud.length > 0) {
                     StateManager.set('projects', cloud);
                     StateManager.saveProjects();
-                } else if (local.length > 0) {
-                    // Отправляем локальные в облако (перезаписываем)
-                    FirebaseService.saveAllProjects(local);
+                }
+                if (typeof RendererModule !== 'undefined') {
+                    RendererModule.renderProjects();
+                    RendererModule.renderStats();
                 }
             })
             .then(function() { return FirebaseService.getSettings(); })
@@ -74,33 +68,15 @@ var SyncModule = {
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = s.achievements;
                 }
             })
-            .catch(function() {})
+            .catch(function(error) { console.warn('Cloud read unavailable:', error); })
             .finally(function() {
                 self._syncInProgress = false;
-                self._lastSyncTime = new Date().toISOString();
-                LocalStorageService.set('last_sync', self._lastSyncTime);
                 self._updateSyncDisplay();
             });
     },
 
     uploadToCloud: function() {
-        if (this._mode === 'local' || this._syncInProgress) return;
-        this._syncInProgress = true;
-        var self = this;
-
-        var projects = StateManager.get('projects') || [];
-        var favs = typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [];
-        var ach = typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [];
-
-        FirebaseService.saveAllProjects(projects)
-            .then(function() { return FirebaseService.saveSettings({ favorites: favs, achievements: ach }); })
-            .then(function() {
-                self._lastSyncTime = new Date().toISOString();
-                LocalStorageService.set('last_sync', self._lastSyncTime);
-                self._updateSyncDisplay();
-            })
-            .catch(function() {})
-            .finally(function() { self._syncInProgress = false; });
+        return Promise.resolve(false);
     },
 
     loadFromCloud: function() { return this._syncFromCloud(); },
@@ -108,7 +84,7 @@ var SyncModule = {
     _updateSyncDisplay: function() {
         var el = document.getElementById('lastSyncDisplay');
         if (!el) return;
-        el.textContent = this._lastSyncTime ? 'Синхронизация: ' + Helpers.formatDate(this._lastSyncTime) : 'Синхронизация: никогда';
+        el.textContent = this._mode === 'local' ? 'Локальное хранение' : 'Облако: только чтение · изменения сохраняются в браузере';
     }
 };
 

@@ -82,8 +82,15 @@ const StateManager = {
             const response = await fetch('data/initial-projects.json');
             if (response.ok) {
                 const initialProjects = await response.json();
-                this._state.projects = initialProjects;
-                this.saveProjects();
+                // Avoid clobbering projects added while the request was pending.
+                if (Array.isArray(initialProjects) && this._state.projects.length === 0) {
+                    this._state.projects = initialProjects;
+                    this.saveProjects();
+                    if (typeof RendererModule !== 'undefined') {
+                        RendererModule.renderProjects();
+                        RendererModule.renderStats();
+                    }
+                }
                 console.log('StateManager: loaded initial projects');
             }
         } catch (error) {
