@@ -351,11 +351,21 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.9 cache and visible application version are aligned', () => {
+test('3.10 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(app.includes("version: '3.9.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.9'"));
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.ok(app.includes("version: '3.10.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.10'"));
+  assert.ok(html.includes('id="appVersion">v3.10.0</span>'));
+});
+
+test('reduced motion and compact displays skip costly background animation', () => {
+  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+  assert.ok(app.includes("window.matchMedia('(prefers-reduced-motion: reduce)').matches"));
+  assert.ok(app.includes("window.matchMedia('(max-width: 670px)').matches"));
+  assert.ok(app.includes('disable: !!prefersReducedMotion'));
+  assert.ok(app.includes('!prefersReducedMotion && !compactViewport'));
 });
 
 test('mobile first screen fits content and reduced motion leaves hero text visible', () => {
