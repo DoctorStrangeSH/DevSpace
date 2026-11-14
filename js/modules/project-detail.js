@@ -292,6 +292,8 @@ var ProjectDetailModule = {
             return '<article class="roadmap-stage"><header><span class="roadmap-stage-number">' + (index + 1) + '</span><strong>' + Helpers.escapeHtml(stage) + '</strong><span class="roadmap-stage-status">' + status + '</span><span class="roadmap-stage-percent">' + percent + '%</span></header>' +
                 '<div class="roadmap-progress"><span style="width:' + percent + '%"></span></div>' +
                 (linked.length ? '<ul>' + linked.map(function(task) { return '<li>' + (task.completed ? '✅ ' : '◯ ') + Helpers.escapeHtml(task.text || '') + '</li>'; }).join('') + '</ul>' : '<p class="roadmap-empty">Задачи пока не привязаны</p>') +
+                (owner ? '<form class="roadmap-inline-form" data-roadmap-task-create="' + escape(stage) + '"><input name="task" maxlength="240" required placeholder="Новая задача для этапа" aria-label="Новая задача для этапа ' + escape(stage) + '"><button type="submit">+ Задача</button></form>' : '') +
+                (owner ? '<form class="roadmap-inline-form roadmap-rename" data-roadmap-rename="' + escape(stage) + '"><input name="name" maxlength="100" required value="' + escape(stage) + '" aria-label="Переименовать этап ' + escape(stage) + '"><button type="submit">Сохранить название</button></form>' : '') +
                 (owner ? '<div class="roadmap-stage-actions"><button type="button" data-roadmap-move="up" data-roadmap-index="' + index + '" aria-label="Переместить этап вверх"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-roadmap-move="down" data-roadmap-index="' + index + '" aria-label="Переместить этап вниз"' + (index === stages.length - 1 ? ' disabled' : '') + '>↓</button></div>' : '') +
                 (owner && !linked.length ? '<button type="button" class="roadmap-stage-toggle" data-roadmap-stage="' + escape(stage) + '">' + (percent === 100 ? 'Вернуть в работу' : 'Отметить этап завершённым') + '</button>' : '') +
                 '</article>';
@@ -337,6 +339,36 @@ var ProjectDetailModule = {
         return true;
     },
 
+    renameRoadmapStage: function(projectId, oldName, value) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        var name = typeof value === 'string' ? value.trim() : '';
+        var stages = project && Array.isArray(project.milestones) ? project.milestones.slice() : [];
+        var index = stages.indexOf(oldName);
+        if (index === -1 || !name || name.length > 100 || stages.some(function(stage, i) {
+            return i !== index && String(stage).toLocaleLowerCase() === name.toLocaleLowerCase();
+        })) return false;
+        if (name === oldName) return true;
+        stages[index] = name;
+        var checklist = (project.checklist || []).map(function(task) {
+            return task.milestone === oldName ? Object.assign({}, task, { milestone: name }) : task;
+        });
+        var completed = (project.completedMilestones || []).map(function(stage) { return stage === oldName ? name : stage; });
+        StateManager.updateProject(projectId, { milestones: stages, checklist: checklist, completedMilestones: completed });
+        this._refreshRoadmap(projectId);
+        return true;
+    },
+
+    addRoadmapTask: function(projectId, stage, value) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        var name = typeof value === 'string' ? value.trim() : '';
+        if (!project || !Array.isArray(project.milestones) || project.milestones.indexOf(stage) < 0 || !name || name.length > 240 || typeof ChecklistModule === 'undefined') return false;
+        var task = ChecklistModule.addItem(projectId, name);
+        if (!task || task.id == null) return false;
+        return this.assignTaskStage(projectId, task.id, stage);
+    },
+
     assignTaskStage: function(projectId, taskId, milestone) {
         if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         var project = StateManager.getProject(projectId);
@@ -368,10 +400,15 @@ var ProjectDetailModule = {
         if (!section) return;
         var self = this;
         section.addEventListener('submit', function(event) {
-            if (!event.target.matches('[data-roadmap-create]')) return;
+            var form = event.target;
+            if (!form.matches('[data-roadmap-create], [data-roadmap-rename], [data-roadmap-task-create]')) return;
             event.preventDefault();
-            var input = event.target.querySelector('[name="stage"]');
-            if (input && !self.addRoadmapStage(projectId, input.value) && typeof NotificationModule !== 'undefined') NotificationModule.error('Проверь название этапа: оно должно быть уникальным');
+            var create = form.matches('[data-roadmap-create]');
+            var rename = form.matches('[data-roadmap-rename]');
+            var input = form.querySelector(create ? '[name="stage"]' : rename ? '[name="name"]' : '[name="task"]');
+            if (!input) return;
+            var success = create ? self.addRoadmapStage(projectId, input.value) : rename ? self.renameRoadmapStage(projectId, form.dataset.roadmapRename, input.value) : self.addRoadmapTask(projectId, form.dataset.roadmapTaskCreate, input.value);
+            if (!success && typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось сохранить. Проверь название и повтори попытку');
         });
         section.addEventListener('change', function(event) {
             var control = event.target.closest('[data-roadmap-task]');
