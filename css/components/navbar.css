@@ -187,6 +187,13 @@
         padding: 16px;
         margin-top: 12px;
     }
+
+    .navbar-collapse.show {
+        max-height: calc(100vh - 92px);
+        max-height: calc(100dvh - 92px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
     
     .navbar-nav {
         margin-bottom: 16px;
