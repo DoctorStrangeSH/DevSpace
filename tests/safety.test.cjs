@@ -491,6 +491,47 @@ test('roadmap remains read-only without local editing enabled', () => {
   assert.equal(ctx.ProjectDetailModule.assignTaskStage('p', 't', 'Этап'), false);
   assert.equal(ctx.ProjectDetailModule.toggleRoadmapStage('p', 'Этап'), false);
   assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-task|data-roadmap-stage/);
+  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-create|data-roadmap-move/);
+  assert.equal(ctx.ProjectDetailModule.addRoadmapStage('p', 'Новый'), false);
+  assert.equal(ctx.ProjectDetailModule.moveRoadmapStage('p', 0, 'down'), false);
+});
+
+test('roadmap can add distinct stages without changing checklist or completed stages', () => {
+  const project = { id: 'p', milestones: ['Дизайн'], completedMilestones: ['Дизайн'], checklist: [{ id: 1, text: 'Меню' }] };
+  const saved = [];
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject(id, patch) { saved.push(patch); project.milestones = patch.milestones; } },
+    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } },
+    Helpers: { escapeHtml(s) { return String(s); } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+  assert.equal(roadmap.addRoadmapStage('p', '  Разработка  '), true);
+  assert.equal(roadmap.addRoadmapStage('p', 'разработка'), false);
+  assert.equal(roadmap.addRoadmapStage('p', '  '), false);
+  assert.equal(roadmap.addRoadmapStage('p', 'x'.repeat(101)), false);
+  assert.deepEqual([...project.milestones], ['Дизайн', 'Разработка']);
+  assert.deepEqual(project.completedMilestones, ['Дизайн']);
+  assert.equal(project.checklist[0].text, 'Меню');
+  assert.equal(saved.length, 1);
+  assert.match(roadmap._renderRoadmap(project), /data-roadmap-create/);
+});
+
+test('roadmap stage reordering preserves task links by name and rejects invalid moves', () => {
+  const project = { id: 'p', milestones: ['А', 'Б', 'В'], checklist: [{ id: 1, milestone: 'Б', completed: true }] };
+  const saved = [];
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject(id, patch) { saved.push(patch); project.milestones = patch.milestones; } },
+    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+  assert.equal(roadmap.moveRoadmapStage('p', 1, 'up'), true);
+  assert.deepEqual([...project.milestones], ['Б', 'А', 'В']);
+  assert.equal(project.checklist[0].milestone, 'Б');
+  assert.equal(roadmap.moveRoadmapStage('p', 0, 'up'), false);
+  assert.equal(roadmap.moveRoadmapStage('p', 2, 'down'), false);
+  assert.equal(roadmap.moveRoadmapStage('p', 1.5, 'down'), false);
+  assert.equal(roadmap.moveRoadmapStage('p', 0, 'sideways'), false);
+  assert.equal(saved.length, 1);
 });
 
 test('public page loads only vendor SDKs that it actually uses', () => {
@@ -517,8 +558,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.41.0') < sources.indexOf('js/app.js?v=3.41.0'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.41.0') < sources.indexOf('js/app.js?v=3.41.0'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.42.0') < sources.indexOf('js/app.js?v=3.42.0'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.42.0') < sources.indexOf('js/app.js?v=3.42.0'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -643,7 +684,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.41.0" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.42.0" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -673,7 +714,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.41.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.42.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -700,7 +741,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.41.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.42.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -740,7 +781,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.41.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.42.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -1030,13 +1071,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.41 cache, HTML fallback and visible application version are aligned', () => {
+test('3.42 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.41.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.41'"));
-  assert.ok(html.includes('id="appVersion">v3.41.0</span>'));
+  assert.ok(app.includes("version: '3.42.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.42'"));
+  assert.ok(html.includes('id="appVersion">v3.42.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -1046,10 +1087,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.41.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.42.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.41.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.42.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
