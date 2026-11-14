@@ -27,6 +27,11 @@ var RendererModule = {
             navbar: document.getElementById('mainNavbar')
         };
         var self = this;
+        var focus = document.getElementById('focusProjects');
+        if (focus) focus.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-focus-project]');
+            if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
+        });
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) loadMore.addEventListener('click', function() {
             self._visibleCount += self._pageSize;
@@ -77,6 +82,29 @@ var RendererModule = {
         this.renderProjects();
         this._updateQuickAccess();
         return this.isPinned(id);
+    },
+
+    _renderFocus: function() {
+        var panel = document.getElementById('focusPanel');
+        var container = document.getElementById('focusProjects');
+        if (!panel || !container) return;
+        var all = StateManager.get('projects') || [];
+        var byId = {};
+        all.forEach(function(project) { byId[String(project.id)] = project; });
+        var pinned = this._pinnedIds.map(function(id) { return byId[id]; }).filter(Boolean);
+        panel.hidden = pinned.length === 0;
+        if (!pinned.length) { container.innerHTML = ''; return; }
+        container.innerHTML = pinned.slice(0, 4).map(function(project) {
+            var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+            var completed = tasks.filter(function(task) { return task.completed; }).length;
+            var progress = tasks.length ? Math.round(100 * completed / tasks.length) : Math.max(0, Math.min(100, Number(project.progress) || 0));
+            var next = tasks.find(function(task) { return !task.completed && task.text; });
+            var taskText = next ? next.text : (tasks.length ? 'Все задачи выполнены' : 'Пока нет задач');
+            return '<button type="button" class="focus-project" data-focus-project="' + Helpers.escapeHtml(String(project.id)).replace(/"/g, '&quot;') + '">' +
+                '<span class="focus-project-top"><span class="focus-project-name"><i class="bi bi-pin-angle-fill" aria-hidden="true"></i> ' + Helpers.escapeHtml(project.name || 'Без названия') + '</span><span class="focus-project-status">' + Helpers.escapeHtml(Helpers.getStatusText(project.status)) + '</span></span>' +
+                '<span class="focus-project-progress"><span class="focus-project-bar" style="width:' + progress + '%"></span></span>' +
+                '<span class="focus-project-bottom"><span class="focus-project-next"><i class="bi bi-check2-square" aria-hidden="true"></i> ' + Helpers.escapeHtml(Helpers.truncateText(taskText, 66)) + '</span><span>' + progress + '%</span></span></button>';
+        }).join('') + (pinned.length > 4 ? '<p class="focus-project-extra">И ещё ' + (pinned.length - 4) + ' закреплённых проектов ниже</p>' : '');
     },
 
     _bindEvents: function() {
@@ -165,6 +193,7 @@ var RendererModule = {
     // ========== РЕНДЕР ==========
 
     renderProjects: function() {
+        this._renderFocus();
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
