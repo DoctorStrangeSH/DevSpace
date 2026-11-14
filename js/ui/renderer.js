@@ -8,6 +8,7 @@ var RendererModule = {
     _visibleCount: 24,
     _viewKey: null,
     _sortMode: 'updated',
+    _viewMode: 'grid',
 
     init: function() {
         this._cacheContainers();
@@ -39,6 +40,26 @@ var RendererModule = {
                 self.renderProjects();
             });
         }
+        var savedView = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('devspace_view') : null;
+        if (savedView === 'list') self._viewMode = 'list';
+        this._applyProjectView();
+        (document.querySelectorAll ? document.querySelectorAll('.projects-view-btn') : []).forEach(function(button) {
+            button.addEventListener('click', function() {
+                self._viewMode = button.dataset.projectsView === 'list' ? 'list' : 'grid';
+                if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('devspace_view', self._viewMode);
+                self._applyProjectView();
+            });
+        });
+    },
+
+    _applyProjectView: function() {
+        var container = this.containers.projects;
+        if (container && container.classList) container.classList.toggle('list-view', this._viewMode === 'list');
+        (document.querySelectorAll ? document.querySelectorAll('.projects-view-btn') : []).forEach(function(button) {
+            var active = button.dataset.projectsView === this._viewMode;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        }, this);
     },
 
     _bindEvents: function() {
