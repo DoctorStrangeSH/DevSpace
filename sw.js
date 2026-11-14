@@ -3,7 +3,7 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v2.6';
+const CACHE_VERSION = 'devspace-v2.7';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -171,9 +171,12 @@ self.addEventListener('fetch', (event) => {
                     .then(cached => {
                         if (cached) return cached;
                         
-                        // Для HTML возвращаем index.html (SPA fallback)
-                        if (event.request.headers.get('accept')?.includes('text/html')) {
-                            return caches.match('/') || caches.match('/index.html');
+                        // GitHub Pages hosts the app below /DevSpace/, not at /.
+                        // Cache.match returns a Promise, so both candidates must be awaited.
+                        if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+                            return caches.match(new URL('index.html', self.registration.scope).href)
+                                .then(page => page || caches.match(new URL('./', self.registration.scope).href))
+                                .then(page => page || Response.error());
                         }
                         
                         throw new Error('Network unavailable');
