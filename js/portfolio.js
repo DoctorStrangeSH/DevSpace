@@ -125,6 +125,20 @@
             journeyGrid.append(step);
         });
         journey.append(journeyGrid);
+        const related = node('nav', 'showcase-related');
+        related.setAttribute('aria-label', 'Другие проекты');
+        related.append(node('span', 'portfolio-kicker', 'СМОТРЕТЬ ДАЛЬШЕ'));
+        related.append(node('h2', '', 'Каждый мир — другая история'));
+        const relatedGrid = node('div', 'showcase-related-grid');
+        Object.entries(projects).filter(([, entry]) => entry !== project).forEach(([slug, entry]) => {
+            const card = node('a', `showcase-related-card art-${entry.art}`);
+            card.href = `#project/${slug}`;
+            card.append(node('span', 'showcase-related-eyebrow', entry.eyebrow));
+            card.append(node('strong', '', entry.title));
+            card.append(node('span', 'showcase-related-arrow', 'Открыть историю ↗'));
+            relatedGrid.append(card);
+        });
+        related.append(relatedGrid);
         if (project.gallery && project.repository === 'Skyward-Tales') {
             const section = node('section', 'showcase-gallery');
             section.setAttribute('aria-label', 'Скриншоты игры');
@@ -143,9 +157,9 @@
                 grid.append(link);
             });
             section.append(grid);
-            content.append(header, section, main, journey);
+            content.append(header, section, main, journey, related);
         } else {
-            content.append(header, art, main, journey);
+            content.append(header, art, main, journey, related);
         }
     }
 
