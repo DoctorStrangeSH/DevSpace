@@ -494,11 +494,49 @@ test('roadmap remains read-only without local editing enabled', () => {
   assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-create|data-roadmap-move/);
   assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-rename|data-roadmap-task-create/);
   assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-remove/);
+  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-deadline/);
   assert.equal(ctx.ProjectDetailModule.addRoadmapStage('p', 'Новый'), false);
   assert.equal(ctx.ProjectDetailModule.moveRoadmapStage('p', 0, 'down'), false);
   assert.equal(ctx.ProjectDetailModule.renameRoadmapStage('p', 'Этап', 'Другой'), false);
   assert.equal(ctx.ProjectDetailModule.addRoadmapTask('p', 'Этап', 'Задача'), false);
   assert.equal(ctx.ProjectDetailModule.removeRoadmapStage('p', 'Этап'), false);
+  assert.equal(ctx.ProjectDetailModule.setRoadmapDeadline('p', 'Этап', '2026-12-15'), false);
+});
+
+test('roadmap deadlines validate calendar dates, persist by stage and allow clearing', () => {
+  const project = { id: 'p', milestones: ['Разработка'], checklist: [] };
+  const patches = [];
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject(id, patch) { patches.push(patch); Object.assign(project, patch); } },
+    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } },
+    Helpers: { escapeHtml(s) { return String(s); } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Несуществующий', '2026-12-15'), false);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', '2026-02-30'), false);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', 'tomorrow'), false);
+  assert.equal(patches.length, 0);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', '2026-12-15'), true);
+  assert.equal(project.milestoneDeadlines['Разработка'], '2026-12-15');
+  assert.match(roadmap._renderRoadmap(project), /data-roadmap-deadline="Разработка" value="2026-12-15"/);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', ''), true);
+  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'Разработка'), false);
+});
+
+test('roadmap stage rename moves deadline and removal cleans it without touching tasks', () => {
+  const project = { id: 'p', milestones: ['Старый', 'Другой'], milestoneDeadlines: { Старый: '2026-11-01', Другой: '2026-12-31' }, checklist: [{ id: 1, milestone: 'Старый', completed: false }] };
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject(id, patch) { Object.assign(project, patch); } },
+    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+  assert.equal(roadmap.renameRoadmapStage('p', 'Старый', 'Новый'), true);
+  assert.equal(project.milestoneDeadlines['Новый'], '2026-11-01');
+  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'Старый'), false);
+  assert.equal(project.milestoneDeadlines['Другой'], '2026-12-31');
+  assert.equal(roadmap.removeRoadmapStage('p', 'Новый'), true);
+  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'Новый'), false);
+  assert.equal(project.checklist.length, 1);
 });
 
 test('roadmap summary averages stages and reports accessible progress without mutating project', () => {
@@ -634,8 +672,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.44.0') < sources.indexOf('js/app.js?v=3.44.0'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.44.0') < sources.indexOf('js/app.js?v=3.44.0'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.45.0') < sources.indexOf('js/app.js?v=3.45.0'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.45.0') < sources.indexOf('js/app.js?v=3.45.0'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -760,7 +798,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.44.0" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.45.0" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -790,7 +828,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.44.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.45.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -817,7 +855,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.44.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.45.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -857,7 +895,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.44.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.45.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -1147,13 +1185,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.44 cache, HTML fallback and visible application version are aligned', () => {
+test('3.45 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.44.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.44'"));
-  assert.ok(html.includes('id="appVersion">v3.44.0</span>'));
+  assert.ok(app.includes("version: '3.45.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.45'"));
+  assert.ok(html.includes('id="appVersion">v3.45.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -1163,10 +1201,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.44.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.45.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.44.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.45.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
