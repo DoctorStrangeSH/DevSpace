@@ -270,6 +270,38 @@ test('public portfolio search filters featured and web cards without touching tr
   assert.ok(worker.includes("'js/portfolio-search.js'"));
 });
 
+test('portfolio search matches words in any order and links to web-only results', () => {
+  const listeners = {};
+  const input = { value: '', addEventListener: (name, cb) => { listeners[name] = cb; }, focus() {} };
+  const clear = { hidden: true, addEventListener: (name, cb) => { listeners[`clear-${name}`] = cb; } };
+  const status = { textContent: '' };
+  const empty = { hidden: true, textContent: '', children: [], appendChild(node) { this.children.push(node); } };
+  const featured = [{ textContent: 'Skyward Tales RPG Godot', hidden: false }];
+  const web = [{ textContent: 'DM Workspace платформа Next.js VTT', hidden: false }];
+  const elements = { portfolioSearch: input, portfolioSearchClear: clear, portfolioSearchStatus: status, portfolioSearchEmpty: empty };
+  const document = {
+    getElementById: id => elements[id],
+    querySelectorAll: selector => selector === '#featuredGrid .feature-card' ? featured : web,
+    createElement: tag => ({ tagName: tag, href: '', textContent: '' })
+  };
+  execute('js/portfolio-search.js', { document });
+  input.value = 'godot skyward';
+  listeners.input();
+  assert.equal(featured[0].hidden, false);
+  assert.equal(web[0].hidden, true);
+  input.value = 'workspace next.js';
+  listeners.input();
+  assert.equal(featured[0].hidden, true);
+  assert.equal(web[0].hidden, false);
+  assert.equal(empty.hidden, false);
+  assert.equal(empty.children.at(-1).href, '#web-projects');
+  assert.match(status.textContent, /Веб-проектов: 1/);
+  listeners['clear-click']();
+  assert.equal(input.value, '');
+  assert.equal(featured[0].hidden, false);
+  assert.equal(web[0].hidden, false);
+});
+
 
 test('each project detail explains its real core gameplay or work loop', () => {
   const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
@@ -351,13 +383,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.10 cache, HTML fallback and visible application version are aligned', () => {
+test('3.11 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.10.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.10'"));
-  assert.ok(html.includes('id="appVersion">v3.10.0</span>'));
+  assert.ok(app.includes("version: '3.11.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.11'"));
+  assert.ok(html.includes('id="appVersion">v3.11.0</span>'));
 });
 
 test('reduced motion and compact displays skip costly background animation', () => {
