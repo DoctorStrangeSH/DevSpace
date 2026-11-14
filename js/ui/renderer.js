@@ -50,6 +50,20 @@ var RendererModule = {
                 ChecklistModule.setPriority(priority.dataset.focusProjectId, priority.dataset.focusPriority, priority.value);
             }
         });
+        var goal = document.getElementById('productivityGoal');
+        if (goal) {
+            var savedGoal = typeof StorageService !== 'undefined' ? Number(StorageService.get('weeklyGoal', 5)) : 5;
+            goal.value = String(Number.isInteger(savedGoal) && savedGoal >= 1 && savedGoal <= 100 ? savedGoal : 5);
+            goal.addEventListener('change', function() {
+                var newGoal = Number(goal.value);
+                if (!Number.isInteger(newGoal) || newGoal < 1 || newGoal > 100) {
+                    goal.value = String(self._weeklyGoal());
+                    return;
+                }
+                if (typeof StorageService !== 'undefined') StorageService.set('weeklyGoal', newGoal);
+                self._renderProductivity();
+            });
+        }
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) loadMore.addEventListener('click', function() {
             self._visibleCount += self._pageSize;
@@ -191,6 +205,59 @@ var RendererModule = {
         }
     },
 
+    _weeklyGoal: function() {
+        var value = typeof StorageService !== 'undefined' ? Number(StorageService.get('weeklyGoal', 5)) : 5;
+        return Number.isInteger(value) && value >= 1 && value <= 100 ? value : 5;
+    },
+
+    _renderProductivity: function() {
+        var panel = document.getElementById('productivityPanel');
+        if (!panel) return;
+        var projects = StateManager.get('projects') || [];
+        var allTasks = [];
+        projects.forEach(function(project) {
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) { allTasks.push(task); });
+        });
+        panel.hidden = allTasks.length === 0;
+        if (panel.hidden) return;
+        var now = new Date();
+        var dateKey = function(date) { return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0'); };
+        var lastSeven = new Set();
+        for (var i = 0; i < 7; i++) lastSeven.add(dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)));
+        var completedDates = new Set();
+        var completedThisWeek = 0;
+        allTasks.forEach(function(task) {
+            if (!task.completed || typeof task.completedAt !== 'string') return;
+            var date = new Date(task.completedAt);
+            if (Number.isNaN(date.getTime()) || date > now) return;
+            var key = dateKey(date);
+            completedDates.add(key);
+            if (lastSeven.has(key)) completedThisWeek++;
+        });
+        var streak = 0;
+        var yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        var startDay = completedDates.has(dateKey(now)) ? now : yesterday;
+        for (var day = 0; day < 365; day++) {
+            var checkDate = new Date(startDay.getFullYear(), startDay.getMonth(), startDay.getDate() - day);
+            if (!completedDates.has(dateKey(checkDate))) break;
+            streak++;
+        }
+        var target = this._weeklyGoal();
+        var progress = Math.min(100, Math.round(completedThisWeek / target * 100));
+        var doneNode = document.getElementById('productivityDone');
+        var streakNode = document.getElementById('productivityStreak');
+        var progressNode = document.getElementById('productivityProgress');
+        var fill = document.getElementById('productivityBarFill');
+        var bar = document.getElementById('productivityBar');
+        var reward = document.getElementById('productivityAchievement');
+        if (doneNode) doneNode.textContent = String(completedThisWeek);
+        if (streakNode) streakNode.textContent = String(streak);
+        if (progressNode) progressNode.textContent = progress + '%';
+        if (fill) fill.style.width = progress + '%';
+        if (bar) bar.setAttribute('aria-valuenow', String(progress));
+        if (reward) reward.hidden = completedThisWeek < target;
+    },
+
     _bindEvents: function() {
         var self = this;
 
@@ -278,6 +345,7 @@ var RendererModule = {
 
     renderProjects: function() {
         this._renderFocus();
+        this._renderProductivity();
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
