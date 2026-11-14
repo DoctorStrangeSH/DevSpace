@@ -124,7 +124,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.27.0"></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.28.0"></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -154,7 +154,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.27.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.28.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -181,7 +181,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.27.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.28.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -221,7 +221,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.27.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.28.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -511,13 +511,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.27 cache, HTML fallback and visible application version are aligned', () => {
+test('3.28 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.27.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.27'"));
-  assert.ok(html.includes('id="appVersion">v3.27.0</span>'));
+  assert.ok(app.includes("version: '3.28.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.28'"));
+  assert.ok(html.includes('id="appVersion">v3.28.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -527,10 +527,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.27.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.28.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.27.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.28.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
@@ -572,7 +572,7 @@ test('gallery ignores late loads and failures after rapid navigation or close', 
   const images = [];
   const elements = Object.fromEntries([
     'portfolioGalleryViewer', 'portfolioGalleryImage', 'portfolioGalleryLoading',
-    'portfolioGalleryError', 'portfolioGalleryCaption', 'portfolioGalleryCount',
+    'portfolioGalleryError', 'portfolioGalleryRetry', 'portfolioGalleryCaption', 'portfolioGalleryCount',
     'portfolioGalleryOriginal', 'portfolioGalleryClose', 'portfolioGalleryPrev',
     'portfolioGalleryNext'
   ].map(id => [id, {
@@ -614,10 +614,40 @@ test('gallery ignores late loads and failures after rapid navigation or close', 
   images[0].onload();
   assert.equal(elements.portfolioGalleryImage.src, '/second.png');
   handlers.get('portfolioGalleryPrev:click')();
-  handlers.get('portfolioGalleryClose:click')();
   images[2].onerror();
+  assert.equal(elements.portfolioGalleryError.hidden, false);
+  assert.equal(elements.portfolioGalleryRetry.hidden, false);
+  handlers.get('portfolioGalleryRetry:click')();
+  assert.equal(images.length, 4);
+  images[3].onload();
+  assert.equal(elements.portfolioGalleryError.hidden, true);
+  assert.equal(elements.portfolioGalleryRetry.hidden, true);
+  handlers.get('portfolioGalleryClose:click')();
+  images[3].onerror();
   assert.equal(elements.portfolioGalleryError.hidden, true);
   assert.equal(elements.portfolioGalleryViewer.hidden, true);
+});
+
+test('gallery offers an accessible retry after a failed image download', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.match(html, /id="portfolioGalleryRetry"[^>]+hidden>Повторить загрузку/);
+  assert.ok(js.includes("retryButton.addEventListener('click', display)"));
+  assert.ok(js.includes('retryButton.hidden = false'));
+  assert.ok(js.includes('retryButton.hidden = true'));
+  assert.ok(js.includes('prev, next, retryButton, original'));
+  assert.ok(css.includes('.portfolio-gallery-retry[hidden]'));
+});
+
+test('adjacent preloading respects metered connections and stays bounded', () => {
+  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  assert.ok(js.includes("connection.effectiveType !== '4g'"));
+  assert.ok(js.includes('connection.saveData'));
+  assert.ok(js.includes("window.matchMedia('(min-width: 900px)').matches"));
+  assert.ok(js.includes('request !== imageRequest'));
+  assert.ok(js.includes('prefetchedImage = null'));
+  assert.ok(js.includes('pendingImage.complete && pendingImage.naturalWidth > 0'));
 });
 
 test('reduced motion and compact displays skip costly background animation', () => {
