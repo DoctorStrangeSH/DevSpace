@@ -70,3 +70,16 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   assert.ok(source.includes('sessionStorage'));
   assert.doesNotMatch(source, /WanderersOrder|SUPABASE_SERVICE_ROLE_KEY|Authorization:\s*['"`]/);
 });
+
+test('visual galleries use confirmed public repository screenshot paths', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  for (const file of ['08-vtt-scene', '07-character-sheet', '03-dashboard']) {
+    assert.ok(html.includes(`${file}-chromium-win32.png`));
+  }
+  for (const file of ['greenreach_village.png', 'greenreach_waterfall.png', 'greenreach_grove.jpg']) {
+    assert.ok(stories.includes(file));
+  }
+  assert.ok(html.includes('Настоящие тестовые скриншоты'));
+  assert.ok(stories.includes('РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
+});

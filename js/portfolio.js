@@ -9,7 +9,12 @@
             intro: 'Моя большая RPG в стиле детализированного пиксель-арта. Хочу, чтобы путешествие чувствовалось настоящим приключением: с живыми поселениями, магией, тайнами и местами, в которые хочется возвращаться.',
             focus: ['Летающие острова, мосты и исследование мира', 'Два героя с боевыми анимациями в восьми направлениях', 'Магия, ресурсы, выращивание растений и развитие поселения'],
             status: 'Активная разработка', stack: ['Godot', 'GDScript', 'Pixel art', 'RPG'],
-            repository: 'Skyward-Tales', next: 'Развитие островов, анимаций и игрового цикла.'
+            repository: 'Skyward-Tales', next: 'Развитие островов, анимаций и игрового цикла.',
+            gallery: [
+                { file: 'greenreach_village.png', caption: 'Поселение Зелёные пределы' },
+                { file: 'greenreach_waterfall.png', caption: 'Кромка острова и водопад' },
+                { file: 'greenreach_grove.jpg', caption: 'Лесная локация' }
+            ]
         },
         workpilot: {
             title: 'WorkPilot / Malenia', eyebrow: '02 / AI-АВТОМАТИЗАЦИЯ', symbol: '◎', art: 'work',
@@ -84,7 +89,28 @@
         link.rel = 'noopener noreferrer';
         aside.append(link);
         main.append(story, aside);
-        content.append(header, art, main);
+        if (project.gallery && project.repository === 'Skyward-Tales') {
+            const section = node('section', 'showcase-gallery');
+            section.setAttribute('aria-label', 'Скриншоты игры');
+            section.append(node('span', 'portfolio-kicker', 'РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
+            const grid = node('div', 'showcase-gallery-grid');
+            project.gallery.forEach(item => {
+                const url = `https://raw.githubusercontent.com/DoctorStrangeSH/Skyward-Tales/main/docs/screenshots/${encodeURIComponent(item.file)}`;
+                const link = node('a', 'showcase-gallery-item');
+                link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+                link.setAttribute('aria-label', `Открыть скриншот: ${item.caption}`);
+                const img = node('img');
+                img.src = url; img.alt = item.caption;
+                img.loading = 'lazy'; img.decoding = 'async';
+                const description = node('span', '', item.caption + ' ↗');
+                link.append(img, description);
+                grid.append(link);
+            });
+            section.append(grid);
+            content.append(header, section, main);
+        } else {
+            content.append(header, art, main);
+        }
     }
 
     function route() {
