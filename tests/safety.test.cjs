@@ -145,3 +145,13 @@ test('mobile screenshot gestures ignore vertical swipes and keep touch targets a
   assert.match(css, /portfolio-gallery-viewer button\{width:44px;height:44px\}/);
   assert.ok(css.includes('safe-area-inset-bottom'));
 });
+
+test('each featured story explains its intent, current focus and next step', () => {
+  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.equal((stories.match(/journey:\s*\[/g) || []).length, 4);
+  assert.ok(stories.includes('project.journey.forEach'));
+  assert.ok(stories.includes("aria-label', 'Путь развития проекта'"));
+  assert.ok(css.includes('.showcase-journey-grid'));
+  assert.ok(css.includes('grid-template-columns:1fr'));
+});
