@@ -45,6 +45,8 @@ body { background: #090b12; }
 .portfolio-search-bar p { margin:10px 0 0;color:#a9a6ba;font-size:.78rem; }
 .featured-grid .feature-card[hidden],.web-projects-grid .web-project-card[hidden],.portfolio-search-controls button[hidden],.portfolio-search-empty[hidden] { display:none!important; }
 .portfolio-search-empty { grid-column:1/-1;color:#d0c6d4;background:#181923;border:1px solid #413c4b;border-radius:14px;padding:24px; }
+.portfolio-search-empty a { display:inline-block;margin-left:6px;color:#e7cba9;text-underline-offset:4px;font-weight:700; }
+.portfolio-search-empty a:focus-visible { outline:2px solid #e7cba9;outline-offset:4px;border-radius:2px; }
 .featured-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px; }
 .feature-card { display:block;min-width:0;text-decoration:none;background:#161723;border:1px solid #2c2b3a;border-radius:23px;overflow:hidden;transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease; }
 .feature-card:hover { transform:translateY(-7px);border-color:#7b708c;box-shadow:0 24px 50px rgba(0,0,0,.25); }
