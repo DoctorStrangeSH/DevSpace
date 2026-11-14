@@ -123,3 +123,16 @@ test('legacy password is discarded and editing is explicitly browser-local', () 
   const source = fs.readFileSync(path.join(root, 'js/services/auth.js'), 'utf8');
   assert.doesNotMatch(source, /_secretKey\s*:/);
 });
+
+test('mobile navigation is labelled and collapses after in-page navigation', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
+  assert.ok(html.includes('aria-controls="navbarContent"'));
+  assert.ok(html.includes('aria-label="Открыть меню навигации"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js"'));
+  assert.ok(worker.includes("'js/portfolio-nav.js'"));
+  assert.ok(source.includes("navigation.classList.contains('show')"));
+  assert.ok(source.includes('getOrCreateInstance'));
+  assert.ok(source.includes('.hide()'));
+});
