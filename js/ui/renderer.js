@@ -4,6 +4,9 @@
 
 var RendererModule = {
     containers: {},
+    _pageSize: 24,
+    _visibleCount: 24,
+    _viewKey: null,
 
     init: function() {
         this._cacheContainers();
@@ -18,6 +21,12 @@ var RendererModule = {
             emptyState: document.getElementById('emptyState'),
             navbar: document.getElementById('mainNavbar')
         };
+        var self = this;
+        var loadMore = document.getElementById('projectsLoadMore');
+        if (loadMore) loadMore.addEventListener('click', function() {
+            self._visibleCount += self._pageSize;
+            self.renderProjects();
+        });
     },
 
     _bindEvents: function() {
@@ -112,13 +121,18 @@ var RendererModule = {
 
         var projects;
         var filterStatus = StateManager.get('filters.status');
+        var sq = StateManager.get('filters.search');
+        var viewKey = JSON.stringify([filterStatus || 'all', sq || '']);
+        if (viewKey !== this._viewKey) {
+            this._viewKey = viewKey;
+            this._visibleCount = this._pageSize;
+        }
         if (filterStatus === 'favorites') {
             projects = FavoritesModule.getFavorites();
         } else {
             projects = ProjectsModule.getFilteredProjects();
         }
 
-        var sq = StateManager.get('filters.search');
         if (sq) {
             var t = sq.toLowerCase();
             projects = projects.filter(function(p) {
@@ -128,6 +142,12 @@ var RendererModule = {
 
         var countEl = document.getElementById('filteredCount');
         if (countEl) countEl.textContent = projects.length;
+        var loadMore = document.getElementById('projectsLoadMore');
+        if (loadMore) {
+            var remaining = Math.max(0, projects.length - this._visibleCount);
+            loadMore.hidden = remaining === 0;
+            if (remaining) loadMore.textContent = 'Показать ещё ' + Math.min(this._pageSize, remaining) + ' из ' + remaining;
+        }
 
         if (!projects.length) {
             container.innerHTML = '';
@@ -137,7 +157,7 @@ var RendererModule = {
         if (emptyState) emptyState.style.display = 'none';
 
         var self = this;
-        container.innerHTML = projects.map(function(p, i) { return self._renderProjectCard(p, i); }).join('');
+        container.innerHTML = projects.slice(0, this._visibleCount).map(function(p, i) { return self._renderProjectCard(p, i); }).join('');
         this._attachProjectEvents();
     },
 
