@@ -101,8 +101,8 @@ test('screenshot viewer distinguishes loading, loaded and failed images', () => 
   const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryLoading"'));
   assert.ok(html.includes('Загружаем скриншот'));
-  assert.ok(script.includes("image.addEventListener('load'"));
-  assert.ok(script.includes("image.addEventListener('error'"));
+  assert.ok(script.includes('pendingImage.onload = () =>'));
+  assert.ok(script.includes('pendingImage.onerror = () =>'));
   assert.ok(script.includes('imageLoading.hidden = false'));
   assert.ok(script.includes('imageLoading.hidden = true'));
   assert.ok(css.includes('.portfolio-gallery-loading[hidden]'));
@@ -124,7 +124,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.26.0"></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.27.0"></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -154,7 +154,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.26.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.27.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -181,7 +181,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.26.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.27.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -221,7 +221,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.26.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.27.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -511,13 +511,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.26 cache, HTML fallback and visible application version are aligned', () => {
+test('3.27 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.26.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.26'"));
-  assert.ok(html.includes('id="appVersion">v3.26.0</span>'));
+  assert.ok(app.includes("version: '3.27.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.27'"));
+  assert.ok(html.includes('id="appVersion">v3.27.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -527,10 +527,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.26.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.27.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.26.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.27.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
@@ -559,12 +559,65 @@ test('gallery failure provides a visible accessible fallback and mobile image ke
   const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryError"'));
   assert.ok(html.includes('class="portfolio-gallery-unavailable" role="status" hidden'));
-  assert.ok(js.includes("image.addEventListener('error'"));
+  assert.ok(js.includes('pendingImage.onerror = () =>'));
   assert.ok(js.includes('imageError.hidden = false'));
   assert.ok(js.includes('imageError.hidden = true'));
   assert.ok(css.includes('.portfolio-gallery-unavailable[hidden]'));
   assert.ok(css.includes('.portfolio-gallery-stage { position:relative;display:flex;'));
   assert.ok(css.includes('#portfolioGalleryPrev { left:calc(50% - 55px); }'));
+});
+
+test('gallery ignores late loads and failures after rapid navigation or close', () => {
+  const handlers = new Map();
+  const images = [];
+  const elements = Object.fromEntries([
+    'portfolioGalleryViewer', 'portfolioGalleryImage', 'portfolioGalleryLoading',
+    'portfolioGalleryError', 'portfolioGalleryCaption', 'portfolioGalleryCount',
+    'portfolioGalleryOriginal', 'portfolioGalleryClose', 'portfolioGalleryPrev',
+    'portfolioGalleryNext'
+  ].map(id => [id, {
+    hidden: id === 'portfolioGalleryViewer',
+    addEventListener(type, fn) { handlers.set(`${id}:${type}`, fn); },
+    removeAttribute(key) { delete this[key]; },
+    focus() {},
+    contains() { return false; }
+  }]));
+  const anchor = (src) => ({ href: src, querySelector(selector) {
+    return selector === 'img' ? { alt: src } : { textContent: src };
+  } });
+  const links = [anchor('/first.png'), anchor('/second.png')];
+  const gallery = { querySelectorAll() { return links; } };
+  links.forEach(link => {
+    link.closest = selector => selector.includes('gallery-item') ? link : gallery;
+  });
+  const document = {
+    body: { children: [elements.portfolioGalleryViewer], classList: { add() {}, remove() {} } },
+    getElementById(id) { return elements[id]; },
+    addEventListener(type, fn) { handlers.set(`document:${type}`, fn); }
+  };
+  class PendingImage { constructor() { images.push(this); } }
+  execute('js/portfolio-gallery.js', { document, Image: PendingImage });
+
+  handlers.get('document:click')({
+    defaultPrevented: false, button: 0, target: { closest() { return links[0]; } },
+    preventDefault() {}
+  });
+  assert.equal(images.length, 1);
+  handlers.get('portfolioGalleryNext:click')();
+  assert.equal(images.length, 2);
+  images[0].onerror();
+  assert.equal(elements.portfolioGalleryError.hidden, true);
+  assert.equal(elements.portfolioGalleryLoading.hidden, false);
+  images[1].onload();
+  assert.equal(elements.portfolioGalleryImage.src, '/second.png');
+  assert.equal(elements.portfolioGalleryLoading.hidden, true);
+  images[0].onload();
+  assert.equal(elements.portfolioGalleryImage.src, '/second.png');
+  handlers.get('portfolioGalleryPrev:click')();
+  handlers.get('portfolioGalleryClose:click')();
+  images[2].onerror();
+  assert.equal(elements.portfolioGalleryError.hidden, true);
+  assert.equal(elements.portfolioGalleryViewer.hidden, true);
 });
 
 test('reduced motion and compact displays skip costly background animation', () => {
