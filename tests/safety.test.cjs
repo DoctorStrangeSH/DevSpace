@@ -209,3 +209,12 @@ test('PWA manifest icon declarations resolve to real PNGs', () => {
   assert.ok(worker.includes("'images/icons/icon-512x512.png'"));
   assert.ok(worker.includes("clients.openWindow(self.registration.scope)"));
 });
+
+test('installed DevSpace keeps its scope, supports rotation and exposes quick links', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.id, './');
+  assert.equal(manifest.orientation, 'any');
+  assert.deepEqual(manifest.shortcuts.map(item => item.url), ['./#featured', './#web-projects']);
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  for (const anchor of ['featured', 'web-projects']) assert.ok(html.includes(`id="${anchor}"`));
+});
