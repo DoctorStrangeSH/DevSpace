@@ -39,6 +39,20 @@ var ChecklistModule = {
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
     },
 
+    setPriority: function(projectId, itemId, priority) {
+        if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project) return false;
+        var item = (project.checklist || []).find(function(task) { return String(task.id) === String(itemId); });
+        if (!item) return false;
+        if (item.priority === priority || (priority === 'normal' && !item.priority)) return true;
+        if (priority === 'normal') delete item.priority;
+        else item.priority = priority;
+        StateManager.updateProject(projectId, { checklist: project.checklist });
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
+        return true;
+    },
+
     addItem: function(projectId, text) {
         var project = StateManager.getProject(projectId);
         if (!project) return null;
