@@ -9,8 +9,11 @@ var RendererModule = {
     _viewKey: null,
     _sortMode: 'updated',
     _viewMode: 'grid',
+    _pinnedIds: [],
 
     init: function() {
+        var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
+        this._pinnedIds = Array.isArray(savedPins) ? savedPins.filter(function(id) { return typeof id === 'string'; }) : [];
         this._cacheContainers();
         this._initTabs();
         this._bindEvents();
@@ -60,6 +63,20 @@ var RendererModule = {
             button.classList.toggle('active', active);
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
         }, this);
+    },
+
+    isPinned: function(id) {
+        return this._pinnedIds.indexOf(String(id)) !== -1;
+    },
+
+    togglePinned: function(id) {
+        id = String(id);
+        if (this.isPinned(id)) this._pinnedIds = this._pinnedIds.filter(function(pin) { return pin !== id; });
+        else this._pinnedIds.push(id);
+        if (typeof StorageService !== 'undefined') StorageService.set('pinnedProjects', this._pinnedIds.slice());
+        this.renderProjects();
+        this._updateQuickAccess();
+        return this.isPinned(id);
     },
 
     _bindEvents: function() {
@@ -174,6 +191,8 @@ var RendererModule = {
         }
 
         projects = projects.slice().sort(function(a, b) {
+            var pinOrder = Number(this.isPinned(b.id)) - Number(this.isPinned(a.id));
+            if (pinOrder) return pinOrder;
             if (this._sortMode === 'name') {
                 return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
             }
@@ -213,6 +232,7 @@ var RendererModule = {
         var si = Helpers.getStatusIcon(project.status);
         var ua = Helpers.formatDate(project.updatedAt);
         var isFav = FavoritesModule.isFavorite(project.id);
+        var isPinned = this.isPinned(project.id);
         var isOwner = typeof AuthService !== 'undefined' ? AuthService.isOwner() : true;
 
         var techs = (project.techStack || []).slice(0, 4).map(function(t) { return '<span class="tech-tag">' + Helpers.escapeHtml(t) + '</span>'; }).join('');
@@ -270,11 +290,13 @@ var RendererModule = {
 
         var actions = '';
         if (isOwner) {
-            actions = '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>' +
+            actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
+                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>' +
                 '<button class="project-action-btn edit-project" data-project-id="' + project.id + '"><i class="bi bi-pencil"></i></button>' +
                 '<button class="project-action-btn delete-project" data-project-id="' + project.id + '"><i class="bi bi-trash"></i></button>';
         } else {
-            actions = '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
+            actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
+                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
         }
 
         return '<div class="project-card" data-project-id="' + project.id + '"><div class="project-card-inner">' +
@@ -322,10 +344,11 @@ var RendererModule = {
         if (!projects.length) { menu.innerHTML = '<li><span class="dropdown-item-text text-muted small">Нет проектов</span></li>'; return; }
         var favs = typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [];
         var seen = {}, quick = [];
+        projects.filter(function(p) { return this.isPinned(p.id); }, this).forEach(function(p) { if (!seen[p.id]) { seen[p.id] = true; quick.push(p); } });
         projects.filter(function(p) { return favs.indexOf(p.id) !== -1; }).forEach(function(p) { if (!seen[p.id]) { seen[p.id] = true; quick.push(p); } });
         projects.slice(0, 5).forEach(function(p) { if (!seen[p.id]) { seen[p.id] = true; quick.push(p); } });
         quick = quick.slice(0, 8);
-        var html = favs.length ? '<li><span class="dropdown-header"><i class="bi bi-star me-1"></i>Избранное</span></li>' : '';
+        var html = (favs.length || this._pinnedIds.length) ? '<li><span class="dropdown-header"><i class="bi bi-pin-angle me-1"></i>Быстрый доступ</span></li>' : '';
         quick.forEach(function(p) {
             var icon = p.status === 'completed' ? '✅' : p.status === 'development' ? '🔨' : '📋';
             var mi = p.milestones && p.milestones.length ? '<span class="badge bg-secondary ms-2" style="font-size:9px;">' + (p.completedMilestones || []).length + '/' + p.milestones.length + '</span>' : '';
@@ -338,6 +361,13 @@ var RendererModule = {
     _attachProjectEvents: function() {
         var self = this;
         var isOwner = typeof AuthService !== 'undefined' ? AuthService.isOwner() : true;
+
+        document.querySelectorAll('.pin-project').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                self.togglePinned(btn.dataset.projectId);
+            });
+        });
 
         document.querySelectorAll('.favorite-btn-card').forEach(function(btn) {
             btn.addEventListener('click', function(e) {
