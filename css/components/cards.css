@@ -48,6 +48,7 @@
 .focus-task-area h4 span { color:var(--text-secondary);font-weight:500; }
 .focus-task-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:8px; }
 .focus-task { display:flex;align-items:center;gap:8px;min-width:0;min-height:46px;padding:6px 8px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary); }
+.focus-task-overdue { border-color:#dc6666;background:color-mix(in srgb,#dc6666 7%,var(--bg-primary)); }
 .focus-task:hover { border-color:var(--accent); }
 .focus-task button:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
 .focus-task-check { flex:0 0 34px;min-height:34px;border:0;border-radius:8px;background:transparent;color:var(--accent);cursor:pointer; }
@@ -58,10 +59,23 @@
 .focus-task-priority.priority-high { border-color:#dc6666; }
 .focus-task-priority.priority-low { border-color:#57a97a; }
 .focus-task-priority:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.focus-task-actions { display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end; }
+.focus-task-date { width:126px;min-height:31px;padding:4px;border:1px solid var(--border-color);border-radius:7px;background:var(--bg-secondary);color:var(--text-primary);font-size:11px;color-scheme:light dark; }
+.focus-task-date:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.focus-deadline-summary { margin:-2px 0 12px;color:var(--text-secondary);font-size:12px; }
+.focus-deadline-summary[hidden],.focus-week[hidden] { display:none!important; }
+.focus-week { margin-top:16px;padding-top:14px;border-top:1px solid var(--border-color); }
+.focus-week-list { display:flex;flex-wrap:wrap;gap:7px; }
+.focus-week-item { display:flex;align-items:center;gap:7px;max-width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer;font-size:12px; }
+.focus-week-item:hover,.focus-week-item:focus-visible { border-color:var(--accent); }
+.focus-week-item time { font-weight:700;color:var(--accent);white-space:nowrap; }
+.focus-week-item span { max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.focus-week-item small { color:var(--text-secondary); }
 .focus-task-text { flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .focus-task-source { max-width:110px;font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .focus-task-more { margin:0;color:var(--text-secondary);font-size:11px; }
 @media (max-width:600px) { .focus-panel { padding:15px; } .focus-panel-heading { align-items:start;flex-direction:column; } .focus-panel-caption { text-align:left; } }
+@media (max-width:600px) { .focus-task { flex-wrap:wrap; } .focus-task-open { min-width:calc(100% - 50px); } .focus-task-actions { width:100%;justify-content:flex-start;padding-left:42px; } }
 
 #projectsContainer.list-view { grid-template-columns:minmax(0,1fr);gap:10px; }
 #projectsContainer.list-view .project-card { min-width:0; }
