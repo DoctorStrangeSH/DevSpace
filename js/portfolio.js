@@ -126,15 +126,15 @@
             section.setAttribute('aria-label', 'Скриншоты игры');
             section.append(node('span', 'portfolio-kicker', 'РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
             const grid = node('div', 'showcase-gallery-grid');
-            project.gallery.forEach(item => {
+            project.gallery.forEach((item, index) => {
                 const url = `https://raw.githubusercontent.com/DoctorStrangeSH/Skyward-Tales/main/docs/screenshots/${encodeURIComponent(item.file)}`;
-                const link = node('a', 'showcase-gallery-item');
+                const link = node('a', index === 0 ? 'showcase-gallery-item showcase-gallery-featured' : 'showcase-gallery-item');
                 link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
                 link.setAttribute('aria-label', `Открыть скриншот: ${item.caption}`);
                 const img = node('img');
                 img.src = url; img.alt = item.caption;
                 img.loading = 'lazy'; img.decoding = 'async';
-                const description = node('span', '', item.caption + ' ↗');
+                const description = node('span', '', (index === 0 ? 'ГЛАВНЫЙ КАДР · ' : '') + item.caption + ' ↗');
                 link.append(img, description);
                 grid.append(link);
             });
