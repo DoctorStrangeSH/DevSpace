@@ -222,3 +222,24 @@ body { background: #090b12; }
 .showcase-loop-step h3 { color:#f1e9e6;font-size:1rem;letter-spacing:.09em;margin:25px 0 12px; }
 .showcase-loop-step p { color:#b9b5c5;line-height:1.75;margin:0;font-size:.93rem; }
 @media(max-width:700px){.showcase-loop{margin-top:58px}.showcase-loop-grid{grid-template-columns:1fr}.showcase-loop-step{min-height:0;padding:23px}.showcase-loop-step h3{margin-top:18px}}
+
+/* Mobile first impression: show the work quickly, without a second screen of decoration. */
+@media (max-width: 670px) {
+    .hero-section { min-height: 0; padding: 0; }
+    .hero-section .min-vh-100 { min-height: 0 !important; padding-top: 108px; padding-bottom: 58px; }
+    .hero-section .hero-title { font-size: clamp(2.5rem, 10.8vw, 3.65rem); letter-spacing: -.055em; margin-bottom: 20px; }
+    .hero-section .hero-badge { margin-bottom: 12px; }
+    .hero-section .hero-eyebrow { margin: 17px 0 10px; }
+    .hero-section .hero-description { font-size: 1rem; line-height: 1.65; margin-bottom: 26px; }
+    .hero-section .hero-actions { margin: 22px 0 0; gap: 12px; }
+    .hero-section .hero-actions > a { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; }
+    .hero-specialties { margin-top: 27px; gap: 9px 14px; line-height: 1.6; }
+    .hero-specialties span:not(:last-child)::after { display: none; }
+    .hero-section .col-lg-6.text-center { display: none; }
+    .featured-section { padding-top: 66px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hero-title, .hero-description, .hero-actions, .hero-stats, .hero-badge { animation: none; opacity: 1; }
+    .hero-laptop, .floating-card { animation: none; }
+}
