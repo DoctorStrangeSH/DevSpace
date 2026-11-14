@@ -90,6 +90,7 @@
     const shell = document.getElementById('portfolioDetail');
     const content = document.getElementById('showcaseContent');
     if (!shell || !content) return;
+    const portfolioTitle = document.title;
 
     const node = (tag, className, text) => {
         const el = document.createElement(tag);
@@ -163,6 +164,20 @@
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         aside.append(link);
+        const shareButton = node('button', 'showcase-share', 'Скопировать ссылку на проект');
+        shareButton.type = 'button';
+        const shareStatus = node('span', 'showcase-share-status', '');
+        shareStatus.setAttribute('role', 'status');
+        shareButton.addEventListener('click', async () => {
+            try {
+                if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+                await navigator.clipboard.writeText(window.location.href);
+                shareStatus.textContent = 'Ссылка скопирована';
+            } catch (_) {
+                shareStatus.textContent = 'Не удалось скопировать. Адрес проекта можно взять из строки браузера.';
+            }
+        });
+        aside.append(shareButton, shareStatus);
         main.append(story, aside);
         const loop = node('section', 'showcase-loop');
         loop.id = 'showcase-process';
@@ -253,6 +268,7 @@
         const match = /^#project\/([a-z-]+)$/.exec(window.location.hash);
         const project = match && projects[match[1]];
         if (!project) {
+            document.title = portfolioTitle;
             if (wasOpen) {
                 shell.hidden = true;
                 document.body.classList.remove('showcase-open');
@@ -262,6 +278,7 @@
             }
             return;
         }
+        document.title = `${project.title} | DevSpace`;
         if (!wasOpen) {
             previousFocus = document.activeElement;
             isolateShowcase();
