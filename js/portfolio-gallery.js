@@ -121,6 +121,11 @@
     }, true);
 
     viewer.addEventListener('touchstart', event => {
+        // Only a gesture that starts on the picture may change screenshots.
+        if (!event.target.closest('.portfolio-gallery-stage figure')) {
+            touchStart = null;
+            return;
+        }
         const touch = event.changedTouches[0];
         touchStart = touch ? { x: touch.clientX, y: touch.clientY } : null;
     }, { passive: true });
