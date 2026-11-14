@@ -200,9 +200,32 @@
         width: 100%;
     }
     
-    .d-flex.align-items-center {
+    .navbar-collapse > .d-flex.align-items-center {
+        width: 100%;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 10px !important;
+    }
+
+    .navbar-collapse .search-box {
+        flex: 1 1 100%;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .navbar-collapse .search-input,
+    .navbar-collapse .search-input:focus {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .navbar-collapse .theme-toggle {
+        flex: 0 0 40px;
+    }
+
+    .navbar-collapse #newProjectBtn {
+        min-width: 40px;
+        min-height: 40px;
     }
     
     .dropdown-menu-dark {
