@@ -25,17 +25,7 @@ var ProjectsModule = {
         EventBus.on('project:update', function(id, data) { self.updateProject(id, data); });
         EventBus.on('projects:reload', function() { self._reloadProjects(); });
 
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                self.openCreateModal();
-            }
-            if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
-                e.preventDefault();
-                StateManager.undo();
-                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
-            }
-        });
+        // Browser shortcuts (new window, undo text edits) must remain native.
     },
 
     _initModal: function() {
