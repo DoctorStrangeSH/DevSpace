@@ -5,6 +5,7 @@
     if (!viewer) return;
 
     const image = document.getElementById('portfolioGalleryImage');
+    const imageLoading = document.getElementById('portfolioGalleryLoading');
     const imageError = document.getElementById('portfolioGalleryError');
     const caption = document.getElementById('portfolioGalleryCaption');
     const count = document.getElementById('portfolioGalleryCount');
@@ -33,20 +34,29 @@
     function display() {
         const item = items[index];
         if (!item) return;
-        image.hidden = false;
+        image.hidden = true;
+        imageLoading.hidden = false;
         imageError.hidden = true;
-        image.src = item.src;
         image.alt = item.alt;
         caption.textContent = item.caption;
         count.textContent = `${index + 1} / ${items.length}`;
         original.href = item.src;
         prev.disabled = items.length < 2;
         next.disabled = items.length < 2;
+        image.src = item.src;
     }
+
+    image.addEventListener('load', () => {
+        if (viewer.hidden) return;
+        image.hidden = false;
+        imageLoading.hidden = true;
+        imageError.hidden = true;
+    });
 
     image.addEventListener('error', () => {
         if (viewer.hidden) return;
         image.hidden = true;
+        imageLoading.hidden = true;
         imageError.hidden = false;
     });
 
@@ -57,6 +67,7 @@
         restoreBackground();
         image.removeAttribute('src');
         image.hidden = false;
+        imageLoading.hidden = true;
         imageError.hidden = true;
         items = [];
         if (returnFocus && returnFocus.isConnected) returnFocus.focus();
