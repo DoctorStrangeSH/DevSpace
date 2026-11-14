@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.9.0',
+        version: '3.10.0',
         debug: false
     },
 
@@ -130,8 +130,10 @@ var App = {
     },
 
     _initVendors: function () {
+        var prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var compactViewport = window.matchMedia && window.matchMedia('(max-width: 670px)').matches;
         if (typeof AOS !== 'undefined') {
-            AOS.init({ duration: 600, easing: 'ease-out', once: true, offset: 30 });
+            AOS.init({ duration: 600, easing: 'ease-out', once: true, offset: 30, disable: !!prefersReducedMotion });
         }
         if (typeof Typed !== 'undefined' && document.getElementById('typed-text')) {
             new Typed('#typed-text', {
@@ -139,7 +141,7 @@ var App = {
                 typeSpeed: 80, backSpeed: 50, backDelay: 2000, startDelay: 500, loop: true
             });
         }
-        if (typeof particlesJS !== 'undefined') {
+        if (typeof particlesJS !== 'undefined' && !prefersReducedMotion && !compactViewport) {
             particlesJS('particles-js', {
                 particles: {
                     number: { value: 30, density: { enable: true, value_area: 800 } },
