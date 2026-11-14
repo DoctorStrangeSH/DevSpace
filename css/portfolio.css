@@ -95,6 +95,13 @@ body { background: #090b12; }
 .showcase-aside .about-pills { margin:4px 0 30px; }
 .showcase-repo { display:block;background:#e1cdb5;border-radius:11px;padding:15px 18px;text-align:center;color:#17131b;font-weight:700;text-decoration:none;margin-top:27px; }
 .showcase-repo:hover { background:#f0dec7;color:#17131b; }
+.showcase-journey { margin-top:90px;border-top:1px solid #393341;padding-top:42px; }
+.showcase-journey h2 { color:#f3eef0;font-size:clamp(1.9rem,3vw,2.7rem);letter-spacing:-.045em;margin:0 0 30px; }
+.showcase-journey-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.showcase-journey-step { min-width:0;background:#171823;border:1px solid #34303e;border-radius:17px;padding:26px; }
+.showcase-journey-index { font-size:.7rem;letter-spacing:.13em;color:#d9bb91;font-weight:750; }
+.showcase-journey-step p { font-size:.98rem;line-height:1.7;color:#c9c4d0;margin:17px 0 0; }
+@media(max-width:700px){.showcase-journey{margin-top:60px}.showcase-journey-grid{grid-template-columns:1fr}.showcase-journey-step{padding:22px}}
 /* Verified Vercel deployments: distinguish a ready build from public access. */
 .web-projects-section { background:#10111b;position:relative;z-index:2;padding:110px 0 100px; }
 .web-projects-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px; }
