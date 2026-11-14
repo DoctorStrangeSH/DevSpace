@@ -124,7 +124,7 @@
         sectionNav.setAttribute('aria-label', 'Разделы проекта');
         const sections = [
             ['О проекте', 'showcase-overview'],
-            ...(project.gallery?.length ? [['Галерея', 'showcase-media']] : []),
+            ['Материалы', 'showcase-media'],
             ['Как работает', 'showcase-process'],
             ['Путь проекта', 'showcase-progress'],
             ['Другие работы', 'showcase-more']
@@ -234,7 +234,18 @@
             section.append(grid);
             content.append(header, sectionNav, section, main, loop, journey, related);
         } else {
-            content.append(header, sectionNav, art, main, loop, journey, related);
+            const section = node('section', 'showcase-gallery showcase-media-pending');
+            section.id = 'showcase-media';
+            section.setAttribute('aria-label', 'Доступные материалы проекта');
+            section.append(node('span', 'portfolio-kicker', 'МАТЕРИАЛЫ ПРОЕКТА'));
+            section.append(node('h2', '', 'Пока без публичной галереи'));
+            section.append(node('p', 'showcase-gallery-note', 'Подтверждённые скриншоты или демонстрация пока не опубликованы. Обложка выше — концептуальная иллюстрация, а не кадр из приложения.'));
+            const sourceLink = node('a', 'showcase-repo', 'Посмотреть исходники и документацию ↗');
+            sourceLink.href = `https://github.com/DoctorStrangeSH/${project.repository}`;
+            sourceLink.target = '_blank';
+            sourceLink.rel = 'noopener noreferrer';
+            section.append(sourceLink);
+            content.append(header, sectionNav, art, section, main, loop, journey, related);
         }
     }
 
