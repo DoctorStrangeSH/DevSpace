@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.17.0',
+        version: '3.18.0',
         debug: false
     },
 
