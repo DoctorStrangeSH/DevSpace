@@ -3,7 +3,7 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.2';
+const CACHE_VERSION = 'devspace-v3.3';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -32,6 +32,7 @@ const PRECACHE_URLS = [
     'js/github-metadata.js',
     'js/portfolio-gallery.js',
     'js/portfolio-nav.js',
+    'js/portfolio-search.js',
     'js/core/events.js',
     'js/core/storage.js',
     'js/core/state.js',
