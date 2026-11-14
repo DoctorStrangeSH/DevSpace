@@ -16,6 +16,9 @@ var ProjectDetailModule = {
         EventBus.on('project:open-detail', function(projectId) {
             self.show(projectId);
         });
+        EventBus.on('checklist:changed', function(data) {
+            if (data && String(data.projectId) === String(self._currentProjectId)) self._refreshRoadmap(data.projectId);
+        });
     },
 
     show: function(projectId) {
@@ -38,6 +41,7 @@ var ProjectDetailModule = {
         document.getElementById('detailBody').innerHTML = this._renderDetail(project);
 
         this._initDetailChecklist(project);
+        this._initRoadmap(project.id);
         this._initDetailUpdates(project);
         this._initDetailNotes(project);
 
@@ -126,6 +130,12 @@ var ProjectDetailModule = {
             : '') +
         '</div>';
 
+        // Дорожная карта из уже существующих этапов проекта.
+        var roadmapHTML = '<div class="detail-section" id="projectRoadmapSection">' +
+            '<h4><i class="bi bi-signpost-split"></i> Дорожная карта</h4>' +
+            '<div id="roadmapBody">' + this._renderRoadmap(project) + '</div>' +
+            '</div>';
+
         // Обновления
         var updates = project.updates || [];
         var updatesHTML = '<div class="detail-section">' +
@@ -159,24 +169,6 @@ var ProjectDetailModule = {
             '</h4>' +
             (isOwner ? '<div id="notesForm">' + NotesModule.renderAddForm() + '</div>' : '') +
             '<div id="notesContainer">' + NotesModule.renderNotes(project.id) + '</div>' +
-        '</div>';
-
-        // Этапы в сайдбаре
-        var milestones = project.milestones || [];
-        var completedMilestones = project.completedMilestones || [];
-        var milestonesHTML = '<div class="sidebar-card">' +
-            '<h5><i class="bi bi-flag me-1"></i>Этапы</h5>' +
-            '<div class="milestones-list-detail">' +
-                (milestones.length > 0 ? 
-                    milestones.map(function(m) {
-                        var done = completedMilestones.indexOf(m) !== -1;
-                        return '<div class="milestone-item ' + (done ? 'done' : '') + '" data-milestone="' + Helpers.escapeHtml(m) + '">' +
-                            '<div class="milestone-dot ' + (done ? 'done' : '') + '">' + (done ? '<i class="bi bi-check"></i>' : '') + '</div>' +
-                            '<span>' + Helpers.escapeHtml(m) + '</span>' +
-                        '</div>';
-                    }).join('')
-                : '<p class="text-muted small">Нет этапов</p>') +
-            '</div>' +
         '</div>';
 
         // Ссылки
@@ -258,6 +250,7 @@ var ProjectDetailModule = {
                 '<div class="detail-main">' +
                     descriptionHTML +
                     checklistHTML +
+                    roadmapHTML +
                     updatesHTML +
                     notesHTML +
                 '</div>' +
@@ -271,7 +264,6 @@ var ProjectDetailModule = {
                             '</button>' +
                         '</div>' +
                     '</div>' +
-                    milestonesHTML +
                     linksHTML +
                     techHTML +
                     infoHTML +
@@ -281,6 +273,79 @@ var ProjectDetailModule = {
                 '</div>' +
             '</div>' +
         '</div>';
+    },
+
+    _renderRoadmap: function(project) {
+        var stages = Array.isArray(project.milestones) ? project.milestones.filter(function(name) { return typeof name === 'string' && name.trim(); }) : [];
+        if (!stages.length) return '<p class="text-muted small">Пока нет этапов. Добавь их через «Редактировать проект» — поле «Этапы».</p>';
+        var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+        var completedStages = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
+        var owner = typeof AuthService === 'undefined' || AuthService.isOwner();
+        var escape = function(text) { return Helpers.escapeHtml(String(text)).replace(/"/g, '&quot;'); };
+        return '<div class="roadmap-list">' + stages.map(function(stage, index) {
+            var linked = tasks.filter(function(task) { return task.milestone === stage; });
+            var done = linked.length ? linked.filter(function(task) { return task.completed; }).length : (completedStages.indexOf(stage) !== -1 ? 1 : 0);
+            var total = linked.length || 1;
+            var percent = Math.round(done / total * 100);
+            var status = percent === 100 ? 'Готово' : done > 0 ? 'В процессе' : 'Запланировано';
+            return '<article class="roadmap-stage"><header><span class="roadmap-stage-number">' + (index + 1) + '</span><strong>' + Helpers.escapeHtml(stage) + '</strong><span class="roadmap-stage-status">' + status + '</span><span class="roadmap-stage-percent">' + percent + '%</span></header>' +
+                '<div class="roadmap-progress"><span style="width:' + percent + '%"></span></div>' +
+                (linked.length ? '<ul>' + linked.map(function(task) { return '<li>' + (task.completed ? '✅ ' : '◯ ') + Helpers.escapeHtml(task.text || '') + '</li>'; }).join('') + '</ul>' : '<p class="roadmap-empty">Задачи пока не привязаны</p>') +
+                (owner && !linked.length ? '<button type="button" class="roadmap-stage-toggle" data-roadmap-stage="' + escape(stage) + '">' + (percent === 100 ? 'Вернуть в работу' : 'Отметить этап завершённым') + '</button>' : '') +
+                '</article>';
+        }).join('') + '</div>' +
+        (owner && tasks.length ? '<div class="roadmap-assign"><h5>Привязать задачи к этапам</h5>' + tasks.map(function(task) {
+            if (task.id == null) return '';
+            return '<label><span>' + Helpers.escapeHtml(task.text || 'Задача') + '</span><select data-roadmap-task="' + escape(task.id) + '" aria-label="Этап задачи: ' + escape(task.text || 'Задача') + '"><option value="">Без этапа</option>' + stages.map(function(stage) {
+                return '<option value="' + escape(stage) + '"' + (task.milestone === stage ? ' selected' : '') + '>' + Helpers.escapeHtml(stage) + '</option>';
+            }).join('') + '</select></label>';
+        }).join('') + '</div>' : '');
+    },
+
+    _refreshRoadmap: function(projectId) {
+        var body = document.getElementById('roadmapBody');
+        var project = StateManager.getProject(projectId);
+        if (body && project) body.innerHTML = this._renderRoadmap(project);
+    },
+
+    assignTaskStage: function(projectId, taskId, milestone) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project || (milestone && (!Array.isArray(project.milestones) || project.milestones.indexOf(milestone) === -1))) return false;
+        var task = (project.checklist || []).find(function(item) { return String(item.id) === String(taskId); });
+        if (!task) return false;
+        if (milestone) task.milestone = milestone;
+        else delete task.milestone;
+        StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._refreshRoadmap(projectId);
+        return true;
+    },
+
+    toggleRoadmapStage: function(projectId, stage) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.milestones) || project.milestones.indexOf(stage) === -1) return false;
+        if ((project.checklist || []).some(function(task) { return task.milestone === stage; })) return false;
+        var done = Array.isArray(project.completedMilestones) ? project.completedMilestones.slice() : [];
+        if (done.indexOf(stage) !== -1) done = done.filter(function(item) { return item !== stage; });
+        else done.push(stage);
+        StateManager.updateProject(projectId, { completedMilestones: done });
+        this._refreshRoadmap(projectId);
+        return true;
+    },
+
+    _initRoadmap: function(projectId) {
+        var section = document.getElementById('projectRoadmapSection');
+        if (!section) return;
+        var self = this;
+        section.addEventListener('change', function(event) {
+            var control = event.target.closest('[data-roadmap-task]');
+            if (control) self.assignTaskStage(projectId, control.dataset.roadmapTask, control.value);
+        });
+        section.addEventListener('click', function(event) {
+            var control = event.target.closest('[data-roadmap-stage]');
+            if (control) self.toggleRoadmapStage(projectId, control.dataset.roadmapStage);
+        });
     },
 
     // ========== ОПИСАНИЕ: ПОКАЗАТЬ ПОЛНОСТЬЮ ==========
