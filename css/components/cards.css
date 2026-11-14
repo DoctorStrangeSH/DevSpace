@@ -4,7 +4,7 @@
 
 #projectsContainer {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
     gap: 24px;
 }
 
@@ -83,8 +83,15 @@
     transition: opacity 0.2s;
 }
 
-.project-card:hover .project-actions {
+.project-card:hover .project-actions,
+.project-card:focus-within .project-actions {
     opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .project-actions {
+        opacity: 1;
+    }
 }
 
 .project-action-btn {
