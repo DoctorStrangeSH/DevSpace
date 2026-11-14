@@ -269,3 +269,15 @@ test('public portfolio search filters featured and web cards without touching tr
   assert.ok(css.includes('.web-project-card[hidden]'));
   assert.ok(worker.includes("'js/portfolio-search.js'"));
 });
+
+
+test('each project detail explains its real core gameplay or work loop', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.equal((source.match(/loop:\s*\[/g) || []).length, 4);
+  assert.ok(source.includes("aria-label', 'Основной игровой или рабочий цикл'"));
+  assert.ok(source.includes("node('h2', '', 'Как это работает')"));
+  for (const step of ['ИССЛЕДОВАТЬ', 'ПОДТВЕРДИТЬ РЕЗУЛЬТАТ', 'ПРОВЕРИТЬ ВЕРСИИ', 'ВЫЖИТЬ НОЧЬ']) assert.ok(source.includes(step));
+  assert.ok(css.includes('.showcase-loop-grid'));
+  assert.ok(css.includes('@media(max-width:700px){.showcase-loop{margin-top:58px}.showcase-loop-grid{grid-template-columns:1fr}'));
+});
