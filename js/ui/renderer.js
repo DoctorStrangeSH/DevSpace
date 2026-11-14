@@ -445,18 +445,7 @@ var RendererModule = {
             }).join('') + (nActive.length > 2 ? '<div class="mini-more">+ ещё ' + (nActive.length - 2) + ' заметок</div>' : '') + '</div>';
         } else { nHTML = '<div class="mini-empty">Нет заметок</div>'; }
 
-        var milestones = project.milestones || [];
-        var cm = project.completedMilestones || [];
-        var mHTML = '';
-        if (milestones.length > 0) {
-            var sm = milestones.slice(0, 4);
-            var cc = milestones.filter(function(m) { return cm.indexOf(m) !== -1; }).length;
-            mHTML = '<div class="mini-section-header" style="margin-top:8px;"><i class="bi bi-flag"></i><span>Этапы</span><span class="mini-badge">' + cc + '/' + milestones.length + '</span></div>' +
-                '<div class="milestones-list">' + sm.map(function(m) {
-                    var d = cm.indexOf(m) !== -1;
-                    return '<div class="milestone-item ' + (d ? 'done' : '') + '" data-milestone="' + Helpers.escapeHtml(m) + '"><div class="milestone-dot ' + (d ? 'done' : '') + '">' + (d ? '<i class="bi bi-check"></i>' : '') + '</div><span>' + Helpers.escapeHtml(Helpers.truncateText(m, 30)) + '</span></div>';
-                }).join('') + (milestones.length > 4 ? '<div class="mini-more">+ ещё ' + (milestones.length - 4) + ' этапов</div>' : '') + '</div>';
-        }
+        var mHTML = this._roadmapCardSummary(project);
 
         var links = [];
         if (project.github) {
@@ -491,6 +480,31 @@ var RendererModule = {
             mHTML +
             '<div class="project-footer"><span class="project-date"><i class="bi bi-clock me-1"></i>' + ua + '</span><div class="project-stats-mini"><span><i class="bi bi-arrow-repeat me-1"></i>' + (project.updates ? project.updates.length : 0) + '</span><span><i class="bi bi-sticky me-1"></i>' + notes.length + '</span><span><i class="bi bi-check2 me-1"></i>' + clTotal + '</span></div></div>' +
             '</div></div>';
+    },
+
+    _roadmapCardSummary: function(project) {
+        var stages = Array.isArray(project.milestones) ? project.milestones.filter(function(stage) { return typeof stage === 'string' && stage.trim(); }) : [];
+        if (!stages.length) return '';
+        var completed = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
+        var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+        var deadlines = project.milestoneDeadlines && typeof project.milestoneDeadlines === 'object' && !Array.isArray(project.milestoneDeadlines) ? project.milestoneDeadlines : {};
+        var doneCount = 0;
+        var next = null;
+        stages.forEach(function(stage) {
+            var linked = tasks.filter(function(task) { return task.milestone === stage; });
+            var done = linked.length ? linked.every(function(task) { return task.completed; }) : completed.indexOf(stage) !== -1;
+            if (done) doneCount++;
+            else if (!next) next = stage;
+        });
+        var nextName = next ? Helpers.escapeHtml(Helpers.truncateText(next, 42)) : 'Все этапы завершены';
+        var deadline = next && Object.hasOwn(deadlines, next) && /^\d{4}-\d{2}-\d{2}$/.test(deadlines[next]) ? deadlines[next] : '';
+        var now = new Date();
+        var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        var late = !!deadline && deadline < today;
+        var formatted = deadline ? deadline.slice(8, 10) + '.' + deadline.slice(5, 7) + '.' + deadline.slice(0, 4) : '';
+        return '<div class="roadmap-card-summary' + (late ? ' roadmap-card-late' : '') + '"><div class="mini-section-header"><i class="bi bi-signpost-split"></i><span>Дорожная карта</span><span class="mini-badge">' + doneCount + '/' + stages.length + '</span></div>' +
+            '<div class="roadmap-card-next"><span>' + (next ? 'Следующий этап' : 'Готово') + '</span><strong>' + nextName + '</strong></div>' +
+            (deadline ? '<small class="roadmap-card-due">' + (late ? '⚠ Просрочено · ' : 'Срок · ') + formatted + '</small>' : '') + '</div>';
     },
 
     _toggleDescription: function(btn) {
