@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.14.0',
+        version: '3.15.0',
         debug: false
     },
 
@@ -198,8 +198,9 @@ var App = {
 
     _registerServiceWorker: function () {
         if ('serviceWorker' in navigator) {
+            var version = this.config.version;
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('sw.js').catch(function () { });
+                navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(version)).catch(function () { });
             });
         }
     }
