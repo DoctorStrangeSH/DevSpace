@@ -8,6 +8,11 @@
     gap: 24px;
 }
 
+.projects-load-more-wrap { display:flex;justify-content:center;margin:28px 0 6px; }
+.projects-load-more-wrap:has(> button[hidden]) { display:none; }
+#projectsLoadMore[hidden] { display:none!important; }
+#projectsLoadMore { min-height:44px;padding:11px 25px; }
+
 @media (max-width: 768px) {
     #projectsContainer {
         grid-template-columns: 1fr;
