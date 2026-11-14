@@ -432,6 +432,11 @@
     </div>
     
     <!-- Notifications -->
+    <div id="portfolioGalleryViewer" class="portfolio-gallery-viewer" role="dialog" aria-modal="true" aria-label="Просмотр скриншотов" hidden tabindex="-1">
+        <div class="portfolio-gallery-toolbar"><span id="portfolioGalleryCount" aria-live="polite"></span><button type="button" id="portfolioGalleryClose" aria-label="Закрыть просмотр"><i class="bi bi-x-lg"></i></button></div>
+        <div class="portfolio-gallery-stage"><button type="button" id="portfolioGalleryPrev" aria-label="Предыдущий скриншот"><i class="bi bi-chevron-left"></i></button><figure><img id="portfolioGalleryImage" alt=""><figcaption id="portfolioGalleryCaption"></figcaption></figure><button type="button" id="portfolioGalleryNext" aria-label="Следующий скриншот"><i class="bi bi-chevron-right"></i></button></div>
+        <a id="portfolioGalleryOriginal" target="_blank" rel="noopener noreferrer">Открыть оригинал <i class="bi bi-arrow-up-right"></i></a>
+    </div>
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="notificationsContainer"></div>
     
     <!-- Vendor JS -->
@@ -490,6 +495,7 @@
     <!-- App Entry -->
     <script src="js/portfolio.js"></script>
     <script src="js/github-metadata.js" defer></script>
+    <script src="js/portfolio-gallery.js" defer></script>
     <script src="js/app.js"></script>
 </body>
 </html>

@@ -83,3 +83,16 @@ test('visual galleries use confirmed public repository screenshot paths', () => 
   assert.ok(html.includes('Настоящие тестовые скриншоты'));
   assert.ok(stories.includes('РЕАЛЬНЫЕ КАДРЫ ИЗ ПРОЕКТА'));
 });
+
+test('portfolio has a dedicated accessible screenshot viewer', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(html.includes('id="portfolioGalleryViewer"'));
+  assert.ok(html.includes('aria-modal="true"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js"'));
+  assert.ok(sw.includes("'js/portfolio-gallery.js'"));
+  for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
+  assert.ok(source.includes('stopImmediatePropagation'));
+  assert.ok(source.includes('returnFocus.focus()'));
+});
