@@ -85,11 +85,18 @@
         }
     }, true);
 
-    viewer.addEventListener('touchstart', event => { touchStart = event.changedTouches[0]?.clientX ?? null; }, { passive: true });
+    viewer.addEventListener('touchstart', event => {
+        const touch = event.changedTouches[0];
+        touchStart = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    }, { passive: true });
     viewer.addEventListener('touchend', event => {
         if (touchStart === null) return;
-        const diff = (event.changedTouches[0]?.clientX ?? touchStart) - touchStart;
+        const touch = event.changedTouches[0];
+        const dx = touch ? touch.clientX - touchStart.x : 0;
+        const dy = touch ? touch.clientY - touchStart.y : 0;
         touchStart = null;
-        if (Math.abs(diff) > 65) move(diff > 0 ? -1 : 1);
+        // A vertical scroll or diagonal gesture must not change screenshots.
+        if (Math.abs(dx) > 65 && Math.abs(dx) > Math.abs(dy) * 1.3) move(dx > 0 ? -1 : 1);
     }, { passive: true });
+    viewer.addEventListener('touchcancel', () => { touchStart = null; }, { passive: true });
 })();
