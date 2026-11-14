@@ -565,3 +565,19 @@
 .schedule-agenda-item small { color:var(--text-secondary);font-size:11px; }
 .schedule-kind { color:var(--accent);font-size:10px;text-transform:uppercase;font-weight:800; }
 @media(max-width:600px) { .schedule-calendar { padding:12px; }.schedule-heading { align-items:stretch; }.schedule-controls { justify-content:space-between; }.schedule-controls strong { min-width:0; }.schedule-weekdays,.schedule-grid { gap:3px; }.schedule-day { min-height:43px;padding:5px 3px;font-size:11px;flex-direction:column; }.schedule-day small { min-width:16px;height:15px;font-size:9px; } }
+.schedule-filters { display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px; }
+.schedule-filters label { display:grid;gap:5px;flex:1 1 180px;font-size:11px;color:var(--text-secondary); }
+.schedule-filters select { width:100%;min-width:0;min-height:36px;border:1px solid var(--border-color);border-radius:9px;padding:5px 9px;color:var(--text-primary);background:var(--bg-primary); }
+.schedule-day.is-overdue { border-color:var(--color-danger-border);background:var(--color-danger-bg); }
+.schedule-day.is-overdue small { background:var(--color-danger); }
+.schedule-agenda-item.is-overdue { border-color:var(--color-danger-border); }
+.schedule-agenda-item.is-overdue .schedule-kind { color:var(--color-danger); }
+.schedule-upcoming { margin-top:16px;padding-top:13px;border-top:1px solid var(--border-color); }
+.schedule-upcoming h4 { font-size:13px;color:var(--text-primary);margin:0 0 10px; }
+.schedule-upcoming-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:7px; }
+.schedule-upcoming-item { display:flex;gap:10px;align-items:center;text-align:left;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);padding:9px;color:var(--text-primary);cursor:pointer;min-width:0; }
+.schedule-upcoming-item:hover,.schedule-upcoming-item:focus-visible { border-color:var(--accent); }
+.schedule-upcoming-item time { color:var(--accent);font-size:11px;font-weight:800;white-space:nowrap; }
+.schedule-upcoming-item>span { display:grid;min-width:0;gap:3px; }
+.schedule-upcoming-item strong,.schedule-upcoming-item small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.schedule-upcoming-item strong { font-size:12px; }.schedule-upcoming-item small { color:var(--text-secondary);font-size:10px; }
