@@ -101,6 +101,33 @@
     let previousFocus = null;
     let wasOpen = false;
     let backgroundInert = [];
+    let sectionScrollFrame = null;
+
+    function syncActiveSection() {
+        if (!wasOpen) return;
+        const buttons = Array.from(content.querySelectorAll('.showcase-section-link'));
+        const sectionIds = ['showcase-overview', 'showcase-media', 'showcase-process', 'showcase-progress', 'showcase-more'];
+        const top = shell.getBoundingClientRect().top + 125;
+        let activeId = sectionIds[0];
+        sectionIds.forEach(id => {
+            const section = content.querySelector(`#${id}`);
+            if (section && section.getBoundingClientRect().top <= top) activeId = id;
+        });
+        buttons.forEach(button => {
+            const active = button.dataset.section === activeId;
+            button.classList.toggle('is-active', active);
+            if (active) button.setAttribute('aria-current', 'location');
+            else button.removeAttribute('aria-current');
+        });
+    }
+
+    shell.addEventListener('scroll', () => {
+        if (!wasOpen || sectionScrollFrame !== null) return;
+        sectionScrollFrame = requestAnimationFrame(() => {
+            sectionScrollFrame = null;
+            syncActiveSection();
+        });
+    }, { passive: true });
 
     function isolateShowcase() {
         backgroundInert = Array.from(shell.parentElement.children)
@@ -133,6 +160,7 @@
         sections.forEach(([label, id]) => {
             const button = node('button', 'showcase-section-link', label);
             button.type = 'button';
+            button.dataset.section = id;
             button.addEventListener('click', () => content.querySelector(`#${id}`)?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }));
             sectionNav.append(button);
         });
@@ -247,7 +275,7 @@
                 grid.append(link);
             });
             section.append(grid);
-            content.append(header, sectionNav, section, main, loop, journey, related);
+            content.append(header, sectionNav, main, section, loop, journey, related);
         } else {
             const section = node('section', 'showcase-gallery showcase-media-pending');
             section.id = 'showcase-media';
@@ -270,6 +298,10 @@
         if (!project) {
             document.title = portfolioTitle;
             if (wasOpen) {
+                if (sectionScrollFrame !== null) {
+                    cancelAnimationFrame(sectionScrollFrame);
+                    sectionScrollFrame = null;
+                }
                 shell.hidden = true;
                 document.body.classList.remove('showcase-open');
                 restoreBackground();
@@ -288,6 +320,7 @@
         document.body.classList.add('showcase-open');
         wasOpen = true;
         shell.scrollTop = 0;
+        syncActiveSection();
         document.getElementById('showcaseBack').focus();
     }
 
