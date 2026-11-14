@@ -112,6 +112,10 @@ body { background: #090b12; }
 .vercel-access { display:inline-flex;align-items:center;gap:8px;color:#b7a894;font-size:.72rem;letter-spacing:.03em; }
 .web-project-footnote { color:#9c99ab;font-size:.85rem;margin-top:26px;line-height:1.7; }
 .web-project-footnote i { margin-right:7px;color:#d8bc92; }
+.github-live-meta { display:block;margin:0 30px 24px;color:#b9c8bb;font-size:.73rem;letter-spacing:.01em;line-height:1.5; }
+.web-project-card .github-live-meta { margin:0 0 15px;color:#a8c7bd; }
+.github-live-meta[hidden],.github-detail-meta[hidden] { display:none!important; }
+.github-detail-meta { margin-top:23px;padding-top:18px;border-top:1px solid #3a3545;color:#b1c8ba!important;font-size:.83rem; }
 @media(max-width:700px){.web-projects-section{padding:80px 0}.web-projects-grid{grid-template-columns:1fr}.web-project-card{padding:27px}.web-project-card p{min-height:0}}
 @media(max-width:700px){.showcase-shell{padding-top:20px;padding-bottom:60px}.showcase-back{margin-bottom:35px}.showcase-columns{grid-template-columns:1fr;gap:35px;padding-top:45px}.showcase-aside{padding:27px}.showcase-concept{left:18px;bottom:16px}.showcase-header{margin-bottom:30px}}
 @media(max-width:991px){.hero-section .min-vh-100{min-height:unset!important;padding-top:130px}.portfolio-orbit{max-width:370px;margin-top:40px}.portfolio-section-heading{display:block}.portfolio-section-heading>p{margin-top:22px}.featured-grid{gap:15px}.about-grid{gap:30px}}

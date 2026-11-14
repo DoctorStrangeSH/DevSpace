@@ -58,3 +58,15 @@ test('Vercel projects are represented without leaking private source links', () 
   assert.ok(html.includes('Доступ может требовать входа'));
   assert.ok(!html.includes('github.com/DoctorStrangeSH/WanderersOrder'));
 });
+
+test('GitHub live metadata is allowlisted, optional and token-free', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(html.includes('src="js/github-metadata.js"'));
+  assert.ok(worker.includes("'js/github-metadata.js'"));
+  assert.ok(source.includes('value.private !== false'));
+  assert.ok(source.includes('value.full_name !=='));
+  assert.ok(source.includes('sessionStorage'));
+  assert.doesNotMatch(source, /WanderersOrder|SUPABASE_SERVICE_ROLE_KEY|Authorization:\s*['"`]/);
+});
