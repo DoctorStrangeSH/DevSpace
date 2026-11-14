@@ -242,3 +242,14 @@ test('featured cards use a genuine Skyward image and keyboard-visible focus', ()
   assert.ok(css.includes('.feature-art.art-ritual::before'));
   assert.ok(css.includes('.feature-art.art-work::before'));
 });
+
+test('project stories offer accessible links to the other three projects', () => {
+  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(stories.includes("related.setAttribute('aria-label', 'Другие проекты')"));
+  assert.ok(stories.includes("entry !== project"));
+  assert.ok(stories.includes('card.href = `#project/${slug}`'));
+  assert.ok(stories.includes('journey, related'));
+  assert.ok(css.includes('.showcase-related-card:focus-visible'));
+  assert.ok(css.includes('.showcase-related-grid{grid-template-columns:1fr}'));
+});
