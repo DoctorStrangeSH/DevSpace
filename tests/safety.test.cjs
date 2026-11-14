@@ -383,13 +383,23 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.12 cache, HTML fallback and visible application version are aligned', () => {
+test('3.13 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.12.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.12'"));
-  assert.ok(html.includes('id="appVersion">v3.12.0</span>'));
+  assert.ok(app.includes("version: '3.13.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.13'"));
+  assert.ok(html.includes('id="appVersion">v3.13.0</span>'));
+});
+
+test('featured portfolio cards expose a consistent visible action and flexible content', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.equal((html.match(/class="feature-open" aria-hidden="true"/g) || []).length, 4);
+  assert.ok(css.includes('.feature-card .feature-copy { display:flex;flex:1;flex-direction:column; }'));
+  assert.ok(css.includes('.feature-card .feature-tags { margin-top:auto;'));
+  assert.ok(css.includes('.feature-card:focus-visible .feature-open i'));
+  assert.ok(css.includes('@media (max-width: 670px)'));
 });
 
 test('gallery failure provides a visible accessible fallback and mobile image keeps its width', () => {
