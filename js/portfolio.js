@@ -10,6 +10,11 @@
             focus: ['Летающие острова, мосты и исследование мира', 'Два героя с боевыми анимациями в восьми направлениях', 'Магия, ресурсы, выращивание растений и развитие поселения'],
             status: 'Активная разработка', stack: ['Godot', 'GDScript', 'Pixel art', 'RPG'],
             repository: 'Skyward-Tales', next: 'Развитие островов, анимаций и игрового цикла.',
+            journey: [
+                ['ЗАМЫСЕЛ', 'Большая фэнтези-RPG о путешествиях между летающими островами.'],
+                ['В РАБОТЕ', 'Первый остров, единый стиль окружения и наборы анимаций двух героев.'],
+                ['ДАЛЬШЕ', 'Связать исследование мира, магию и развитие поселения в цельное приключение.']
+            ],
             gallery: [
                 { file: 'greenreach_village.png', caption: 'Поселение Зелёные пределы' },
                 { file: 'greenreach_waterfall.png', caption: 'Кромка острова и водопад' },
@@ -22,7 +27,12 @@
             intro: 'Разрабатываю настольного ассистента для многовкладочной работы с сервисами и документами. Моя цель — понятный интерфейс и наблюдаемая автоматизация без бесконечной ручной настройки.',
             focus: ['Работа с браузером и несколькими источниками данных', 'Анализ заказов, таблиц и рабочих систем', 'Прозрачный прогресс выполнения и контроль пользователя'],
             status: 'Прототип и отладка', stack: ['Python', 'Desktop', 'Browser integration', 'AI'],
-            repository: 'WorkPilot', next: 'Надёжный сквозной сценарий обработки заказа.'
+            repository: 'WorkPilot', next: 'Надёжный сквозной сценарий обработки заказа.',
+            journey: [
+                ['ЗАМЫСЕЛ', 'Настольный помощник, работающий с открытыми сервисами пользователя.'],
+                ['В РАБОТЕ', 'Подключение таблиц, браузерных вкладок и рабочего процесса проверки заказов.'],
+                ['ДАЛЬШЕ', 'Подтвердить полный разбор заказа через все необходимые источники.']
+            ]
         },
         'ghost-signal': {
             title: 'Ghost Signal', eyebrow: '03 / НАРРАТИВНЫЙ ДЕТЕКТИВ', symbol: '⌁', art: 'ghost',
@@ -30,7 +40,12 @@
             intro: 'Детективный проект, где важен не только ответ на загадку, но и путь к нему. Свидетели могут ошибаться, пересказывать чужие слова и менять отношение к расследованию.',
             focus: ['Память и доверие персонажей', 'Источники показаний и проверка слухов', 'Обещания, последствия и альтернативные исходы'],
             status: 'Активный рефакторинг', stack: ['JavaScript', 'Narrative design', 'Game systems'],
-            repository: 'GhostSignal', next: 'Более глубокая логика расследований и реакций NPC.'
+            repository: 'GhostSignal', next: 'Более глубокая логика расследований и реакций NPC.',
+            journey: [
+                ['ЗАМЫСЕЛ', 'Расследование, в котором свидетельские слова не равны установленным фактам.'],
+                ['В РАБОТЕ', 'Память свидетелей, происхождение слухов, обещания и последствия решений.'],
+                ['ДАЛЬШЕ', 'Развить правдоподобные реакции персонажей и цену ошибок детектива.']
+            ]
         },
         'last-ritual': {
             title: 'Last Ritual', eyebrow: '04 / STRATEGY × ROGUELIKE', symbol: '✺', art: 'ritual',
@@ -38,7 +53,12 @@
             intro: 'Смешиваю тактику обороны крепости и ночные вылазки в подземелья. Цель — создать напряжённый забег, где каждое улучшение и рискованное решение меняют шансы на успех.',
             focus: ['Дневная оборона с меняющимися путями и местами башен', 'Ночные комнаты и исследование в духе roguelike', 'Развитие башен, специализации и разнообразные враги'],
             status: 'Активная разработка', stack: ['Godot', 'GDScript', 'Tower defense', 'Roguelike'],
-            repository: 'Last-Ritual', next: 'Баланс волн, процедурные карты и продолжительность забегов.'
+            repository: 'Last-Ritual', next: 'Баланс волн, процедурные карты и продолжительность забегов.',
+            journey: [
+                ['ЗАМЫСЕЛ', 'Пять дней обороны крепости чередуются с ночными вылазками.'],
+                ['В РАБОТЕ', 'Башни, специализации, изменяющиеся маршруты и структура забегов.'],
+                ['ДАЛЬШЕ', 'Сделать каждый забег длиннее, разнообразнее и интереснее тактически.']
+            ]
         }
     };
 
@@ -89,6 +109,18 @@
         link.rel = 'noopener noreferrer';
         aside.append(link);
         main.append(story, aside);
+        const journey = node('section', 'showcase-journey');
+        journey.setAttribute('aria-label', 'Путь развития проекта');
+        journey.append(node('span', 'portfolio-kicker', 'ПУТЬ ПРОЕКТА'));
+        journey.append(node('h2', '', 'От идеи к следующему этапу'));
+        const journeyGrid = node('div', 'showcase-journey-grid');
+        project.journey.forEach((entry, index) => {
+            const step = node('article', 'showcase-journey-step');
+            step.append(node('span', 'showcase-journey-index', `0${index + 1} / ${entry[0]}`));
+            step.append(node('p', '', entry[1]));
+            journeyGrid.append(step);
+        });
+        journey.append(journeyGrid);
         if (project.gallery && project.repository === 'Skyward-Tales') {
             const section = node('section', 'showcase-gallery');
             section.setAttribute('aria-label', 'Скриншоты игры');
@@ -107,9 +139,9 @@
                 grid.append(link);
             });
             section.append(grid);
-            content.append(header, section, main);
+            content.append(header, section, main, journey);
         } else {
-            content.append(header, art, main);
+            content.append(header, art, main, journey);
         }
     }
 
