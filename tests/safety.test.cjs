@@ -230,3 +230,15 @@ test('conceptual project artwork is distinct and never mislabelled as gameplay',
   assert.ok(source.includes('КОНЦЕПТУАЛЬНАЯ ОБЛОЖКА'));
   assert.ok(source.includes('coverTagline'));
 });
+
+test('featured cards use a genuine Skyward image and keyboard-visible focus', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  assert.ok(html.includes('class="feature-art art-sky feature-art-screenshot"'));
+  assert.ok(html.includes('Skyward-Tales/main/docs/screenshots/greenreach_village.png'));
+  assert.ok(html.includes('РЕАЛЬНЫЙ КАДР · SKYWARD TALES'));
+  assert.ok(css.includes('.feature-card:focus-visible'));
+  assert.ok(css.includes('.feature-art.art-ghost::before'));
+  assert.ok(css.includes('.feature-art.art-ritual::before'));
+  assert.ok(css.includes('.feature-art.art-work::before'));
+});
