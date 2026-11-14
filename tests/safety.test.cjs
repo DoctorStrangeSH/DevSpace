@@ -35,10 +35,16 @@ test('sync never uploads a visitor’s local projects', async () => {
 
 test('featured projects are accessible links and GitHub Pages cache is scoped', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
   for (const repo of ['Skyward-Tales', 'Last-Ritual', 'GhostSignal', 'WorkPilot']) {
-    assert.ok(html.includes(`https://github.com/DoctorStrangeSH/${repo}`));
+    assert.ok(stories.includes(`repository: '${repo}'`));
   }
+  for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
+    assert.ok(html.includes(`href="#project/${slug}"`));
+  }
+  assert.ok(html.includes('<script src="js/portfolio.js"></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
+  assert.ok(worker.includes("'js/portfolio.js'"));
   assert.doesNotMatch(worker, /^\s*'\/index\.html'/m);
 });

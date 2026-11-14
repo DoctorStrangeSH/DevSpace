@@ -70,6 +70,32 @@ body { background: #090b12; }
 .contact-panel p { color:#b7b2c3;margin:25px 0 30px; }
 #projects { border-top:1px solid #282735; }
 .tracker-note { padding:14px 18px;border:1px solid #52432f;border-radius:12px;background:rgba(204,160,91,.08);color:#d8c7ae;font-size:.86rem;line-height:1.6;margin:0 0 28px; }
+/* Full project stories */
+.project-showcase[hidden] { display:none!important; }
+.showcase-open { overflow:hidden; }
+.project-showcase { position:fixed;inset:0;z-index:1500;overflow-y:auto;overscroll-behavior:contain;background:#0b0c15;color:#eae8ed;animation:fadeIn .2s ease; }
+.showcase-shell { padding-top:48px;padding-bottom:100px;max-width:1100px; }
+.showcase-back { display:inline-flex;align-items:center;color:#d7c3a9;text-decoration:none;font-size:.9rem;padding:12px 0;margin-bottom:60px; }
+.showcase-back:hover,.showcase-back:focus-visible { color:#fff; }
+.showcase-header { max-width:940px;margin-bottom:48px; }
+.showcase-header h1 { font-size:clamp(3.2rem,9vw,7.5rem);line-height:1.02;letter-spacing:-.075em;font-weight:850;margin:0 0 20px;color:#f5f0e9; }
+.showcase-tagline { font-size:clamp(1.2rem,2.5vw,1.9rem);line-height:1.5;color:#bbb1c4;max-width:800px; }
+.showcase-art { height:clamp(230px,35vw,420px);border:1px solid rgba(231,218,203,.15);border-radius:24px;position:relative;display:grid;place-items:center;overflow:hidden; }
+.showcase-symbol { font-size:clamp(8rem,23vw,17rem);line-height:1;color:#e6d3c7;text-shadow:0 0 90px rgba(232,209,195,.2); }
+.showcase-concept { position:absolute;bottom:24px;left:30px;color:#dbced3;letter-spacing:.15em;font-size:.67rem; }
+.showcase-columns { display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:clamp(30px,8vw,110px);padding-top:75px; }
+.showcase-intro { color:#bfc0ce;line-height:1.9;font-size:1.12rem; }
+.showcase-story h2 { font-size:2rem;color:#eee9ef;letter-spacing:-.04em;margin:46px 0 22px; }
+.showcase-list { list-style:none;padding:0;margin:0; }
+.showcase-list li { border-top:1px solid #363441;padding:16px 0 16px 27px;position:relative;color:#b9b9c9;line-height:1.65; }
+.showcase-list li::before { content:'✦';position:absolute;left:0;color:#c4ad8e; }
+.showcase-aside { background:#171823;border:1px solid #31303c;border-radius:20px;padding:35px;height:max-content; }
+.showcase-aside-label { color:#a69bb2;letter-spacing:.16em;font-size:.68rem;margin:14px 0 9px; }
+.showcase-aside p { color:#dfd8e2;margin-bottom:30px;line-height:1.6; }
+.showcase-aside .about-pills { margin:4px 0 30px; }
+.showcase-repo { display:block;background:#e1cdb5;border-radius:11px;padding:15px 18px;text-align:center;color:#17131b;font-weight:700;text-decoration:none;margin-top:27px; }
+.showcase-repo:hover { background:#f0dec7;color:#17131b; }
+@media(max-width:700px){.showcase-shell{padding-top:20px;padding-bottom:60px}.showcase-back{margin-bottom:35px}.showcase-columns{grid-template-columns:1fr;gap:35px;padding-top:45px}.showcase-aside{padding:27px}.showcase-concept{left:18px;bottom:16px}.showcase-header{margin-bottom:30px}}
 @media(max-width:991px){.hero-section .min-vh-100{min-height:unset!important;padding-top:130px}.portfolio-orbit{max-width:370px;margin-top:40px}.portfolio-section-heading{display:block}.portfolio-section-heading>p{margin-top:22px}.featured-grid{gap:15px}.about-grid{gap:30px}}
 @media(max-width:670px){.featured-grid,.about-grid{grid-template-columns:1fr}.featured-section,.about-section{padding:80px 0}.hero-section .hero-title{font-size:clamp(3.1rem,12vw,4.5rem)}.feature-art,.feature-large .feature-art{height:210px}.feature-copy{padding:23px}.portfolio-more{align-items:flex-start;flex-direction:column}.contact-panel{padding:55px 28px}.hero-specialties{gap:9px;font-size:.59rem}.hero-specialties span:not(:last-child)::after{margin-left:9px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.feature-card,.hero-section .btn-gradient{transition:none}}
