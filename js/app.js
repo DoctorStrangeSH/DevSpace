@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.21.0',
+        version: '3.22.0',
         debug: false
     },
 
@@ -188,7 +188,10 @@ var App = {
                 btn.style.opacity = s ? '1' : '0';
                 btn.style.pointerEvents = s ? 'all' : 'none';
             });
-            btn.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+            btn.addEventListener('click', function () {
+                var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                window.scrollTo({ top: 0, behavior: reduceMotion ? 'instant' : 'smooth' });
+            });
         }
 
         window.addEventListener('scroll', Helpers.throttle(function () {
@@ -198,15 +201,9 @@ var App = {
 
         document.querySelector('.scroll-to-projects')?.addEventListener('click', function (e) {
             e.preventDefault();
-            document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth' });
+            var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            document.getElementById('projects')?.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth' });
             if (typeof RendererModule !== 'undefined') RendererModule._switchTab('projects');
-        });
-
-        document.addEventListener('keydown', function (e) {
-            if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                if (AuthService?.isOwner()) new bootstrap.Modal(document.getElementById('projectModal')).show();
-            }
         });
 
         var v = document.getElementById('appVersion');
