@@ -218,3 +218,15 @@ test('installed DevSpace keeps its scope, supports rotation and exposes quick li
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   for (const anchor of ['featured', 'web-projects']) assert.ok(html.includes(`id="${anchor}"`));
 });
+
+test('conceptual project artwork is distinct and never mislabelled as gameplay', () => {
+  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  for (const theme of ['work', 'ghost', 'ritual']) {
+    assert.ok(css.includes(`.showcase-art.art-${theme}::before`));
+    assert.ok(css.includes(`.showcase-art.art-${theme} .showcase-symbol`));
+  }
+  assert.ok(source.includes('Декоративная концептуальная иллюстрация проекта'));
+  assert.ok(source.includes('КОНЦЕПТУАЛЬНАЯ ОБЛОЖКА'));
+  assert.ok(source.includes('coverTagline'));
+});
