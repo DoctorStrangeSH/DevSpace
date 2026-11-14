@@ -29,6 +29,13 @@ var RendererModule = {
         var self = this;
         var focus = document.getElementById('focusPanel');
         if (focus) focus.addEventListener('click', function(event) {
+            var complete = event.target.closest('[data-focus-complete]');
+            if (complete) {
+                if (typeof ChecklistModule !== 'undefined') {
+                    ChecklistModule.toggleItem(complete.dataset.focusProjectId, complete.dataset.focusComplete);
+                }
+                return;
+            }
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
         });
@@ -118,16 +125,19 @@ var RendererModule = {
             pinned.forEach(function(project) {
                 var tasks = Array.isArray(project.checklist) ? project.checklist : [];
                 tasks.filter(function(task) { return !task.completed && task.text; }).slice(0, 2).forEach(function(task) {
-                    upcoming.push({ project: project, text: task.text });
+                    upcoming.push({ project: project, text: task.text, id: task.id });
                 });
             });
             taskArea.hidden = upcoming.length === 0;
             if (taskCount) taskCount.textContent = '(' + upcoming.length + ')';
             taskList.innerHTML = upcoming.slice(0, 8).map(function(item) {
-                return '<button type="button" class="focus-task" data-focus-project="' + Helpers.escapeHtml(String(item.project.id)).replace(/"/g, '&quot;') + '">' +
-                    '<span class="focus-task-check" aria-hidden="true"><i class="bi bi-circle"></i></span>' +
+                var projectId = Helpers.escapeHtml(String(item.project.id)).replace(/"/g, '&quot;');
+                var taskId = item.id == null ? null : Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
+                var markDone = taskId === null ? '' : '<button type="button" class="focus-task-check" data-focus-project-id="' + projectId + '" data-focus-complete="' + taskId + '" aria-label="Отметить выполненной: ' + Helpers.escapeHtml(item.text).replace(/"/g, '&quot;') + '" title="Отметить выполненной"><i class="bi bi-circle" aria-hidden="true"></i></button>';
+                return '<div class="focus-task">' + markDone +
+                    '<button type="button" class="focus-task-open" data-focus-project="' + projectId + '">' +
                     '<span class="focus-task-text">' + Helpers.escapeHtml(item.text) + '</span>' +
-                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button>';
+                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span><i class="bi bi-chevron-right" aria-hidden="true"></i></button></div>';
             }).join('') + (upcoming.length > 8 ? '<p class="focus-task-more">Ещё задач: ' + (upcoming.length - 8) + '</p>' : '');
         }
     },
