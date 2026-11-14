@@ -40,6 +40,11 @@ var RendererModule = {
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
         });
         if (focus) focus.addEventListener('change', function(event) {
+            var deadline = event.target.closest('[data-focus-deadline]');
+            if (deadline && typeof ChecklistModule !== 'undefined') {
+                ChecklistModule.setDeadline(deadline.dataset.focusProjectId, deadline.dataset.focusDeadline, deadline.value);
+                return;
+            }
             var priority = event.target.closest('[data-focus-priority]');
             if (priority && typeof ChecklistModule !== 'undefined') {
                 ChecklistModule.setPriority(priority.dataset.focusProjectId, priority.dataset.focusPriority, priority.value);
@@ -103,6 +108,10 @@ var RendererModule = {
         var taskArea = document.getElementById('focusTaskArea');
         var taskList = document.getElementById('focusTaskList');
         var taskCount = document.getElementById('focusTaskCount');
+        var deadlineSummary = document.getElementById('focusDeadlineSummary');
+        var weekArea = document.getElementById('focusWeekArea');
+        var weekList = document.getElementById('focusWeekList');
+        var weekCount = document.getElementById('focusWeekCount');
         if (!panel || !container) return;
         var all = StateManager.get('projects') || [];
         var byId = {};
@@ -113,6 +122,9 @@ var RendererModule = {
             container.innerHTML = '';
             if (taskArea) taskArea.hidden = true;
             if (taskList) taskList.innerHTML = '';
+            if (deadlineSummary) deadlineSummary.hidden = true;
+            if (weekArea) weekArea.hidden = true;
+            if (weekList) weekList.innerHTML = '';
             return;
         }
         container.innerHTML = pinned.slice(0, 4).map(function(project) {
@@ -131,11 +143,32 @@ var RendererModule = {
             pinned.forEach(function(project) {
                 var tasks = Array.isArray(project.checklist) ? project.checklist : [];
                 tasks.filter(function(task) { return !task.completed && task.text; }).forEach(function(task) {
-                    upcoming.push({ project: project, text: task.text, id: task.id, priority: task.priority || 'normal' });
+                    upcoming.push({ project: project, text: task.text, id: task.id, priority: task.priority || 'normal', deadline: task.deadline || '' });
                 });
             });
+            var now = new Date();
+            var localDate = function(date) { return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0'); };
+            var today = localDate(now);
+            var weekEndDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6);
+            var weekEnd = localDate(weekEndDate);
             var rank = { high: 0, normal: 1, low: 2 };
-            upcoming.sort(function(a, b) { return (rank[a.priority] == null ? 1 : rank[a.priority]) - (rank[b.priority] == null ? 1 : rank[b.priority]); });
+            upcoming.sort(function(a, b) {
+                var priorityDifference = (rank[a.priority] == null ? 1 : rank[a.priority]) - (rank[b.priority] == null ? 1 : rank[b.priority]);
+                return priorityDifference || (a.deadline || '9999-12-31').localeCompare(b.deadline || '9999-12-31');
+            });
+            var overdue = upcoming.filter(function(task) { return task.deadline && task.deadline < today; }).length;
+            var thisWeek = upcoming.filter(function(task) { return task.deadline && task.deadline >= today && task.deadline <= weekEnd; });
+            if (deadlineSummary) {
+                deadlineSummary.hidden = overdue === 0 && thisWeek.length === 0;
+                deadlineSummary.textContent = (overdue ? '⚠️ Просрочено: ' + overdue + ' · ' : '') + '📅 На ближайшие 7 дней: ' + thisWeek.length;
+            }
+            if (weekArea && weekList) {
+                weekArea.hidden = thisWeek.length === 0;
+                if (weekCount) weekCount.textContent = '(' + thisWeek.length + ')';
+                weekList.innerHTML = thisWeek.slice().sort(function(a, b) { return a.deadline.localeCompare(b.deadline); }).slice(0, 7).map(function(task) {
+                    return '<button type="button" class="focus-week-item" data-focus-project="' + Helpers.escapeHtml(String(task.project.id)).replace(/"/g, '&quot;') + '"><time datetime="' + task.deadline + '">' + task.deadline.split('-').reverse().slice(0, 2).join('.') + '</time><span>' + Helpers.escapeHtml(task.text) + '</span><small>' + Helpers.escapeHtml(task.project.name || 'Без названия') + '</small></button>';
+                }).join('');
+            }
             taskArea.hidden = upcoming.length === 0;
             if (taskCount) taskCount.textContent = '(' + upcoming.length + ')';
             taskList.innerHTML = upcoming.slice(0, 8).map(function(item) {
@@ -147,10 +180,13 @@ var RendererModule = {
                     '<option value="high"' + (priority === 'high' ? ' selected' : '') + '>🔴 Высокий</option>' +
                     '<option value="normal"' + (priority === 'normal' ? ' selected' : '') + '>🟡 Обычный</option>' +
                     '<option value="low"' + (priority === 'low' ? ' selected' : '') + '>🟢 Низкий</option></select>';
-                return '<div class="focus-task">' + markDone +
+                var validDeadline = /^\d{4}-\d{2}-\d{2}$/.test(item.deadline) ? item.deadline : '';
+                var due = taskId === null ? '' : '<input type="date" class="focus-task-date" data-focus-project-id="' + projectId + '" data-focus-deadline="' + taskId + '" value="' + validDeadline + '" aria-label="Срок задачи: ' + Helpers.escapeHtml(item.text).replace(/"/g, '&quot;') + '" title="Установить или убрать срок задачи">';
+                var late = validDeadline && validDeadline < today;
+                return '<div class="focus-task' + (late ? ' focus-task-overdue' : '') + '">' + markDone +
                     '<button type="button" class="focus-task-open" data-focus-project="' + projectId + '">' +
                     '<span class="focus-task-text">' + Helpers.escapeHtml(item.text) + '</span>' +
-                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span></button>' + select + '</div>';
+                    '<span class="focus-task-source">' + Helpers.escapeHtml(item.project.name || 'Без названия') + '</span></button><span class="focus-task-actions">' + select + due + '</span></div>';
             }).join('') + (upcoming.length > 8 ? '<p class="focus-task-more">Ещё задач: ' + (upcoming.length - 8) + '</p>' : '');
         }
     },
