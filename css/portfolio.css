@@ -241,6 +241,7 @@ body { background: #090b12; }
 .portfolio-viewer-open { overflow:hidden; }
 .portfolio-gallery-viewer { position:fixed;inset:0;z-index:2500;background:rgba(5,6,13,.97);color:#f3eef4;display:flex;flex-direction:column;align-items:center;padding:18px clamp(12px,3vw,40px) 28px; }
 .portfolio-gallery-toolbar { display:flex;justify-content:space-between;align-items:center;width:100%;max-width:1480px;gap:20px;font-size:.84rem;letter-spacing:.12em;color:#c9c2d4; }
+.portfolio-gallery-swipe-hint { display:none;color:#d8c5ae;font-size:.72rem;letter-spacing:.03em; }
 .portfolio-gallery-viewer button { color:#f2e8ef;border:1px solid #545064;background:#232333;border-radius:50%;height:44px;width:44px;display:grid;place-items:center;cursor:pointer; }
 .portfolio-gallery-viewer button:hover,.portfolio-gallery-viewer button:focus-visible { background:#4a405d;outline-color:#d9bc9b; }
 .portfolio-gallery-viewer button:disabled { opacity:.3;cursor:not-allowed; }
@@ -252,6 +253,7 @@ body { background: #090b12; }
 .portfolio-gallery-unavailable { max-width:540px;padding:24px;border:1px dashed #88798d;border-radius:16px;background:#202030;color:#e5d7df;text-align:center;line-height:1.7; }
 #portfolioGalleryOriginal { color:#e4cba9;text-decoration:none;font-size:.83rem;margin:0 auto; }
 @media(max-width:700px){.portfolio-gallery-viewer{padding:12px 8px max(20px,env(safe-area-inset-bottom))}.portfolio-gallery-stage{grid-template-columns:44px minmax(0,1fr) 44px;gap:3px}.portfolio-gallery-viewer button{width:44px;height:44px}.portfolio-gallery-stage img{max-height:65dvh}.portfolio-gallery-stage figcaption{font-size:.8rem;margin-top:12px}#portfolioGalleryOriginal{padding:12px}}
+@media(max-width:700px){.portfolio-gallery-swipe-hint{display:inline}.portfolio-gallery-stage figure{touch-action:pan-y pinch-zoom}}
 @media (max-width: 700px) {
     .portfolio-gallery-stage { position:relative;display:flex;justify-content:center;align-items:center;padding:8px 0 62px; }
     .portfolio-gallery-stage figure { width:100%; }
