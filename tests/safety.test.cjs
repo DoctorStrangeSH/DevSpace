@@ -306,3 +306,16 @@ test('project stories expose keyboard-friendly local section navigation with gra
   assert.ok(css.includes('.showcase-section-link:focus-visible'));
   assert.ok(css.includes('.showcase-gallery-unavailable'));
 });
+
+test('nested project and image dialogs isolate background content and restore prior inert state', () => {
+  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
+  const gallery = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  for (const source of [stories, gallery]) {
+    assert.ok(source.includes('backgroundInert'));
+    assert.ok(source.includes('element.inert = true'));
+    assert.ok(source.includes('element.inert = inert'));
+    assert.ok(source.includes('restoreBackground()'));
+  }
+  assert.ok(stories.includes('isolateShowcase()'));
+  assert.ok(gallery.includes('isolateViewer()'));
+});
