@@ -1,8 +1,9 @@
 {
     "name": "DevSpace - Портфолио разработчика",
     "short_name": "DevSpace",
-    "description": "Трекер проектов с чек-листами и заметками",
-    "start_url": "/",
+    "description": "Игры, AI-инструменты и веб-проекты Sherlock — цифровое портфолио разработчика",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
     "orientation": "portrait-primary",
     "background_color": "#0a0a0a",
