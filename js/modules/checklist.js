@@ -53,6 +53,20 @@ var ChecklistModule = {
         return true;
     },
 
+    setDeadline: function(projectId, itemId, deadline) {
+        if (deadline && (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project) return false;
+        var task = (project.checklist || []).find(function(item) { return String(item.id) === String(itemId); });
+        if (!task) return false;
+        if ((task.deadline || '') === deadline) return true;
+        if (deadline) task.deadline = deadline;
+        else delete task.deadline;
+        StateManager.updateProject(projectId, { checklist: project.checklist });
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
+        return true;
+    },
+
     addItem: function(projectId, text) {
         var project = StateManager.getProject(projectId);
         if (!project) return null;
