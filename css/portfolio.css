@@ -171,6 +171,7 @@ body { background: #090b12; }
 .github-live-meta[hidden],.github-detail-meta[hidden] { display:none!important; }
 .github-detail-meta { margin-top:23px;padding-top:18px;border-top:1px solid #3a3545;color:#b1c8ba!important;font-size:.83rem; }
 .showcase-gallery { margin:15px 0 5px; }
+.showcase-gallery-note { color:#bab5c4;font-size:.88rem;line-height:1.7;max-width:680px;margin:8px 0 20px; }
 .showcase-gallery-grid,.web-visual-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
 .showcase-gallery-item,.web-visual-grid a { display:block;border:1px solid #3b3b4a;border-radius:16px;overflow:hidden;background:#191a29;text-decoration:none;color:#d8d2df;transition:transform .2s,border-color .2s; }
 .showcase-gallery-item:hover,.web-visual-grid a:hover { transform:translateY(-4px);border-color:#9d8ba8;color:#fff; }
