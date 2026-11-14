@@ -277,10 +277,11 @@ var ProjectDetailModule = {
 
     _renderRoadmap: function(project) {
         var stages = Array.isArray(project.milestones) ? project.milestones.filter(function(name) { return typeof name === 'string' && name.trim(); }) : [];
-        if (!stages.length) return '<p class="text-muted small">Пока нет этапов. Добавь их через «Редактировать проект» — поле «Этапы».</p>';
+        var owner = typeof AuthService === 'undefined' || AuthService.isOwner();
+        var createForm = owner ? '<form class="roadmap-create" data-roadmap-create><input name="stage" type="text" maxlength="100" required placeholder="Название нового этапа" aria-label="Название нового этапа"><button type="submit">+ Добавить этап</button></form>' : '';
+        if (!stages.length) return '<p class="text-muted small">Пока нет этапов дорожной карты.</p>' + createForm;
         var tasks = Array.isArray(project.checklist) ? project.checklist : [];
         var completedStages = Array.isArray(project.completedMilestones) ? project.completedMilestones : [];
-        var owner = typeof AuthService === 'undefined' || AuthService.isOwner();
         var escape = function(text) { return Helpers.escapeHtml(String(text)).replace(/"/g, '&quot;'); };
         return '<div class="roadmap-list">' + stages.map(function(stage, index) {
             var linked = tasks.filter(function(task) { return task.milestone === stage; });
@@ -291,9 +292,10 @@ var ProjectDetailModule = {
             return '<article class="roadmap-stage"><header><span class="roadmap-stage-number">' + (index + 1) + '</span><strong>' + Helpers.escapeHtml(stage) + '</strong><span class="roadmap-stage-status">' + status + '</span><span class="roadmap-stage-percent">' + percent + '%</span></header>' +
                 '<div class="roadmap-progress"><span style="width:' + percent + '%"></span></div>' +
                 (linked.length ? '<ul>' + linked.map(function(task) { return '<li>' + (task.completed ? '✅ ' : '◯ ') + Helpers.escapeHtml(task.text || '') + '</li>'; }).join('') + '</ul>' : '<p class="roadmap-empty">Задачи пока не привязаны</p>') +
+                (owner ? '<div class="roadmap-stage-actions"><button type="button" data-roadmap-move="up" data-roadmap-index="' + index + '" aria-label="Переместить этап вверх"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" data-roadmap-move="down" data-roadmap-index="' + index + '" aria-label="Переместить этап вниз"' + (index === stages.length - 1 ? ' disabled' : '') + '>↓</button></div>' : '') +
                 (owner && !linked.length ? '<button type="button" class="roadmap-stage-toggle" data-roadmap-stage="' + escape(stage) + '">' + (percent === 100 ? 'Вернуть в работу' : 'Отметить этап завершённым') + '</button>' : '') +
                 '</article>';
-        }).join('') + '</div>' +
+        }).join('') + '</div>' + createForm +
         (owner && tasks.length ? '<div class="roadmap-assign"><h5>Привязать задачи к этапам</h5>' + tasks.map(function(task) {
             if (task.id == null) return '';
             return '<label><span>' + Helpers.escapeHtml(task.text || 'Задача') + '</span><select data-roadmap-task="' + escape(task.id) + '" aria-label="Этап задачи: ' + escape(task.text || 'Задача') + '"><option value="">Без этапа</option>' + stages.map(function(stage) {
@@ -306,6 +308,33 @@ var ProjectDetailModule = {
         var body = document.getElementById('roadmapBody');
         var project = StateManager.getProject(projectId);
         if (body && project) body.innerHTML = this._renderRoadmap(project);
+    },
+
+    addRoadmapStage: function(projectId, value) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        var stage = typeof value === 'string' ? value.trim() : '';
+        if (!project || !stage || stage.length > 100) return false;
+        var stages = Array.isArray(project.milestones) ? project.milestones.slice() : [];
+        if (stages.length >= 60 || stages.some(function(item) { return String(item).toLocaleLowerCase() === stage.toLocaleLowerCase(); })) return false;
+        stages.push(stage);
+        StateManager.updateProject(projectId, { milestones: stages });
+        this._refreshRoadmap(projectId);
+        return true;
+    },
+
+    moveRoadmapStage: function(projectId, index, direction) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
+        var project = StateManager.getProject(projectId);
+        var stages = project && Array.isArray(project.milestones) ? project.milestones.slice() : [];
+        var next = direction === 'up' ? index - 1 : direction === 'down' ? index + 1 : -1;
+        if (!Number.isInteger(index) || index < 0 || next < 0 || next >= stages.length) return false;
+        var item = stages[index];
+        stages[index] = stages[next];
+        stages[next] = item;
+        StateManager.updateProject(projectId, { milestones: stages });
+        this._refreshRoadmap(projectId);
+        return true;
     },
 
     assignTaskStage: function(projectId, taskId, milestone) {
@@ -338,11 +367,19 @@ var ProjectDetailModule = {
         var section = document.getElementById('projectRoadmapSection');
         if (!section) return;
         var self = this;
+        section.addEventListener('submit', function(event) {
+            if (!event.target.matches('[data-roadmap-create]')) return;
+            event.preventDefault();
+            var input = event.target.querySelector('[name="stage"]');
+            if (input && !self.addRoadmapStage(projectId, input.value) && typeof NotificationModule !== 'undefined') NotificationModule.error('Проверь название этапа: оно должно быть уникальным');
+        });
         section.addEventListener('change', function(event) {
             var control = event.target.closest('[data-roadmap-task]');
             if (control) self.assignTaskStage(projectId, control.dataset.roadmapTask, control.value);
         });
         section.addEventListener('click', function(event) {
+            var move = event.target.closest('[data-roadmap-move]');
+            if (move) { self.moveRoadmapStage(projectId, Number(move.dataset.roadmapIndex), move.dataset.roadmapMove); return; }
             var control = event.target.closest('[data-roadmap-stage]');
             if (control) self.toggleRoadmapStage(projectId, control.dataset.roadmapStage);
         });
