@@ -23,6 +23,7 @@
         },
         workpilot: {
             title: 'WorkPilot / Malenia', eyebrow: '02 / AI-АВТОМАТИЗАЦИЯ', symbol: '◎', art: 'work',
+            coverTagline: 'AUTOMATION / OBSERVABILITY',
             tagline: 'Помощник, который должен не просто отвечать, а выполнять работу.',
             intro: 'Разрабатываю настольного ассистента для многовкладочной работы с сервисами и документами. Моя цель — понятный интерфейс и наблюдаемая автоматизация без бесконечной ручной настройки.',
             focus: ['Работа с браузером и несколькими источниками данных', 'Анализ заказов, таблиц и рабочих систем', 'Прозрачный прогресс выполнения и контроль пользователя'],
@@ -36,6 +37,7 @@
         },
         'ghost-signal': {
             title: 'Ghost Signal', eyebrow: '03 / НАРРАТИВНЫЙ ДЕТЕКТИВ', symbol: '⌁', art: 'ghost',
+            coverTagline: 'EVERY SIGNAL LEAVES A TRACE',
             tagline: 'Правда складывается из памяти, сомнений и последствий.',
             intro: 'Детективный проект, где важен не только ответ на загадку, но и путь к нему. Свидетели могут ошибаться, пересказывать чужие слова и менять отношение к расследованию.',
             focus: ['Память и доверие персонажей', 'Источники показаний и проверка слухов', 'Обещания, последствия и альтернативные исходы'],
@@ -49,6 +51,7 @@
         },
         'last-ritual': {
             title: 'Last Ritual', eyebrow: '04 / STRATEGY × ROGUELIKE', symbol: '✺', art: 'ritual',
+            coverTagline: 'FIVE DAYS / FIVE NIGHTS',
             tagline: 'Пять дней, чтобы подготовить ритуал. Пять ночей, чтобы выжить.',
             intro: 'Смешиваю тактику обороны крепости и ночные вылазки в подземелья. Цель — создать напряжённый забег, где каждое улучшение и рискованное решение меняют шансы на успех.',
             focus: ['Дневная оборона с меняющимися путями и местами башен', 'Ночные комнаты и исследование в духе roguelike', 'Развитие башен, специализации и разнообразные враги'],
@@ -84,6 +87,7 @@
         header.append(title, node('p', 'showcase-tagline', project.tagline));
         const art = node('div', `showcase-art art-${project.art}`);
         art.setAttribute('aria-label', 'Декоративная концептуальная иллюстрация проекта');
+        if (project.coverTagline) art.append(node('span', 'showcase-art-theme', project.coverTagline));
         art.append(node('span', 'showcase-symbol', project.symbol));
         const figcaption = node('span', 'showcase-concept', 'КОНЦЕПТУАЛЬНАЯ ОБЛОЖКА');
         art.append(figcaption);
