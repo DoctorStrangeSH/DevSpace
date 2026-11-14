@@ -132,6 +132,7 @@ body { background: #090b12; }
 .showcase-section-nav { position:sticky;top:0;z-index:6;display:flex;gap:9px;overflow-x:auto;padding:12px 0 14px;margin:-23px 0 24px;background:linear-gradient(#0b0c15 88%,rgba(11,12,21,.92));scrollbar-width:thin; }
 .showcase-section-link { flex:0 0 auto;padding:10px 14px;border-radius:30px;border:1px solid #514858;background:#242130;color:#e7d9cd;font-size:.8rem;cursor:pointer; }
 .showcase-section-link:hover { border-color:#c3a787;background:#3b3240; }
+.showcase-section-link.is-active { color:#17131b;background:#e1cdb5;border-color:#e1cdb5;font-weight:750; }
 .showcase-section-link:focus-visible { outline:3px solid #e6caad;outline-offset:2px; }
 #showcase-overview,#showcase-media,#showcase-process,#showcase-progress,#showcase-more { scroll-margin-top:90px; }
 .showcase-header h1 { font-size:clamp(3.2rem,9vw,7.5rem);line-height:1.02;letter-spacing:-.075em;font-weight:850;margin:0 0 20px;color:#f5f0e9; }
