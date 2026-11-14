@@ -7,6 +7,7 @@
     const image = document.getElementById('portfolioGalleryImage');
     const imageLoading = document.getElementById('portfolioGalleryLoading');
     const imageError = document.getElementById('portfolioGalleryError');
+    const retryButton = document.getElementById('portfolioGalleryRetry');
     const caption = document.getElementById('portfolioGalleryCaption');
     const count = document.getElementById('portfolioGalleryCount');
     const original = document.getElementById('portfolioGalleryOriginal');
@@ -19,6 +20,22 @@
     let touchStart = null;
     let backgroundInert = [];
     let imageRequest = 0;
+    let prefetchedImage = null;
+
+    function warmNext(request) {
+        // Only fetch a neighbour on a fast, non-data-saving desktop connection.
+        const connection = typeof navigator === 'undefined' ? null : navigator.connection;
+        if (items.length < 2 || !connection || connection.saveData || connection.effectiveType !== '4g'
+            || !window.matchMedia('(min-width: 900px)').matches) return;
+        const url = items[(index + 1) % items.length].src;
+        if (!/\.(?:png|webp|jpe?g)(?:[?#]|$)/i.test(url)) return;
+        window.setTimeout(() => {
+            if (viewer.hidden || request !== imageRequest || prefetchedImage?.src === url) return;
+            prefetchedImage = new Image();
+            prefetchedImage.decoding = 'async';
+            prefetchedImage.src = url;
+        }, 250);
+    }
 
     function isolateViewer() {
         backgroundInert = Array.from(document.body.children)
@@ -40,6 +57,7 @@
         image.hidden = true;
         imageLoading.hidden = false;
         imageError.hidden = true;
+        retryButton.hidden = true;
         image.removeAttribute('src');
         image.alt = item.alt;
         caption.textContent = item.caption;
@@ -47,26 +65,35 @@
         original.href = item.src;
         prev.disabled = items.length < 2;
         next.disabled = items.length < 2;
-        const pendingImage = new Image();
+        const pendingImage = prefetchedImage?.src === item.src ? prefetchedImage : new Image();
+        prefetchedImage = null;
+        pendingImage.decoding = 'async';
         pendingImage.onload = () => {
             if (request !== imageRequest || viewer.hidden) return;
             image.src = item.src;
             image.hidden = false;
             imageLoading.hidden = true;
             imageError.hidden = true;
+            retryButton.hidden = true;
+            warmNext(request);
         };
         pendingImage.onerror = () => {
             if (request !== imageRequest || viewer.hidden) return;
             image.hidden = true;
             imageLoading.hidden = true;
             imageError.hidden = false;
+            retryButton.hidden = false;
         };
         pendingImage.src = item.src;
+        // A warmed image may have finished before handlers were installed.
+        if (pendingImage.complete && pendingImage.naturalWidth > 0) pendingImage.onload();
+        else if (pendingImage.complete && pendingImage.naturalWidth === 0) pendingImage.onerror();
     }
 
     function close() {
         if (viewer.hidden) return;
         ++imageRequest;
+        prefetchedImage = null;
         viewer.hidden = true;
         document.body.classList.remove('portfolio-viewer-open');
         restoreBackground();
@@ -74,6 +101,7 @@
         image.hidden = false;
         imageLoading.hidden = true;
         imageError.hidden = true;
+        retryButton.hidden = true;
         items = [];
         if (returnFocus && returnFocus.isConnected) returnFocus.focus();
         returnFocus = null;
@@ -111,6 +139,7 @@
     closeButton.addEventListener('click', close);
     prev.addEventListener('click', () => move(-1));
     next.addEventListener('click', () => move(1));
+    retryButton.addEventListener('click', display);
     viewer.addEventListener('click', event => { if (event.target === viewer) close(); });
 
     // Capture phase keeps Escape from closing the underlying project showcase.
@@ -120,7 +149,7 @@
         else if (event.key === 'ArrowLeft') { event.preventDefault(); event.stopImmediatePropagation(); move(-1); }
         else if (event.key === 'ArrowRight') { event.preventDefault(); event.stopImmediatePropagation(); move(1); }
         else if (event.key === 'Tab') {
-            const controls = [closeButton, prev, next, original].filter(el => !el.disabled && !el.hidden);
+            const controls = [closeButton, prev, next, retryButton, original].filter(el => !el.disabled && !el.hidden);
             const first = controls[0], last = controls[controls.length - 1];
             const focusIsOutside = !viewer.contains(document.activeElement);
             if (!first) {
