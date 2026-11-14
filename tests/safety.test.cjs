@@ -48,3 +48,13 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   assert.ok(worker.includes("'js/portfolio.js'"));
   assert.doesNotMatch(worker, /^\s*'\/index\.html'/m);
 });
+
+test('Vercel projects are represented without leaking private source links', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  for (const name of ['dm-workspace', 'wanderers-order', 'aethel-vtt-web', 'ashes-of-truth']) {
+    assert.ok(html.includes(`https://${name}.vercel.app`));
+  }
+  assert.ok(html.includes('href="#web-projects"'));
+  assert.ok(html.includes('Доступ может требовать входа'));
+  assert.ok(!html.includes('github.com/DoctorStrangeSH/WanderersOrder'));
+});

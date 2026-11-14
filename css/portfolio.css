@@ -95,6 +95,24 @@ body { background: #090b12; }
 .showcase-aside .about-pills { margin:4px 0 30px; }
 .showcase-repo { display:block;background:#e1cdb5;border-radius:11px;padding:15px 18px;text-align:center;color:#17131b;font-weight:700;text-decoration:none;margin-top:27px; }
 .showcase-repo:hover { background:#f0dec7;color:#17131b; }
+/* Verified Vercel deployments: distinguish a ready build from public access. */
+.web-projects-section { background:#10111b;position:relative;z-index:2;padding:110px 0 100px; }
+.web-projects-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px; }
+.web-project-card { min-width:0;border:1px solid #353341;border-radius:23px;padding:35px;background:linear-gradient(145deg,#1a1a2a,#13151f);position:relative;overflow:hidden; }
+.web-project-card::before { content:'';position:absolute;right:-85px;top:-125px;height:250px;width:250px;border-radius:50%;background:#7785b3;opacity:.10;filter:blur(25px);pointer-events:none; }
+.web-project-wanderer::before { background:#b9a477; }.web-project-aethel::before { background:#75b4b8; }.web-project-ashes::before { background:#b28289; }
+.web-project-top { display:flex;justify-content:space-between;align-items:center;gap:15px;color:#beb4c6; }
+.web-project-top i { font-size:2.4rem;color:#d4c6a6; }
+.web-project-number { font-size:.7rem;letter-spacing:.16em;font-weight:700; }
+.web-project-card h3 { font-size:clamp(1.6rem,3vw,2.3rem);font-weight:750;letter-spacing:-.045em;color:#f4eeeb;margin:26px 0 12px; }
+.web-project-card p { color:#b4b2c2;line-height:1.8;min-height:80px;max-width:470px; }
+.web-project-links { display:flex;flex-wrap:wrap;gap:12px;margin:25px 0; }
+.web-project-links a { text-decoration:none;color:#ece0cb;border:1px solid #5c5360;border-radius:11px;padding:11px 16px;font-size:.85rem;transition:background .2s; }
+.web-project-links a:hover { background:#383142;color:#fff; }
+.vercel-access { display:inline-flex;align-items:center;gap:8px;color:#b7a894;font-size:.72rem;letter-spacing:.03em; }
+.web-project-footnote { color:#9c99ab;font-size:.85rem;margin-top:26px;line-height:1.7; }
+.web-project-footnote i { margin-right:7px;color:#d8bc92; }
+@media(max-width:700px){.web-projects-section{padding:80px 0}.web-projects-grid{grid-template-columns:1fr}.web-project-card{padding:27px}.web-project-card p{min-height:0}}
 @media(max-width:700px){.showcase-shell{padding-top:20px;padding-bottom:60px}.showcase-back{margin-bottom:35px}.showcase-columns{grid-template-columns:1fr;gap:35px;padding-top:45px}.showcase-aside{padding:27px}.showcase-concept{left:18px;bottom:16px}.showcase-header{margin-bottom:30px}}
 @media(max-width:991px){.hero-section .min-vh-100{min-height:unset!important;padding-top:130px}.portfolio-orbit{max-width:370px;margin-top:40px}.portfolio-section-heading{display:block}.portfolio-section-heading>p{margin-top:22px}.featured-grid{gap:15px}.about-grid{gap:30px}}
 @media(max-width:670px){.featured-grid,.about-grid{grid-template-columns:1fr}.featured-section,.about-section{padding:80px 0}.hero-section .hero-title{font-size:clamp(3.1rem,12vw,4.5rem)}.feature-art,.feature-large .feature-art{height:210px}.feature-copy{padding:23px}.portfolio-more{align-items:flex-start;flex-direction:column}.contact-panel{padding:55px 28px}.hero-specialties{gap:9px;font-size:.59rem}.hero-specialties span:not(:last-child)::after{margin-left:9px}}
