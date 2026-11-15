@@ -21,19 +21,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- App CSS -->
-    <link href="css/theme.css?v=3.54.0" rel="stylesheet">
-    <link href="css/main.css?v=3.54.0" rel="stylesheet">
-    <link href="css/animations.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/navbar.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/hero.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/cards.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/checklist.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/modal.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/buttons.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/project-detail.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/notes.css?v=3.54.0" rel="stylesheet">
-    <link href="css/components/widgets.css?v=3.54.0" rel="stylesheet">
-    <link href="css/portfolio.css?v=3.54.0" rel="stylesheet">
+    <link href="css/theme.css?v=3.61.0" rel="stylesheet">
+    <link href="css/main.css?v=3.61.0" rel="stylesheet">
+    <link href="css/animations.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/navbar.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/hero.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/cards.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/checklist.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/modal.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/buttons.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/project-detail.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/notes.css?v=3.61.0" rel="stylesheet">
+    <link href="css/components/widgets.css?v=3.61.0" rel="stylesheet">
+    <link href="css/portfolio.css?v=3.61.0" rel="stylesheet">
 </head>
 <body>
     <!-- Particles Background -->
@@ -231,6 +231,10 @@
                     <section class="insights-panel mb-4" id="insightsPanel" aria-labelledby="insightsTitle">
                         <div class="insights-heading"><div><span class="focus-panel-kicker">ОБЗОР ПРОЕКТОВ</span><h3 id="insightsTitle">На что обратить внимание</h3></div><span id="insightsSummary" aria-live="polite"></span></div>
                         <p class="health-history-note">История оценок собирается с этого момента и хранится в текущем браузере.</p>
+                        <div class="health-transfer"><button type="button" id="healthExportBtn">↓ Скачать историю</button><button type="button" id="healthImportBtn">↑ Перенести с другого устройства</button></div>
+                        <div id="healthAlerts" class="health-alerts" aria-live="polite"></div>
+                        <div class="deadline-outlook" id="deadlineOutlook" aria-label="Прогноз нагрузки по срокам"></div>
+                        <div class="health-analytics"><div class="health-controls"><label for="healthProjectFilter">Основной проект <select id="healthProjectFilter" aria-label="Проект для графика здоровья"><option value="all">Все проекты</option></select></label><label for="healthCompareFilter">Сравнить с <select id="healthCompareFilter" aria-label="Проект для сравнения"><option value="none">Без сравнения</option></select></label><label for="healthPeriodFilter">Период <select id="healthPeriodFilter" aria-label="Период аналитики"><option value="7">7 дней</option><option value="14">14 дней</option><option value="30" selected>30 дней</option></select></label></div><div id="healthChart" class="health-chart" role="img" aria-label="История оценок проектов"></div><p id="healthScoreDetails" class="health-score-details" aria-live="polite"></p><h4 class="health-recommendations-title">Что улучшить в первую очередь</h4><ul id="healthRecommendations" class="health-recommendations" aria-live="polite"></ul></div>
                         <div class="health-list" id="projectHealthList" aria-label="Состояние активных проектов"></div>
                         <div class="insights-list" id="insightsList" aria-live="polite"></div>
                     </section>
@@ -339,7 +343,7 @@
                         </span>
                     </div>
                     <div class="col-md-4 text-md-end">
-                        <span style="font-size: 11px; color: var(--text-muted);" id="appVersion">v3.54.0</span>
+                        <span style="font-size: 11px; color: var(--text-muted);" id="appVersion">v3.61.0</span>
                         <button class="footer-link ms-3 owner-only" id="footerExportBtn" title="Экспорт проектов" style="display:none;">
                             <i class="bi bi-download"></i>
                         </button>
@@ -507,50 +511,50 @@
     <!-- Firebase SDK is loaded after the interface becomes interactive. -->
     
     <!-- App JS - Core -->
-    <script src="js/core/events.js?v=3.54.0" defer></script>
-    <script src="js/core/storage.js?v=3.54.0" defer></script>
-    <script src="js/core/state.js?v=3.54.0" defer></script>
+    <script src="js/core/events.js?v=3.61.0" defer></script>
+    <script src="js/core/storage.js?v=3.61.0" defer></script>
+    <script src="js/core/state.js?v=3.61.0" defer></script>
     
     <!-- Services -->
-    <script src="js/services/localStorage.js?v=3.54.0" defer></script>
-    <script src="js/services/firebase.js?v=3.54.0" defer></script>
-    <script src="js/services/auth.js?v=3.54.0" defer></script>
-    <script src="js/services/github.js?v=3.54.0" defer></script>
-    <script src="js/services/supabase.js?v=3.54.0" defer></script>
+    <script src="js/services/localStorage.js?v=3.61.0" defer></script>
+    <script src="js/services/firebase.js?v=3.61.0" defer></script>
+    <script src="js/services/auth.js?v=3.61.0" defer></script>
+    <script src="js/services/github.js?v=3.61.0" defer></script>
+    <script src="js/services/supabase.js?v=3.61.0" defer></script>
     
     <!-- Sync -->
-    <script src="js/core/sync.js?v=3.54.0" defer></script>
+    <script src="js/core/sync.js?v=3.61.0" defer></script>
     
     <!-- Utils -->
-    <script src="js/utils/helpers.js?v=3.54.0" defer></script>
-    <script src="js/utils/validators.js?v=3.54.0" defer></script>
+    <script src="js/utils/helpers.js?v=3.61.0" defer></script>
+    <script src="js/utils/validators.js?v=3.61.0" defer></script>
     
     <!-- UI -->
-    <script src="js/ui/notifications.js?v=3.54.0" defer></script>
-    <script src="js/ui/renderer.js?v=3.54.0" defer></script>
+    <script src="js/ui/notifications.js?v=3.61.0" defer></script>
+    <script src="js/ui/renderer.js?v=3.61.0" defer></script>
     
     <!-- Modules -->
-    <script src="js/modules/theme.js?v=3.54.0" defer></script>
-    <script src="js/modules/projects.js?v=3.54.0" defer></script>
-    <script src="js/modules/checklist.js?v=3.54.0" defer></script>
-    <script src="js/modules/updates.js?v=3.54.0" defer></script>
-    <script src="js/modules/stats.js?v=3.54.0" defer></script>
-    <script src="js/modules/notes.js?v=3.54.0" defer></script>
-    <script src="js/modules/tags.js?v=3.54.0" defer></script>
-    <script src="js/modules/favorites.js?v=3.54.0" defer></script>
-    <script src="js/modules/gallery.js?v=3.54.0" defer></script>
-    <script src="js/modules/project-detail.js?v=3.54.0" defer></script>
-    <script src="js/modules/export.js?v=3.54.0" defer></script>
-    <script src="js/modules/share.js?v=3.54.0" defer></script>
-    <script src="js/modules/achievements.js?v=3.54.0" defer></script>
-    <script src="js/modules/timetracker.js?v=3.54.0" defer></script>
+    <script src="js/modules/theme.js?v=3.61.0" defer></script>
+    <script src="js/modules/projects.js?v=3.61.0" defer></script>
+    <script src="js/modules/checklist.js?v=3.61.0" defer></script>
+    <script src="js/modules/updates.js?v=3.61.0" defer></script>
+    <script src="js/modules/stats.js?v=3.61.0" defer></script>
+    <script src="js/modules/notes.js?v=3.61.0" defer></script>
+    <script src="js/modules/tags.js?v=3.61.0" defer></script>
+    <script src="js/modules/favorites.js?v=3.61.0" defer></script>
+    <script src="js/modules/gallery.js?v=3.61.0" defer></script>
+    <script src="js/modules/project-detail.js?v=3.61.0" defer></script>
+    <script src="js/modules/export.js?v=3.61.0" defer></script>
+    <script src="js/modules/share.js?v=3.61.0" defer></script>
+    <script src="js/modules/achievements.js?v=3.61.0" defer></script>
+    <script src="js/modules/timetracker.js?v=3.61.0" defer></script>
     
     <!-- App Entry -->
-    <script src="js/portfolio.js?v=3.54.0" defer></script>
-    <script src="js/github-metadata.js?v=3.54.0" defer></script>
-    <script src="js/portfolio-gallery.js?v=3.54.0" defer></script>
-    <script src="js/portfolio-nav.js?v=3.54.0" defer></script>
-    <script src="js/portfolio-search.js?v=3.54.0" defer></script>
-    <script src="js/app.js?v=3.54.0" defer></script>
+    <script src="js/portfolio.js?v=3.61.0" defer></script>
+    <script src="js/github-metadata.js?v=3.61.0" defer></script>
+    <script src="js/portfolio-gallery.js?v=3.61.0" defer></script>
+    <script src="js/portfolio-nav.js?v=3.61.0" defer></script>
+    <script src="js/portfolio-search.js?v=3.61.0" defer></script>
+    <script src="js/app.js?v=3.61.0" defer></script>
 </body>
 </html>

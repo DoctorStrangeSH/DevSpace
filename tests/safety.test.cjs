@@ -6,6 +6,85 @@ const test = require('node:test');
 
 const root = path.join(__dirname, '..');
 
+test('health history transfer validates and merges daily readings without overwriting local scores', () => {
+  const exportModule = execute('js/modules/export.js').ExportModule;
+  const incoming = [{ date: '2026-11-14', scores: { a: 70, b: 60 } }, { date: '2026-11-15', scores: { a: 80, __proto__: 10 } }];
+  const local = [{ date: '2026-11-14', scores: { a: 72 } }];
+  const combined = exportModule._mergeHealthHistory(local, incoming);
+  assert.equal(combined.length, 2);
+  assert.equal(combined[0].scores.a, 72);
+  assert.equal(combined[0].scores.b, 60);
+  assert.equal(combined[1].scores.a, 80);
+  assert.equal(exportModule._cleanHealthHistory([{ date: '2026-02-30', scores: { a: 50 } }]).length, 0);
+  assert.throws(() => exportModule._cleanHealthHistory(null));
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(html, /id="healthExportBtn"/);
+  assert.match(html, /id="healthImportBtn"/);
+});
+
+test('project backup carries health history while legacy backup import remains supported', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
+  assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
+  assert.match(source, /Array\.isArray\(data\.healthHistory\)/);
+  assert.match(source, /data\.healthHistory !== undefined/);
+  assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
+});
+
+test('health analytics creates safe bounded trends and explains score penalties', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const series = renderer._healthSeries([{ date: '2026-11-14', scores: { a: 62 } }, { date: '2026-11-15', scores: { a: 80 } }], 'a');
+  assert.deepEqual(Array.from(series, item => item.score), [62, 80]);
+  const svg = renderer._healthChartSvg(series);
+  assert.match(svg, /<svg/);
+  assert.match(svg, /80\/100/);
+  const compared = renderer._healthChartSvg(series, [{ date: '2026-11-15', score: 45 }]);
+  assert.match(compared, /health-comparison/);
+  assert.match(compared, /Сравнение: 45\/100/);
+  assert.match(renderer._healthChartSvg([]), /История появится/);
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(html, /id="healthProjectFilter"/);
+  assert.match(html, /id="healthScoreDetails"/);
+  assert.match(html, /id="healthCompareFilter"/);
+  assert.match(html, /id="healthPeriodFilter"/);
+  assert.match(html, /id="healthRecommendations"/);
+});
+
+test('health recommendations prioritize overdue, stale and undated work', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const tips = renderer._healthRecommendations({ score: 35, overdue: 2, inactiveDays: 30, completed: 0, total: 3, undated: 0 });
+  assert.deepEqual(Array.from(tips, tip => tip.kind), ['overdue', 'stale', 'progress']);
+  assert.match(tips[0].detail, /20 баллов/);
+  assert.equal(renderer._healthRecommendations({ score: null })[0].kind, 'plan');
+  assert.equal(renderer._healthRecommendations({ score: 100, overdue: 0, inactiveDays: 0, completed: 1, total: 1, undated: 0 })[0].kind, 'stable');
+});
+
+test('project health alerts identify significant score drops and critical risk', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const history = [{ date: '2026-11-14', scores: { a: 90, b: 40 } }, { date: '2026-11-15', scores: { a: 55, b: 45 } }];
+  const alerts = renderer._collectHealthAlerts([{ id: 'a', name: 'A', score: 55 }, { id: 'b', name: 'B', score: 45 }, { id: 'c', name: 'C', score: null }], history);
+  assert.deepEqual(Array.from(alerts, alert => alert.kind), ['decline', 'risk', 'risk']);
+  assert.equal(alerts[0].id, 'a');
+  assert.equal(renderer._collectHealthAlerts([{ id: 'a', name: 'A', score: 95 }], history).length, 0);
+  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /id="healthAlerts"/);
+});
+
+test('deadline outlook buckets real unfinished work and ignores closed projects', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const projects = [
+    { id: 'a', name: 'Active', status: 'active', checklist: [
+      { text: 'Late', deadline: '2026-11-14' }, { text: 'Soon', deadline: '2026-11-15' },
+      { text: 'This week', deadline: '2026-11-21' }, { text: 'Next week', deadline: '2026-11-22' },
+      { text: 'Future', deadline: '2026-11-29' }, { text: 'Unscheduled' },
+      { text: 'Bad date', deadline: '2026-02-30' }, { text: 'Finished', deadline: '2026-11-01', completed: true }
+    ] },
+    { id: 'b', status: 'completed', checklist: [{ text: 'Archived deadline', deadline: '2026-11-01' }] }
+  ];
+  const result = renderer._collectDeadlineOutlook(projects, new Date(2026, 10, 15));
+  assert.deepEqual([result.overdue, result.week, result.fortnight, result.later, result.unscheduled], [1, 2, 1, 1, 2]);
+  assert.equal(result.projects.length, 1);
+  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /id="deadlineOutlook"/);
+});
+
 test('health history records real daily scores, overwrites same-day readings and caps retention', () => {
   const ctx = execute('js/ui/renderer.js');
   const renderer = ctx.RendererModule;
@@ -861,8 +940,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.54.0') < sources.indexOf('js/app.js?v=3.54.0'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.54.0') < sources.indexOf('js/app.js?v=3.54.0'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.61.0') < sources.indexOf('js/app.js?v=3.61.0'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.61.0') < sources.indexOf('js/app.js?v=3.61.0'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -987,7 +1066,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.54.0" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.61.0" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -1017,7 +1096,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.54.0"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.61.0"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -1044,7 +1123,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.54.0"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.61.0"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -1084,7 +1163,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.54.0"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.61.0"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -1374,13 +1453,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.54 cache, HTML fallback and visible application version are aligned', () => {
+test('3.61 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.54.0'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.54'"));
-  assert.ok(html.includes('id="appVersion">v3.54.0</span>'));
+  assert.ok(app.includes("version: '3.61.0'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.61'"));
+  assert.ok(html.includes('id="appVersion">v3.61.0</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -1390,10 +1469,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.54.0', `${file} is not versioned`);
+    assert.equal(version, '?v=3.61.0', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.54.0'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.61.0'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });

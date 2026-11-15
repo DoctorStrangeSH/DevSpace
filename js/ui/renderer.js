@@ -461,7 +461,7 @@ var RendererModule = {
             var hasPlan = tasks.length > 0;
             var score = hasPlan ? Math.max(0, 100 - Math.min(overdue.length, 3) * 20 - (inactiveDays > 14 && open.length ? 15 : 0) - (open.length && tasks.every(function(task) { return !task.deadline; }) ? 10 : 0) - Math.round(open.length / tasks.length * 10)) : null;
             var advice = !hasPlan ? 'Добавь первые задачи' : overdue.length ? 'Разбери просроченные задачи' : inactiveDays > 14 && open.length ? 'Обнови прогресс проекта' : open.length ? 'Продолжай следующий шаг' : 'Проверь завершение проекта';
-            return { id: project.id, name: project.name || 'Без названия', score: score, overdue: overdue.length, inactiveDays: inactiveDays, completed: tasks.length - open.length, total: tasks.length, advice: advice };
+            return { id: project.id, name: project.name || 'Без названия', score: score, overdue: overdue.length, inactiveDays: inactiveDays, completed: tasks.length - open.length, total: tasks.length, undated: open.length && tasks.every(function(task) { return !task.deadline; }) ? 10 : 0, advice: advice };
         }).sort(function(a, b) {
             return (a.score === null ? 101 : a.score) - (b.score === null ? 101 : b.score) || b.overdue - a.overdue || a.name.localeCompare(b.name);
         });
@@ -492,17 +492,156 @@ var RendererModule = {
         return { label: difference > 0 ? '↑ +' + difference + ' с прошлого замера' : difference < 0 ? '↓ ' + difference + ' с прошлого замера' : 'Без изменений', direction: difference > 0 ? 'up' : difference < 0 ? 'down' : 'neutral' };
     },
 
+    _healthSeries: function(history, id) {
+        return (history || []).filter(function(row) { return row && typeof row.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && row.scores && Number.isInteger(row.scores[String(id)]) && row.scores[String(id)] >= 0 && row.scores[String(id)] <= 100; }).map(function(row) { return { date: row.date, score: row.scores[String(id)] }; });
+    },
+
+    _healthRecommendations: function(item) {
+        if (!item || item.score === null) return [{ kind: 'plan', label: 'Создай план', detail: 'Добавь хотя бы одну конкретную задачу: тогда появится оценка состояния.' }];
+        var recommendations = [];
+        if (item.overdue) recommendations.push({ kind: 'overdue', label: 'Разбери просрочки', detail: 'Просроченных задач: ' + item.overdue + '. Каждая из первых трёх уменьшает оценку на 20 баллов. Переноси сроки только при реальном изменении плана.' });
+        if (item.inactiveDays > 14 && item.completed < item.total) recommendations.push({ kind: 'stale', label: 'Зафиксируй прогресс', detail: 'Последнее обновление: ' + item.inactiveDays + ' дн. назад. Актуализация проекта может убрать штраф 15 баллов.' });
+        if (item.undated) recommendations.push({ kind: 'deadlines', label: 'Определи ближайшие сроки', detail: 'У открытых задач нет сроков. Добавь реальные даты, чтобы убрать штраф 10 баллов.' });
+        if (item.completed < item.total) recommendations.push({ kind: 'progress', label: 'Заверши следующий шаг', detail: 'Выполнено ' + item.completed + ' из ' + item.total + ' задач. Доля незавершённых задач влияет на оценку (до 10 баллов).' });
+        return recommendations.length ? recommendations : [{ kind: 'stable', label: 'Поддерживай темп', detail: 'Просрочек и открытых задач нет. Проверь, готов ли проект к завершению.' }];
+    },
+
+    _collectHealthAlerts: function(health, history) {
+        var result = [];
+        (health || []).forEach(function(item) {
+            if (item.score === null) return;
+            var readings = RendererModule._healthSeries(history, item.id);
+            var previous = readings.length > 1 ? readings[readings.length - 2].score : null;
+            var drop = previous === null ? 0 : previous - item.score;
+            if (drop >= 10) result.push({ id: item.id, name: item.name, kind: 'decline', severity: 0, label: 'Оценка снизилась на ' + drop + ' баллов с прошлого замера' });
+            if (item.score < 60) result.push({ id: item.id, name: item.name, kind: 'risk', severity: 1, label: 'Высокий риск · ' + item.score + '/100' });
+        });
+        return result.sort(function(a, b) { return a.severity - b.severity || a.name.localeCompare(b.name); });
+    },
+
+    _collectDeadlineOutlook: function(projects, now) {
+        var today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        var summary = { overdue: 0, week: 0, fortnight: 0, later: 0, unscheduled: 0, projects: [] };
+        (projects || []).forEach(function(project) {
+            if (!project || project.status === 'completed' || project.status === 'archived') return;
+            var counts = { overdue: 0, week: 0, fortnight: 0, later: 0, unscheduled: 0 };
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                var deadline = task.deadline;
+                if (typeof deadline !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) { counts.unscheduled++; return; }
+                var target = Date.parse(deadline + 'T00:00:00Z');
+                if (!Number.isFinite(target) || new Date(target).toISOString().slice(0, 10) !== deadline) { counts.unscheduled++; return; }
+                var days = Math.round((target - today) / 86400000);
+                counts[days < 0 ? 'overdue' : days < 7 ? 'week' : days < 14 ? 'fortnight' : 'later']++;
+            });
+            Object.keys(counts).forEach(function(key) { summary[key] += counts[key]; });
+            if (counts.overdue || counts.week || counts.fortnight) summary.projects.push({ id: project.id, name: project.name || 'Без названия', overdue: counts.overdue, week: counts.week, fortnight: counts.fortnight });
+        });
+        summary.projects.sort(function(a, b) { return b.overdue - a.overdue || b.week - a.week || b.fortnight - a.fortnight || a.name.localeCompare(b.name); });
+        return summary;
+    },
+
+    _renderDeadlineOutlook: function(projects) {
+        var container = document.getElementById('deadlineOutlook');
+        if (!container) return;
+        var outlook = this._collectDeadlineOutlook(projects, new Date());
+        container.innerHTML = '<h4>📅 Нагрузка по срокам</h4><div class="deadline-outlook-stats"><span><b>' + outlook.overdue + '</b>Просрочены</span><span><b>' + outlook.week + '</b>За 7 дней</span><span><b>' + outlook.fortnight + '</b>За 8–14 дней</span></div>' +
+            (outlook.projects.length ? '<div class="deadline-outlook-projects">' + outlook.projects.slice(0, 4).map(function(item) {
+                var id = Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
+                return '<button type="button" data-insight-project="' + id + '"><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>Просрочены: ' + item.overdue + ' · 7 дней: ' + item.week + ' · 8–14 дней: ' + item.fortnight + '</small></button>';
+            }).join('') + '</div>' : '<p>На ближайшие 14 дней задач со сроками нет.</p>') + '<p class="deadline-outlook-note">Без сроков: ' + outlook.unscheduled + '. Прогноз основан на датах задач, без оценки скорости выполнения.</p>';
+    },
+
+    _renderHealthAlerts: function(health, history) {
+        var container = document.getElementById('healthAlerts');
+        if (!container) return;
+        var alerts = this._collectHealthAlerts(health, history);
+        container.innerHTML = alerts.length ? '<strong class="health-alerts-heading">⚠️ Сигналы состояния · ' + alerts.length + '</strong>' + alerts.slice(0, 3).map(function(alert) {
+            var id = Helpers.escapeHtml(String(alert.id)).replace(/"/g, '&quot;');
+            return '<button type="button" class="health-alert health-alert-' + alert.kind + '" data-insight-project="' + id + '"><span><b>' + Helpers.escapeHtml(alert.name) + '</b><small>' + Helpers.escapeHtml(alert.label) + '</small></span><span aria-hidden="true">↗</span></button>';
+        }).join('') + (alerts.length > 3 ? '<small>Ещё сигналов: ' + (alerts.length - 3) + '</small>' : '') : '';
+    },
+
+    _healthChartSvg: function(series, comparison) {
+        var second = comparison || [];
+        var combined = series.concat(second).sort(function(a, b) { return a.date.localeCompare(b.date); });
+        if (!combined.length) return '<p>История появится после первого замера.</p>';
+        var dates = combined.map(function(item) { return item.date; });
+        var firstDay = Date.parse(dates[0] + 'T00:00:00Z');
+        var span = Math.max(1, (Date.parse(dates[dates.length - 1] + 'T00:00:00Z') - firstDay) / 86400000);
+        var plot = function(items, style) {
+            if (!items.length) return '';
+            var points = items.map(function(item) { return (12 + (Date.parse(item.date + 'T00:00:00Z') - firstDay) / 86400000 * 276 / span).toFixed(2) + ',' + (112 - item.score); });
+            var last = items[items.length - 1];
+            return '<polyline points="' + points.join(' ') + '" class="health-line ' + style + '"/><circle cx="' + points[points.length - 1].split(',')[0] + '" cy="' + (112 - last.score) + '" r="4" class="health-dot ' + style + '"/>';
+        };
+        var latest = series.length ? series[series.length - 1] : null;
+        var other = second.length ? second[second.length - 1] : null;
+        return '<svg viewBox="0 0 300 130" preserveAspectRatio="none" aria-hidden="true"><path d="M12 12H288 M12 62H288 M12 112H288" class="health-grid"/>' + plot(series, '') + plot(second, 'health-comparison') + '</svg><span>' + dates[0] + ' → ' + dates[dates.length - 1] + (latest ? ' · Основной: ' + latest.score + '/100' : '') + (other ? ' · Сравнение: ' + other.score + '/100' : '') + '</span>';
+    },
+
+    _renderHealthAnalytics: function(health, history) {
+        var filter = document.getElementById('healthProjectFilter');
+        var compare = document.getElementById('healthCompareFilter');
+        var period = document.getElementById('healthPeriodFilter');
+        var chart = document.getElementById('healthChart');
+        var details = document.getElementById('healthScoreDetails');
+        if (!filter || !compare || !period || !chart || !details) return;
+        var selected = filter.value;
+        var compared = compare.value;
+        filter.innerHTML = '<option value="all">Все проекты</option>' + health.map(function(item) { return '<option value="' + Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(item.name) + '</option>'; }).join('');
+        filter.value = health.some(function(item) { return String(item.id) === selected; }) ? selected : 'all';
+        compare.innerHTML = '<option value="none">Без сравнения</option>' + health.filter(function(item) { return item.score !== null; }).map(function(item) { return '<option value="' + Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(item.name) + '</option>'; }).join('');
+        compare.value = health.some(function(item) { return String(item.id) === compared && item.score !== null; }) && compared !== filter.value ? compared : 'none';
+        var days = [7, 14, 30].includes(Number(period.value)) ? Number(period.value) : 30;
+        var today = new Date();
+        var cutoff = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() - days + 1)).toISOString().slice(0, 10);
+        var recent = history.filter(function(row) { return row && typeof row.date === 'string' && row.date >= cutoff; });
+        var comparison = compare.value === 'none' ? [] : this._healthSeries(recent, compare.value);
+        var item = health.find(function(entry) { return String(entry.id) === filter.value; });
+        if (filter.value === 'all') {
+            var ids = health.filter(function(entry) { return entry.score !== null; }).map(function(entry) { return String(entry.id); });
+            var aggregate = recent.map(function(row) {
+                var values = ids.map(function(id) { return row.scores && row.scores[id]; }).filter(Number.isInteger);
+                return { date: row.date, score: values.length ? Math.round(values.reduce(function(sum, value) { return sum + value; }, 0) / values.length) : null };
+            }).filter(function(row) { return row.score !== null && /^\d{4}-\d{2}-\d{2}$/.test(row.date); });
+            chart.innerHTML = this._healthChartSvg(aggregate, comparison);
+        details.textContent = 'Средняя оценка по ' + ids.length + ' проектам с задачами. График учитывает только проекты с доступной оценкой. Выбери проект, чтобы увидеть рекомендации.';
+        } else if (item) {
+        var series = this._healthSeries(recent, item.id);
+        chart.innerHTML = this._healthChartSvg(series, comparison);
+        var penalties = ['Просрочки: −' + Math.min(item.overdue, 3) * 20, 'Долгое отсутствие обновлений: −' + (item.inactiveDays > 14 && item.total > item.completed ? 15 : 0), 'Нет сроков: −' + item.undated, 'Незавершённые задачи: −' + (item.total ? Math.round((item.total - item.completed) / item.total * 10) : 0)];
+        details.textContent = item.name + ': ' + (item.score === null ? 'оценка недоступна, пока нет задач' : item.score + '/100 · ' + penalties.join(' · '));
+        var tips = this._healthRecommendations(item);
+        var tipList = document.getElementById('healthRecommendations');
+        if (tipList) tipList.innerHTML = tips.map(function(tip) { return '<li><strong>' + Helpers.escapeHtml(tip.label) + '</strong><span>' + Helpers.escapeHtml(tip.detail) + '</span></li>'; }).join('');
+        } else { chart.innerHTML = '<p>Нет данных.</p>'; details.textContent = ''; }
+        if (filter.value === 'all' || !item) {
+            var allTips = document.getElementById('healthRecommendations');
+            if (allTips) {
+                var priority = health.find(function(entry) { return entry.score !== null && entry.score < 85; }) || health.find(function(entry) { return entry.score === null; });
+                allTips.innerHTML = priority ? '<li><strong>' + Helpers.escapeHtml(priority.name) + '</strong><span>' + Helpers.escapeHtml(this._healthRecommendations(priority)[0].detail) + '</span></li>' : '<li><strong>Всё спокойно</strong><span>Пока нет критичных сигналов по активным проектам.</span></li>';
+            }
+        }
+        filter.onchange = function() { RendererModule._renderHealthAnalytics(health, history); };
+        compare.onchange = filter.onchange;
+        period.onchange = filter.onchange;
+    },
+
     _renderInsights: function() {
         var panel = document.getElementById('insightsPanel');
         var list = document.getElementById('insightsList');
         if (!panel || !list) return;
         var items = this._collectInsights(StateManager.get('projects') || [], new Date());
+        this._renderDeadlineOutlook(StateManager.get('projects') || []);
         var healthList = document.getElementById('projectHealthList');
         if (healthList) {
             var health = this._collectProjectHealth(StateManager.get('projects') || [], new Date());
             var before = typeof StorageService !== 'undefined' ? StorageService.get('healthHistory', []) : [];
             var history = this._updateHealthHistory(before, health, new Date());
             if (typeof StorageService !== 'undefined' && JSON.stringify(before) !== JSON.stringify(history)) StorageService.set('healthHistory', history);
+            this._renderHealthAnalytics(health, history);
+            this._renderHealthAlerts(health, history);
             healthList.innerHTML = health.length ? health.slice(0, 4).map(function(item) {
                 var id = Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
                 var scoreLabel = item.score === null ? 'Нет плана' : item.score + '/100';

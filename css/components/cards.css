@@ -619,9 +619,50 @@
 .health-warning .health-track > span { background:var(--accent); }
 .health-item small,.health-more { font-size:11px;color:var(--text-secondary); }
 .health-history-note { font-size:11px;color:var(--text-secondary);margin:0 0 11px; }
+.health-transfer { display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px; }
+.health-transfer button { padding:7px 11px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);font-size:11px;cursor:pointer; }
+.health-transfer button:hover,.health-transfer button:focus-visible { border-color:var(--accent);outline-offset:2px; }
 .health-trend { font-weight:700; }
 .health-trend.trend-up { color:var(--color-success); }
 .health-trend.trend-down { color:var(--color-danger); }
+.health-analytics { margin:0 0 14px;padding:12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary); }
+.health-analytics label { display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:var(--text-secondary); }
+.health-controls { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:10px; }
+.health-analytics select { min-width:0;max-width:65%;padding:6px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary); }
+.health-chart { min-height:90px;margin-top:10px;color:var(--text-secondary);font-size:11px; }
+.health-chart svg { width:100%;height:90px;display:block; }
+.health-grid { fill:none;stroke:var(--border-color);stroke-width:1; }
+.health-line { fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke; }
+.health-dot { fill:var(--accent); }
+.health-line.health-comparison { stroke:var(--color-success);stroke-dasharray:5 4; }
+.health-dot.health-comparison { fill:var(--color-success); }
+.health-score-details { margin:8px 0 0;font-size:11px;line-height:1.6;color:var(--text-secondary); }
+.health-recommendations-title { font-size:12px;font-weight:700;color:var(--text-primary);margin:12px 0 7px; }
+.health-recommendations { display:grid;gap:7px;margin:0;padding:0;list-style:none; }
+.health-recommendations li { display:grid;gap:3px;padding:9px 11px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:9px; }
+.health-recommendations strong { font-size:12px;color:var(--text-primary); }
+.health-recommendations span { font-size:11px;line-height:1.5;color:var(--text-secondary); }
+.health-alerts { display:grid;gap:7px;margin-bottom:10px; }
+.health-alerts:empty { display:none; }
+.health-alerts-heading { font-size:12px;color:var(--color-danger); }
+.health-alert { display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:10px 12px;text-align:left;border:1px solid var(--border-color);border-left:3px solid var(--color-danger);border-radius:9px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
+.health-alert-decline { border-left-color:var(--accent); }
+.health-alert:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.health-alert span:first-child { display:grid;gap:3px; }
+.health-alert b { font-size:12px; }
+.health-alert small { color:var(--text-secondary);font-size:11px; }
+.deadline-outlook { padding:12px;margin:0 0 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary); }
+.deadline-outlook h4 { font-size:12px;font-weight:700;margin:0 0 10px;color:var(--text-primary); }
+.deadline-outlook-stats { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px; }
+.deadline-outlook-stats span { display:grid;gap:4px;padding:9px 6px;text-align:center;border-radius:9px;background:var(--bg-secondary);font-size:11px;color:var(--text-secondary); }
+.deadline-outlook-stats b { font-size:19px;color:var(--text-primary);font-variant-numeric:tabular-nums; }
+.deadline-outlook-stats span:first-child b { color:var(--color-danger); }
+.deadline-outlook-projects { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:7px;margin-top:10px; }
+.deadline-outlook-projects button { display:grid;gap:5px;padding:9px;text-align:left;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);cursor:pointer; }
+.deadline-outlook-projects button:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.deadline-outlook-projects strong { font-size:12px; }
+.deadline-outlook-projects small,.deadline-outlook-note,.deadline-outlook > p { font-size:11px;color:var(--text-secondary); }
+.deadline-outlook-note { margin:10px 0 0; }
 .insight-item { display:flex;align-items:center;gap:10px;min-width:0;padding:11px;text-align:left;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
 .insight-item:hover,.insight-item:focus-visible { border-color:var(--accent);outline-offset:2px; }
 .insight-overdue { border-color:var(--color-danger-border); }

@@ -10,6 +10,10 @@ var ExportModule = {
 
     _bindEvents: function() {
         var self = this;
+        var historyExport = document.getElementById('healthExportBtn');
+        if (historyExport) historyExport.addEventListener('click', function() { self.exportHealthHistory(); });
+        var historyImport = document.getElementById('healthImportBtn');
+        if (historyImport) historyImport.addEventListener('click', function() { self._triggerHealthImport(); });
         
         // Кнопки в футере
         var exportBtn = document.getElementById('footerExportBtn');
@@ -42,6 +46,57 @@ var ExportModule = {
         }
     },
 
+    _cleanHealthHistory: function(rows) {
+        if (!Array.isArray(rows) || rows.length > 1000) throw new Error('Некорректная история');
+        var valid = {};
+        rows.forEach(function(row) {
+            if (!row || typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date) || !row.scores || typeof row.scores !== 'object' || Array.isArray(row.scores)) return;
+            var day = Date.parse(row.date + 'T00:00:00Z');
+            if (!Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== row.date || day > Date.now() + 86400000) return;
+            var scores = {};
+            Object.keys(row.scores).slice(0, 500).forEach(function(id) {
+                var value = row.scores[id];
+                if (id !== '__proto__' && id.length <= 150 && Number.isInteger(value) && value >= 0 && value <= 100) scores[id] = value;
+            });
+            valid[row.date] = Object.assign({}, valid[row.date] || {}, scores);
+        });
+        return Object.keys(valid).sort().slice(-30).map(function(date) { return { date: date, scores: valid[date] }; });
+    },
+
+    _mergeHealthHistory: function(existing, incoming) {
+        var merged = {};
+        this._cleanHealthHistory(incoming).forEach(function(row) { merged[row.date] = row.scores; });
+        this._cleanHealthHistory(existing).forEach(function(row) { merged[row.date] = Object.assign({}, merged[row.date] || {}, row.scores); });
+        return this._cleanHealthHistory(Object.keys(merged).map(function(date) { return { date: date, scores: merged[date] }; }));
+    },
+
+    exportHealthHistory: function() {
+        var history = this._cleanHealthHistory(StorageService.get('healthHistory', []));
+        Helpers.downloadFile(JSON.stringify({ format: 'devspace-health-history', version: 1, history: history }, null, 2), 'devspace-health-' + new Date().toISOString().slice(0, 10) + '.json');
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success('История оценок скачана');
+    },
+
+    _triggerHealthImport: function() {
+        var self = this;
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = function() {
+            var file = input.files && input.files[0];
+            if (!file) return;
+            if (file.size > 1024 * 1024) { if (typeof NotificationModule !== 'undefined') NotificationModule.error('Файл истории слишком большой'); return; }
+            Helpers.readFile(file).then(function(contents) {
+                var data = JSON.parse(contents);
+                if (!data || data.format !== 'devspace-health-history' || data.version !== 1 || !Array.isArray(data.history)) throw new Error('Неверный формат истории');
+                var history = self._mergeHealthHistory(StorageService.get('healthHistory', []), data.history);
+                if (!StorageService.set('healthHistory', history)) throw new Error('Не удалось сохранить историю');
+                if (typeof RendererModule !== 'undefined') RendererModule._renderInsights();
+                if (typeof NotificationModule !== 'undefined') NotificationModule.success('История перенесена: ' + history.length + ' дней');
+            }).catch(function() { if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось прочитать историю'); });
+        };
+        input.click();
+    },
+
     exportAllProjects: function() {
         var projects = StateManager.get('projects') || [];
         var data = JSON.stringify(projects, null, 2);
@@ -58,7 +113,8 @@ var ExportModule = {
             theme: StateManager.get('theme') || 'dark',
             favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
             achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
-            version: '2.0.0',
+            healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
+            version: '3.61.0',
             timestamp: new Date().toISOString()
         };
         var json = JSON.stringify(data, null, 2);
@@ -76,6 +132,10 @@ var ExportModule = {
         input.accept = '.json';
         input.onchange = function(e) {
             var file = e.target.files[0];
+            if (file && file.size > 5 * 1024 * 1024) {
+                if (typeof NotificationModule !== 'undefined') NotificationModule.error('Файл слишком большой (максимум 5 МБ)');
+                return;
+            }
             if (file) self._importFile(file);
         };
         input.click();
@@ -97,6 +157,10 @@ var ExportModule = {
                     throw new Error('Неверный формат');
                 }
 
+                // Проверяем историю до замены проектов. Старые бэкапы без неё поддерживаются.
+                var mergedHistory = Array.isArray(data.healthHistory) ? self._mergeHealthHistory(StorageService.get('healthHistory', []), data.healthHistory) : null;
+                if (data.healthHistory !== undefined && mergedHistory === null) throw new Error('Некорректная история в бэкапе');
+
                 if (!confirm('Импортировать ' + projects.length + ' проектов? Текущие будут заменены.')) return;
 
                 projects = projects.map(function(p) {
@@ -116,10 +180,14 @@ var ExportModule = {
                     StorageService.set('achievements', data.achievements);
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
                 }
+                if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
+                    if (typeof NotificationModule !== 'undefined') NotificationModule.error('Проекты загружены, но историю оценок сохранить не удалось');
+                }
                 
                 if (typeof RendererModule !== 'undefined') {
                     RendererModule.renderProjects();
                     RendererModule.renderStats();
+                    RendererModule._renderInsights();
                 }
                 if (typeof AchievementsModule !== 'undefined') {
                     AchievementsModule._renderAchievements();
