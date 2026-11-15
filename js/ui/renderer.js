@@ -467,6 +467,31 @@ var RendererModule = {
         });
     },
 
+    _updateHealthHistory: function(history, health, date) {
+        var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        var entries = Array.isArray(history) ? history.filter(function(row) {
+            return row && typeof row.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && row.scores && typeof row.scores === 'object' && !Array.isArray(row.scores) && row.date <= key;
+        }).slice(-29).map(function(row) { return { date: row.date, scores: Object.assign({}, row.scores) }; }) : [];
+        var scores = {};
+        (health || []).forEach(function(item) {
+            if (item && item.id != null && Number.isInteger(item.score) && item.score >= 0 && item.score <= 100) scores[String(item.id)] = item.score;
+        });
+        var index = entries.findIndex(function(row) { return row.date === key; });
+        if (index !== -1) entries.splice(index, 1);
+        entries.push({ date: key, scores: scores });
+        return entries.sort(function(a, b) { return a.date.localeCompare(b.date); }).slice(-30);
+    },
+
+    _healthTrend: function(history, id, current) {
+        if (current === null) return { label: 'Без истории', direction: 'neutral' };
+        var key = String(id);
+        var earlier = (history || []).filter(function(row) { return row && row.scores && Number.isInteger(row.scores[key]); });
+        if (earlier.length < 2) return { label: 'Первый замер', direction: 'neutral' };
+        var previous = earlier[earlier.length - 2].scores[key];
+        var difference = current - previous;
+        return { label: difference > 0 ? '↑ +' + difference + ' с прошлого замера' : difference < 0 ? '↓ ' + difference + ' с прошлого замера' : 'Без изменений', direction: difference > 0 ? 'up' : difference < 0 ? 'down' : 'neutral' };
+    },
+
     _renderInsights: function() {
         var panel = document.getElementById('insightsPanel');
         var list = document.getElementById('insightsList');
@@ -475,11 +500,15 @@ var RendererModule = {
         var healthList = document.getElementById('projectHealthList');
         if (healthList) {
             var health = this._collectProjectHealth(StateManager.get('projects') || [], new Date());
+            var before = typeof StorageService !== 'undefined' ? StorageService.get('healthHistory', []) : [];
+            var history = this._updateHealthHistory(before, health, new Date());
+            if (typeof StorageService !== 'undefined' && JSON.stringify(before) !== JSON.stringify(history)) StorageService.set('healthHistory', history);
             healthList.innerHTML = health.length ? health.slice(0, 4).map(function(item) {
                 var id = Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
                 var scoreLabel = item.score === null ? 'Нет плана' : item.score + '/100';
                 var level = item.score === null ? 'unknown' : item.score < 60 ? 'risk' : item.score < 85 ? 'warning' : 'good';
-                return '<button type="button" class="health-item health-' + level + '" data-insight-project="' + id + '"><span class="health-item-top"><strong>' + Helpers.escapeHtml(item.name) + '</strong><b>' + scoreLabel + '</b></span><span class="health-track"><span style="width:' + (item.score === null ? 0 : item.score) + '%"></span></span><small>' + Helpers.escapeHtml(item.advice) + '</small></button>';
+                var trend = RendererModule._healthTrend(history, item.id, item.score);
+                return '<button type="button" class="health-item health-' + level + '" data-insight-project="' + id + '"><span class="health-item-top"><strong>' + Helpers.escapeHtml(item.name) + '</strong><b>' + scoreLabel + '</b></span><span class="health-track"><span style="width:' + (item.score === null ? 0 : item.score) + '%"></span></span><small>' + Helpers.escapeHtml(item.advice) + '</small><small class="health-trend trend-' + trend.direction + '">' + trend.label + '</small></button>';
             }).join('') + (health.length > 4 ? '<span class="health-more">Ещё проектов: ' + (health.length - 4) + '</span>' : '') : '';
         }
         var summary = document.getElementById('insightsSummary');
