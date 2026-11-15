@@ -600,3 +600,8 @@
 .today-empty { margin:0;color:var(--text-secondary);font-size:12px;padding:10px 0; }
 .today-check:hover,.today-check:focus-visible,.today-open:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
 @media(max-width:600px) { .today-panel { padding:12px; }.today-heading { align-items:stretch; }.today-filters { display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); }.today-filters select { width:100%;max-width:none; }.today-task { padding:8px; } }
+.panel-toggle { flex:none;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-primary);color:var(--text-secondary);font-size:11px;font-weight:700;min-height:32px;padding:5px 10px;cursor:pointer; }
+.panel-toggle:hover,.panel-toggle:focus-visible { border-color:var(--accent);color:var(--text-primary); }
+.today-panel.is-collapsed > :not(:first-child),.productivity-panel.is-collapsed > :not(:first-child),.roadmap-overview.is-collapsed > :not(:first-child),.schedule-calendar.is-collapsed > :not(:first-child),.focus-panel.is-collapsed > :not(:first-child) { display:none!important; }
+.today-panel.is-collapsed .today-heading,.schedule-calendar.is-collapsed .schedule-heading,.productivity-panel.is-collapsed .productivity-heading { margin-bottom:0; }
+@media(max-width:600px) { .panel-toggle { min-height:36px; }.schedule-calendar.is-collapsed .schedule-controls { display:none; }.today-panel.is-collapsed .today-filters { display:none; } }
