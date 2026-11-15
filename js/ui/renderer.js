@@ -87,6 +87,11 @@ var RendererModule = {
             if (event.target.matches('#scheduleProjectFilter, #scheduleTypeFilter')) self._renderSchedule();
         });
         var todayPanel = document.getElementById('todayPanel');
+        var insights = document.getElementById('insightsPanel');
+        if (insights) insights.addEventListener('click', function(event) {
+            var project = event.target.closest('[data-insight-project]');
+            if (project && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.insightProject);
+        });
         if (todayPanel) todayPanel.addEventListener('change', function(event) {
             if (event.target.matches('#todayPriority, #todayScope')) self._renderToday();
         });
@@ -425,6 +430,38 @@ var RendererModule = {
         }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
     },
 
+    _collectInsights: function(projects, now) {
+        var day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var key = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+        var fortnight = day.getTime() - 14 * 86400000;
+        var items = [];
+        (projects || []).forEach(function(project) {
+            if (!project || project.status === 'completed' || project.status === 'archived') return;
+            var tasks = Array.isArray(project.checklist) ? project.checklist : [];
+            var overdue = tasks.filter(function(task) { return task && !task.completed && typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) && task.deadline < key; }).length;
+            if (overdue) items.push({ projectId: project.id, name: project.name || 'Без названия', kind: 'overdue', count: overdue, label: 'Просроченных задач: ' + overdue });
+            var timestamp = typeof project.updatedAt === 'string' ? Date.parse(project.updatedAt) : NaN;
+            if (Number.isFinite(timestamp) && timestamp >= 0 && timestamp < fortnight && tasks.some(function(task) { return task && !task.completed; })) {
+                var days = Math.floor((day.getTime() - timestamp) / 86400000);
+                items.push({ projectId: project.id, name: project.name || 'Без названия', kind: 'stale', count: days, label: 'Нет обновлений ' + days + ' дн.' });
+            }
+        });
+        return items.sort(function(a, b) { return (a.kind === 'overdue' ? 0 : 1) - (b.kind === 'overdue' ? 0 : 1) || b.count - a.count || a.name.localeCompare(b.name); });
+    },
+
+    _renderInsights: function() {
+        var panel = document.getElementById('insightsPanel');
+        var list = document.getElementById('insightsList');
+        if (!panel || !list) return;
+        var items = this._collectInsights(StateManager.get('projects') || [], new Date());
+        var summary = document.getElementById('insightsSummary');
+        if (summary) summary.textContent = items.length ? 'Сигналов: ' + items.length : 'Всё под контролем';
+        list.innerHTML = items.length ? items.slice(0, 4).map(function(item) {
+            var projectId = Helpers.escapeHtml(String(item.projectId)).replace(/"/g, '&quot;');
+            return '<button type="button" class="insight-item insight-' + item.kind + '" data-insight-project="' + projectId + '"><span class="insight-icon" aria-hidden="true">' + (item.kind === 'overdue' ? '⚠️' : '🕒') + '</span><span><strong>' + Helpers.escapeHtml(item.name) + '</strong><small>' + Helpers.escapeHtml(item.label) + '</small></span><span aria-hidden="true">↗</span></button>';
+        }).join('') + (items.length > 4 ? '<p class="insights-more">И ещё сигналов: ' + (items.length - 4) + '</p>' : '') : '<p class="insights-empty">✨ Срочных проблем не найдено. Продолжай в своём темпе!</p>';
+    },
+
     _collectScheduleItems: function(projects) {
         var result = [];
         var validDate = function(value) {
@@ -596,6 +633,7 @@ var RendererModule = {
     // ========== РЕНДЕР ==========
 
     renderProjects: function() {
+        this._renderInsights();
         this._renderToday();
         this._renderFocus();
         this._renderProductivity();
