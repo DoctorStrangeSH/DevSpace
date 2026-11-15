@@ -598,6 +598,20 @@
 .today-meta { display:grid;gap:5px;text-align:right;flex:none;color:var(--text-secondary);font-size:10px; }
 .today-priority { font-weight:800; }.today-priority.priority-high,.today-task.is-late time { color:var(--color-danger); }.today-priority.priority-low { color:var(--color-success); }
 .today-empty { margin:0;color:var(--text-secondary);font-size:12px;padding:10px 0; }
+.insights-panel { padding:17px 20px;border:1px solid var(--border-color);border-radius:18px;background:var(--bg-card); }
+.insights-heading { display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px; }
+.insights-heading h3 { font-size:18px;color:var(--text-primary);margin:3px 0 0; }
+.insights-heading > span { color:var(--text-secondary);font-size:12px;white-space:nowrap; }
+.insights-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:9px; }
+.insight-item { display:flex;align-items:center;gap:10px;min-width:0;padding:11px;text-align:left;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
+.insight-item:hover,.insight-item:focus-visible { border-color:var(--accent);outline-offset:2px; }
+.insight-overdue { border-color:var(--color-danger-border); }
+.insight-icon { flex:none;font-size:19px; }
+.insight-item > span:nth-child(2) { flex:1;min-width:0;display:grid;gap:3px; }
+.insight-item strong,.insight-item small { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.insight-item strong { font-size:12px; }.insight-item small { font-size:11px;color:var(--text-secondary); }
+.insights-empty,.insights-more { color:var(--text-secondary);font-size:12px;margin:0;align-self:center; }
+@media(max-width:600px) { .insights-panel { padding:12px; }.insights-heading { align-items:flex-start; }.insights-heading h3 { font-size:16px; } }
 .today-check:hover,.today-check:focus-visible,.today-open:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
 @media(max-width:600px) { .today-panel { padding:12px; }.today-heading { align-items:stretch; }.today-filters { display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); }.today-filters select { width:100%;max-width:none; }.today-task { padding:8px; } }
 .panel-toggle { flex:none;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-primary);color:var(--text-secondary);font-size:11px;font-weight:700;min-height:32px;padding:5px 10px;cursor:pointer; }
