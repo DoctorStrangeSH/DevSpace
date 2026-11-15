@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.61';
-const ASSET_VERSION = '3.61.0';
+const CACHE_VERSION = 'devspace-v3.62';
+const ASSET_VERSION = '3.62.0';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -41,6 +41,7 @@ const PRECACHE_URLS = [
     'js/core/sync.js',
     'js/services/localStorage.js',
     'js/services/firebase.js',
+    'js/services/firebase-identity.js',
     'js/services/auth.js',
     'js/services/github.js',
     'js/services/supabase.js',
