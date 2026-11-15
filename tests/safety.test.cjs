@@ -16,6 +16,21 @@ test('draft Firestore rules deny legacy and anonymous access, scope private reco
   assert.match(rules, /match \/users\/\{uid\}\/projects\/\{projectId\} \{\s*allow read: if isOwner\(uid\);\s*allow write: if false/);
 });
 
+test('private migration dry-run never overwrites cloud records or mutates local projects', () => {
+  const sync = execute('js/core/sync.js').SyncModule;
+  const local = [{ id: 'new', name: 'Локальный' }, { id: 'shared', name: 'Локальная версия' }, { id: 'new', name: 'Дубликат' }, { id: '../bad' }];
+  const remote = [{ id: 'shared', name: 'Облачная версия' }];
+  const original = JSON.stringify({ local, remote });
+  const plan = sync._planPrivateMigration(local, remote);
+  assert.deepEqual(Array.from(plan.upload, p => p.id), ['new']);
+  assert.deepEqual(Array.from(plan.conflicts), ['shared']);
+  assert.equal(plan.skipped, 2);
+  assert.equal(JSON.stringify({ local, remote }), original);
+  plan.upload[0].name = 'Меняем копию';
+  assert.equal(local[0].name, 'Локальный');
+  assert.throws(() => sync._planPrivateMigration(null, []), /Ожидаются два массива/);
+});
+
 test('cloud sync security plan requires UID ownership and preserves disabled client writes', () => {
   const plan = fs.readFileSync(path.join(root, 'docs/FIREBASE_SECURITY_PLAN.md'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');

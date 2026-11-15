@@ -69,6 +69,46 @@ var SyncModule = {
         // a password embedded in public client code.
     },
 
+    // Dry-run planner. No Firestore reads/writes are triggered here.
+    // Existing remote documents always win until a user explicitly resolves
+    // conflicts; local records remain untouched in every case.
+    _planPrivateMigration: function(localProjects, remoteProjects) {
+        if (!Array.isArray(localProjects) || !Array.isArray(remoteProjects)) {
+            throw new TypeError('Ожидаются два массива проектов');
+        }
+        var remoteIds = new Set();
+        remoteProjects.forEach(function(project) {
+            if (project && typeof project.id === 'string') remoteIds.add(project.id);
+        });
+        var seen = new Set();
+        var upload = [];
+        var conflicts = [];
+        var skipped = 0;
+        localProjects.forEach(function(project) {
+            if (!project || typeof project !== 'object' || Array.isArray(project) ||
+                typeof project.id !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(project.id)) {
+                skipped++;
+                return;
+            }
+            if (seen.has(project.id)) { skipped++; return; }
+            seen.add(project.id);
+            if (remoteIds.has(project.id)) {
+                conflicts.push(project.id);
+                return;
+            }
+            // Firestore documents cap at 1 MiB; keep ample room for metadata.
+            var serialized;
+            try { serialized = JSON.stringify(project); } catch (error) { skipped++; return; }
+            // URL encoding may overestimate UTF-8 size, which is safe here.
+            if (!serialized || encodeURIComponent(serialized).length > 800000) {
+                skipped++;
+                return;
+            }
+            upload.push(JSON.parse(serialized));
+        });
+        return { upload: upload, conflicts: conflicts, skipped: skipped };
+    },
+
     _syncFromCloud: function() {
         if (this._mode === 'local' || this._syncInProgress) return Promise.resolve();
         
