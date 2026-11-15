@@ -603,6 +603,21 @@
 .insights-heading h3 { font-size:18px;color:var(--text-primary);margin:3px 0 0; }
 .insights-heading > span { color:var(--text-secondary);font-size:12px;white-space:nowrap; }
 .insights-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:9px; }
+.health-list { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:9px;margin-bottom:12px; }
+.health-list:empty { display:none; }
+.health-item { display:grid;gap:7px;min-width:0;text-align:left;padding:12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
+.health-item:hover,.health-item:focus-visible { border-color:var(--accent);outline-offset:2px; }
+.health-item-top { display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px; }
+.health-item-top strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.health-item-top b { flex:none;font-variant-numeric:tabular-nums;color:var(--color-success); }
+.health-risk .health-item-top b { color:var(--color-danger); }
+.health-warning .health-item-top b { color:var(--accent); }
+.health-unknown .health-item-top b { color:var(--text-secondary); }
+.health-track { display:block;height:6px;border-radius:10px;background:var(--border-color);overflow:hidden; }
+.health-track > span { display:block;height:100%;border-radius:inherit;background:var(--color-success); }
+.health-risk .health-track > span { background:var(--color-danger); }
+.health-warning .health-track > span { background:var(--accent); }
+.health-item small,.health-more { font-size:11px;color:var(--text-secondary); }
 .insight-item { display:flex;align-items:center;gap:10px;min-width:0;padding:11px;text-align:left;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);cursor:pointer; }
 .insight-item:hover,.insight-item:focus-visible { border-color:var(--accent);outline-offset:2px; }
 .insight-overdue { border-color:var(--color-danger-border); }
