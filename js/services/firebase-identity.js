@@ -2,6 +2,7 @@
 var FirebaseIdentityModule = {
     _auth: null,
     _user: null,
+    _lastError: null,
     _ready: false,
     _sdkPromise: null,
     init: function() {
@@ -30,6 +31,20 @@ var FirebaseIdentityModule = {
         });
         return this._sdkPromise;
     },
+    _describeAuthError: function(error) {
+        var code = error && typeof error.code === 'string' ? error.code : 'auth/sdk-unavailable';
+        var messages = {
+            'auth/operation-not-allowed': 'Google-вход не активирован в Firebase Authentication. Сохрани настройки провайдера.',
+            'auth/unauthorized-domain': 'Домен сайта не разрешён. Добавь doctorstrangesh.github.io в Authorized domains.',
+            'auth/popup-blocked': 'Браузер заблокировал окно входа. Разреши всплывающие окна для DevSpace.',
+            'auth/popup-closed-by-user': 'Окно входа закрыто до завершения авторизации.',
+            'auth/network-request-failed': 'Ошибка сети. Проверь доступность Firebase и повтори попытку.',
+            'auth/account-exists-with-different-credential': 'Этот адрес уже привязан к другому способу входа.',
+            'auth/cancelled-popup-request': 'Предыдущее окно авторизации было закрыто новым запросом.',
+            'auth/sdk-unavailable': 'Не удалось подготовить Firebase Authentication. Обнови страницу.'
+        };
+        return (messages[code] || 'Не удалось выполнить вход. Проверь настройки Firebase.') + ' [' + code.slice(0, 80) + ']';
+    },
     _ensureReady: function() {
         var self = this;
         return SyncModule._loadFirebaseSDK().then(function(loaded) {
@@ -39,13 +54,14 @@ var FirebaseIdentityModule = {
             if (!ready || !firebase.apps.length) throw new Error('Firebase Authentication недоступен');
             if (!self._auth) {
                 self._auth = firebase.auth();
-                self._auth.onAuthStateChanged(function(user) { self._user = user || null; self._render(); });
+                self._auth.onAuthStateChanged(function(user) { self._user = user || null; if (user) self._lastError = null; self._render(); });
             }
             return self._auth;
         });
     },
     toggleSignIn: function() {
         var self = this;
+        this._lastError = null;
         var button = document.getElementById('cloudIdentityBtn');
         if (button) button.disabled = true;
         var action;
@@ -54,7 +70,9 @@ var FirebaseIdentityModule = {
             action = this._auth.currentUser ? this._auth.signOut() : this._auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
         } catch (error) { action = Promise.reject(error); }
         return Promise.resolve(action).catch(function(error) {
-            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Вход в облако: ' + (error.code === 'auth/popup-closed-by-user' ? 'окно закрыто' : 'не удалось выполнить вход. Проверь Google-вход в Firebase и разрешённые домены.'));
+            var message = self._describeAuthError(error);
+            self._lastError = message;
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Вход в облако: ' + message);
         }).finally(function() { if (button) button.disabled = false; self._render(); });
     },
     _render: function() {
@@ -65,7 +83,7 @@ var FirebaseIdentityModule = {
         button.title = user ? 'Аккаунт: ' + (user.email || 'Google') + '. Облачная запись пока отключена.' : 'Войти через Google. Облачная запись пока отключена.';
         button.setAttribute('aria-label', button.title);
         var status = document.getElementById('cloudIdentityStatus');
-        if (status) status.textContent = user ? 'Вход выполнен · синхронизация записи ещё не включена' : 'Облачная запись недоступна до настройки правил доступа';
+        if (status) status.textContent = user ? 'Вход выполнен · синхронизация записи ещё не включена' : (this._lastError || 'Облачная запись недоступна до настройки правил доступа');
     }
 };
 window.FirebaseIdentityModule = FirebaseIdentityModule;
