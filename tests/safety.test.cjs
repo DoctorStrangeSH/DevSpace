@@ -6,6 +6,16 @@ const test = require('node:test');
 
 const root = path.join(__dirname, '..');
 
+test('draft Firestore rules deny legacy and anonymous access, scope private records by UID', () => {
+  const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+  assert.match(rules, /request\.auth\.uid == uid/);
+  assert.match(rules, /match \/users\/\{uid\}\/healthHistory\/\{date\}/);
+  assert.match(rules, /isValidHealthHistory\(request\.resource\.data, date\)/);
+  assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false/);
+  assert.doesNotMatch(rules, /allow\s+(?:read|write|create|update|delete)\s*:\s*if\s*true/);
+  assert.match(rules, /match \/users\/\{uid\}\/projects\/\{projectId\} \{\s*allow read: if isOwner\(uid\);\s*allow write: if false/);
+});
+
 test('cloud sync security plan requires UID ownership and preserves disabled client writes', () => {
   const plan = fs.readFileSync(path.join(root, 'docs/FIREBASE_SECURITY_PLAN.md'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
