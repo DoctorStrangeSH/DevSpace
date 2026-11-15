@@ -81,6 +81,31 @@ var FirebaseService = {
             });
     },
 
+    // Read-only private preview; never merges into local state. The Firebase
+    // authenticated session, not a user-provided UID, determines the path.
+    getPrivateProjectPreview: function() {
+        if (!this._db || typeof firebase === 'undefined' || !firebase.auth ||
+            !firebase.auth().currentUser || !firebase.auth().currentUser.uid) {
+            return Promise.resolve(null);
+        }
+        var uid = firebase.auth().currentUser.uid;
+        return this._db.collection('users').doc(uid).collection('projects')
+            .limit(100).get().then(function(snapshot) {
+                // Discard results if the identity changed during the request.
+                if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== uid) return null;
+                var result = [];
+                snapshot.forEach(function(doc) {
+                    var data = doc.data();
+                    if (!data || typeof data !== 'object') return;
+                    result.push(Object.assign({}, data, { id: doc.id }));
+                });
+                return result;
+            }).catch(function(error) {
+                console.warn('Private project preview unavailable:', error);
+                return null;
+            });
+    },
+
     deleteProject: function(projectId) {
         if (!this._writesEnabled) return Promise.resolve(false);
         if (!this._db) return Promise.resolve(false);

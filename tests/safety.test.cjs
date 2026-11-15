@@ -31,6 +31,35 @@ test('private migration dry-run never overwrites cloud records or mutates local 
   assert.throws(() => sync._planPrivateMigration(null, []), /Ожидаются два массива/);
 });
 
+test('private cloud preview uses authenticated UID and discards stale session results', async () => {
+  let user = { uid: 'user-A' };
+  const calls = [];
+  let resolveRead;
+  const db = { collection(name) {
+    calls.push(name);
+    return { doc(uid) {
+      calls.push(uid);
+      return { collection(child) {
+        calls.push(child);
+        return { limit(n) {
+          calls.push(n);
+          return { get() { return new Promise(resolve => { resolveRead = resolve; }); } };
+        } };
+      } };
+    } };
+  } };
+  const ctx = execute('js/services/firebase.js', { firebase: { auth: () => ({ currentUser: user }) } });
+  ctx.FirebaseService._db = db;
+  const pending = ctx.FirebaseService.getPrivateProjectPreview();
+  assert.deepEqual(calls, ['users', 'user-A', 'projects', 100]);
+  user = { uid: 'user-B' };
+  resolveRead({ forEach(cb) { cb({ id: 'a', data: () => ({ name: 'A' }) }); } });
+  assert.equal(await pending, null);
+  user = null;
+  assert.equal(await ctx.FirebaseService.getPrivateProjectPreview(), null);
+  assert.equal(ctx.FirebaseService._writesEnabled, false);
+});
+
 test('cloud sync security plan requires UID ownership and preserves disabled client writes', () => {
   const plan = fs.readFileSync(path.join(root, 'docs/FIREBASE_SECURITY_PLAN.md'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
