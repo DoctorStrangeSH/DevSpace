@@ -16,6 +16,16 @@
 
 `FirebaseService.getPrivateProjectPreview()` — отдельная ограниченная (100 документов) операция чтения `users/{uid}/projects`, где UID берётся только из активной Firebase Auth-сессии. Она ничего не сохраняет, не заменяет локальные проекты и отбрасывает результат, если аккаунт сменился во время запроса. До публикации и проверки соответствующих правил она может возвращать `null` из-за отказа Firestore.
 
+## Автоматическая проверка Security Rules
+
+Добавлен отдельный CI job `Firestore rules emulator`, использующий исключительно тестовый проект `demo-devspace-rules`. Тесты в `tests/firestore.rules.test.cjs` проверяют чтение своего/чужого профиля, запрет старых коллекций, запрет записи проектов и контроль структуры истории. Локально их можно запустить после установки `firebase-tools`, `@firebase/rules-unit-testing` и `firebase` командой:
+
+```sh
+npx firebase emulators:exec --only firestore --project demo-devspace-rules 'node --test tests/firestore.rules.test.cjs'
+```
+
+Это проверка прототипа, **не деплой в живой Firebase**. До успешного CI не считать правила валидированными.
+
 ## Перед включением
 
 1. В проекте Firebase `devspace-aa564` включить Authentication → Google.
