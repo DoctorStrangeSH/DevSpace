@@ -29,6 +29,7 @@ var RendererModule = {
             navbar: document.getElementById('mainNavbar')
         };
         var self = this;
+        this._initCollapsiblePanels();
         var focus = document.getElementById('focusPanel');
         if (focus) focus.addEventListener('click', function(event) {
             var complete = event.target.closest('[data-focus-complete]');
@@ -138,6 +139,32 @@ var RendererModule = {
                 self._applyProjectView();
             });
         });
+    },
+
+    _initCollapsiblePanels: function() {
+        var settings = typeof StorageService !== 'undefined' ? StorageService.get('collapsedPanels', {}) : {};
+        if (!settings || typeof settings !== 'object' || Array.isArray(settings)) settings = {};
+        var isMobile = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 600px)').matches;
+        Array.from(document.querySelectorAll ? document.querySelectorAll('[data-collapse-panel]') : []).forEach(function(button) {
+            var panel = document.getElementById(button.dataset.collapsePanel);
+            if (!panel) return;
+            var collapsed = Object.hasOwn(settings, panel.id) ? settings[panel.id] === true : isMobile && panel.id === 'scheduleCalendar';
+            RendererModule._setPanelCollapsed(panel, button, collapsed);
+            button.addEventListener('click', function() {
+                var next = !panel.classList.contains('is-collapsed');
+                RendererModule._setPanelCollapsed(panel, button, next);
+                var updated = typeof StorageService !== 'undefined' ? StorageService.get('collapsedPanels', {}) : {};
+                if (!updated || typeof updated !== 'object' || Array.isArray(updated)) updated = {};
+                updated[panel.id] = next;
+                if (typeof StorageService !== 'undefined') StorageService.set('collapsedPanels', updated);
+            });
+        });
+    },
+
+    _setPanelCollapsed: function(panel, button, collapsed) {
+        panel.classList.toggle('is-collapsed', collapsed);
+        button.setAttribute('aria-expanded', String(!collapsed));
+        button.textContent = collapsed ? 'Развернуть' : 'Свернуть';
     },
 
     _applyProjectView: function() {
