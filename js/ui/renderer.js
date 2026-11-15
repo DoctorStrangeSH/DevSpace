@@ -449,11 +449,39 @@ var RendererModule = {
         return items.sort(function(a, b) { return (a.kind === 'overdue' ? 0 : 1) - (b.kind === 'overdue' ? 0 : 1) || b.count - a.count || a.name.localeCompare(b.name); });
     },
 
+    _collectProjectHealth: function(projects, now) {
+        var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var key = start.getFullYear() + '-' + String(start.getMonth() + 1).padStart(2, '0') + '-' + String(start.getDate()).padStart(2, '0');
+        return (projects || []).filter(function(project) { return project && project.status !== 'completed' && project.status !== 'archived'; }).map(function(project) {
+            var tasks = Array.isArray(project.checklist) ? project.checklist.filter(function(task) { return task && typeof task.text === 'string' && task.text.trim(); }) : [];
+            var open = tasks.filter(function(task) { return !task.completed; });
+            var overdue = open.filter(function(task) { return typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) && task.deadline < key; });
+            var timestamp = typeof project.updatedAt === 'string' ? Date.parse(project.updatedAt) : NaN;
+            var inactiveDays = Number.isFinite(timestamp) && timestamp >= 0 && timestamp < start.getTime() ? Math.floor((start.getTime() - timestamp) / 86400000) : 0;
+            var hasPlan = tasks.length > 0;
+            var score = hasPlan ? Math.max(0, 100 - Math.min(overdue.length, 3) * 20 - (inactiveDays > 14 && open.length ? 15 : 0) - (open.length && tasks.every(function(task) { return !task.deadline; }) ? 10 : 0) - Math.round(open.length / tasks.length * 10)) : null;
+            var advice = !hasPlan ? 'Добавь первые задачи' : overdue.length ? 'Разбери просроченные задачи' : inactiveDays > 14 && open.length ? 'Обнови прогресс проекта' : open.length ? 'Продолжай следующий шаг' : 'Проверь завершение проекта';
+            return { id: project.id, name: project.name || 'Без названия', score: score, overdue: overdue.length, inactiveDays: inactiveDays, completed: tasks.length - open.length, total: tasks.length, advice: advice };
+        }).sort(function(a, b) {
+            return (a.score === null ? 101 : a.score) - (b.score === null ? 101 : b.score) || b.overdue - a.overdue || a.name.localeCompare(b.name);
+        });
+    },
+
     _renderInsights: function() {
         var panel = document.getElementById('insightsPanel');
         var list = document.getElementById('insightsList');
         if (!panel || !list) return;
         var items = this._collectInsights(StateManager.get('projects') || [], new Date());
+        var healthList = document.getElementById('projectHealthList');
+        if (healthList) {
+            var health = this._collectProjectHealth(StateManager.get('projects') || [], new Date());
+            healthList.innerHTML = health.length ? health.slice(0, 4).map(function(item) {
+                var id = Helpers.escapeHtml(String(item.id)).replace(/"/g, '&quot;');
+                var scoreLabel = item.score === null ? 'Нет плана' : item.score + '/100';
+                var level = item.score === null ? 'unknown' : item.score < 60 ? 'risk' : item.score < 85 ? 'warning' : 'good';
+                return '<button type="button" class="health-item health-' + level + '" data-insight-project="' + id + '"><span class="health-item-top"><strong>' + Helpers.escapeHtml(item.name) + '</strong><b>' + scoreLabel + '</b></span><span class="health-track"><span style="width:' + (item.score === null ? 0 : item.score) + '%"></span></span><small>' + Helpers.escapeHtml(item.advice) + '</small></button>';
+            }).join('') + (health.length > 4 ? '<span class="health-more">Ещё проектов: ' + (health.length - 4) + '</span>' : '') : '';
+        }
         var summary = document.getElementById('insightsSummary');
         if (summary) summary.textContent = items.length ? 'Сигналов: ' + items.length : 'Всё под контролем';
         list.innerHTML = items.length ? items.slice(0, 4).map(function(item) {
