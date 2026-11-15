@@ -85,6 +85,19 @@ var RendererModule = {
         if (schedule) schedule.addEventListener('change', function(event) {
             if (event.target.matches('#scheduleProjectFilter, #scheduleTypeFilter')) self._renderSchedule();
         });
+        var todayPanel = document.getElementById('todayPanel');
+        if (todayPanel) todayPanel.addEventListener('change', function(event) {
+            if (event.target.matches('#todayPriority, #todayScope')) self._renderToday();
+        });
+        if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            var complete = event.target.closest('[data-today-complete]');
+            if (complete) {
+                if (typeof ChecklistModule !== 'undefined') ChecklistModule.toggleItem(complete.dataset.todayProject, complete.dataset.todayComplete);
+                return;
+            }
+            var project = event.target.closest('[data-focus-project]');
+            if (project && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.focusProject);
+        });
         var goal = document.getElementById('productivityGoal');
         if (goal) {
             var savedGoal = typeof StorageService !== 'undefined' ? Number(StorageService.get('weeklyGoal', 5)) : 5;
@@ -341,6 +354,50 @@ var RendererModule = {
         });
     },
 
+    _collectTodayTasks: function(projects, now, priority, scope) {
+        var pad = function(value) { return String(value).padStart(2, '0'); };
+        var dateKey = function(value) { return value.getFullYear() + '-' + pad(value.getMonth() + 1) + '-' + pad(value.getDate()); };
+        var today = dateKey(now);
+        var week = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6));
+        var rank = { high: 0, normal: 1, low: 2 };
+        var tasks = [];
+        (projects || []).forEach(function(project) {
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                var level = Object.hasOwn(rank, task.priority) ? task.priority : 'normal';
+                var due = typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) ? task.deadline : '';
+                if (priority !== 'all' && level !== priority) return;
+                if (scope === 'urgent' && !(level === 'high' || due && due <= today)) return;
+                if (scope === 'week' && !(due && due <= week)) return;
+                tasks.push({ projectId: project.id, projectName: project.name || 'Без названия', id: task.id, text: task.text, priority: level, deadline: due });
+            });
+        });
+        return tasks.sort(function(a, b) {
+            var aLate = a.deadline && a.deadline < today ? 0 : 1;
+            var bLate = b.deadline && b.deadline < today ? 0 : 1;
+            return aLate - bLate || rank[a.priority] - rank[b.priority] || (a.deadline || '9999').localeCompare(b.deadline || '9999') || a.projectName.localeCompare(b.projectName);
+        });
+    },
+
+    _renderToday: function() {
+        var list = document.getElementById('todayList');
+        if (!list) return;
+        var priority = document.getElementById('todayPriority');
+        var scope = document.getElementById('todayScope');
+        var tasks = this._collectTodayTasks(StateManager.get('projects') || [], new Date(), priority ? priority.value : 'all', scope ? scope.value : 'urgent');
+        var summary = document.getElementById('todaySummary');
+        if (summary) summary.textContent = tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет';
+        var today = new Date();
+        var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+        list.innerHTML = tasks.length ? tasks.slice(0, 8).map(function(task) {
+            var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
+            var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
+            var late = task.deadline && task.deadline < key;
+            var due = task.deadline ? (late ? 'Просрочено · ' : '') + task.deadline.slice(8, 10) + '.' + task.deadline.slice(5, 7) : 'Без срока';
+            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span></div>';
+        }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
+    },
+
     _collectScheduleItems: function(projects) {
         var result = [];
         var validDate = function(value) {
@@ -512,6 +569,7 @@ var RendererModule = {
     // ========== РЕНДЕР ==========
 
     renderProjects: function() {
+        this._renderToday();
         this._renderFocus();
         this._renderProductivity();
         this._renderRoadmapOverview();
