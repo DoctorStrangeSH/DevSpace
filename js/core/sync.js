@@ -128,6 +128,18 @@ var SyncModule = {
         return { upload: upload, conflicts: conflicts, skipped: skipped };
     },
 
+    // Resolve exactly one project from a fresh snapshot. A caller must never
+    // trust an old preview as proof that the remote document is still absent.
+    // Before future upload, re-read remote state and recompute this plan.
+    _prepareSinglePrivateMigration: function(projectId, localProjects, remoteProjects) {
+        if (typeof projectId !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(projectId)) return null;
+        var plan = this._planPrivateMigration(localProjects, remoteProjects);
+        var matches = plan.upload.filter(function(project) { return project.id === projectId; });
+        if (matches.length !== 1) return null;
+        // Never return a reference to the caller's mutable local state.
+        return JSON.parse(JSON.stringify(matches[0]));
+    },
+
     _syncFromCloud: function() {
         if (this._mode === 'local' || this._syncInProgress) return Promise.resolve();
         
