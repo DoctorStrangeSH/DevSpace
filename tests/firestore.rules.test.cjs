@@ -39,7 +39,7 @@ test('private Firestore rules enforce UID isolation and block legacy collections
   }
 });
 
-test('project writes use bounded immutable ID and versioned JSON envelope', async () => {
+test('project writes remain disabled even for valid owner envelopes', async () => {
   const env = await envPromise;
   try {
     const owner = env.authenticatedContext('user-A').firestore();
@@ -50,17 +50,17 @@ test('project writes use bounded immutable ID and versioned JSON envelope', asyn
     await assertFails(setDoc(doc(owner, item), { ...valid, id: 'other-project' }));
     await assertFails(setDoc(doc(owner, item), { ...valid, role: 'admin' }));
     await assertFails(setDoc(doc(owner, item), { ...valid, payload: 'x'.repeat(200001) }));
-    await assertSucceeds(setDoc(doc(owner, item), valid));
+    await assertFails(setDoc(doc(owner, item), valid));
     await assertFails(setDoc(doc(owner, item), { ...valid, schemaVersion: 2 }));
     await assertFails(setDoc(doc(owner, item), { ...valid, payload: 123 }));
-    await assertSucceeds(setDoc(doc(owner, item), { ...valid, payload: '{"name":"Updated"}' }));
+    await assertFails(setDoc(doc(owner, item), { ...valid, payload: '{"name":"Updated"}' }));
     await assertFails(deleteDoc(doc(owner, item)));
   } finally {
     await env.clearFirestore();
   }
 });
 
-test('health history is scoped to its owner and validates document shape on create/update', async () => {
+test('health history remains fully closed during read-only migration preview stage', async () => {
   const env = await envPromise;
   try {
     const owner = env.authenticatedContext('user-A').firestore();
@@ -69,10 +69,10 @@ test('health history is scoped to its owner and validates document shape on crea
     await assertFails(setDoc(doc(stranger, record), { date: '2026-11-15', scores: {}, updatedAt: serverTimestamp() }));
     await assertFails(setDoc(doc(owner, record), { date: '2026-11-14', scores: {}, updatedAt: serverTimestamp() }));
     await assertFails(setDoc(doc(owner, record), { date: '2026-11-15', scores: {}, extra: true, updatedAt: serverTimestamp() }));
-    await assertSucceeds(setDoc(doc(owner, record), { date: '2026-11-15', scores: { a: 80 }, updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(owner, record), { date: '2026-11-15', scores: { a: 80 }, updatedAt: serverTimestamp() }));
     await assertFails(setDoc(doc(owner, record), { date: '2026-11-15', scores: {}, extra: true, updatedAt: serverTimestamp() }));
     await assertFails(getDoc(doc(stranger, record)));
-    await assertSucceeds(getDoc(doc(owner, record)));
+    await assertFails(getDoc(doc(owner, record)));
   } finally {
     await env.clearFirestore();
   }

@@ -9,12 +9,10 @@ const root = path.join(__dirname, '..');
 test('draft Firestore rules deny legacy and anonymous access, scope private records by UID', () => {
   const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
   assert.match(rules, /request\.auth\.uid == uid/);
-  assert.match(rules, /match \/users\/\{uid\}\/healthHistory\/\{date\}/);
-  assert.match(rules, /isValidHealthHistory\(request\.resource\.data, date\)/);
+  assert.doesNotMatch(rules, /allow create:|allow update:|allow delete:/);
   assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false/);
   assert.doesNotMatch(rules, /allow\s+(?:read|write|create|update|delete)\s*:\s*if\s*true/);
-  assert.match(rules, /match \/users\/\{uid\}\/projects\/\{projectId\} \{\s*allow read: if isOwner\(uid\);\s*allow create: if isOwner\(uid\)/);
-  assert.match(rules, /allow delete: if false/);
+  assert.match(rules, /match \/users\/\{uid\}\/projects\/\{projectId\} \{\s*allow read: if isOwner\(uid\);\s*allow write: if false/);
 });
 
 test('private migration dry-run never overwrites cloud records or mutates local projects', () => {
