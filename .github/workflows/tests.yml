@@ -38,4 +38,4 @@ jobs:
       - name: Install isolated emulator test dependencies
         run: npm install --no-save --package-lock=false firebase-tools @firebase/rules-unit-testing firebase
       - name: Run rules tests against local emulator only
-        run: npx firebase emulators:exec --only firestore --project demo-devspace-rules 'node --test tests/firestore.rules.test.cjs'
+        run: npx firebase emulators:exec --only firestore --project demo-devspace-rules 'node --test tests/firestore.rules.test.cjs && node --test tests/firestore.create-only.rules.test.cjs'
