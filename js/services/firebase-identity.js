@@ -6,6 +6,8 @@ var FirebaseIdentityModule = {
     _ready: false,
     _sdkPromise: null,
     _previewBusy: false,
+    _previewRequestId: 0,
+    _activeUid: null,
     init: function() {
         var self = this;
         var button = document.getElementById('cloudIdentityBtn');
@@ -61,7 +63,21 @@ var FirebaseIdentityModule = {
             if (!ready || !firebase.apps.length) throw new Error('Firebase Authentication недоступен');
             if (!self._auth) {
                 self._auth = firebase.auth();
-                self._auth.onAuthStateChanged(function(user) { self._user = user || null; if (user) self._lastError = null; self._render(); });
+                self._auth.onAuthStateChanged(function(user) {
+                    var nextUid = user && user.uid || null;
+                    if (nextUid !== self._activeUid) {
+                        self._activeUid = nextUid;
+                        self._previewRequestId++;
+                        self._previewBusy = false;
+                        var previewStatus = document.getElementById('cloudMigrationPreviewStatus');
+                        if (previewStatus) previewStatus.textContent = nextUid
+                            ? 'Аккаунт подключён. Нажми «Проверить перенос в облако».'
+                            : 'Войди через Google, чтобы проверить возможные конфликты. Данные не будут отправлены.';
+                    }
+                    self._user = user || null;
+                    if (user) self._lastError = null;
+                    self._render();
+                });
             }
             return self._auth;
         });
@@ -88,12 +104,13 @@ var FirebaseIdentityModule = {
         var user = this._auth && this._auth.currentUser;
         if (this._previewBusy || !user || !user.uid || !this._ready) return Promise.resolve(false);
         var uid = user.uid;
+        var requestId = ++this._previewRequestId;
         this._previewBusy = true;
         this._render();
         if (status) status.textContent = 'Проверяем облачные проекты… Никакой записи не выполняется.';
         return FirebaseService.getPrivateProjectPreview().then(function(remote) {
-            if (!self._auth || !self._auth.currentUser || self._auth.currentUser.uid !== uid) {
-                if (status) status.textContent = 'Аккаунт изменился. Проверка отменена.';
+            if (requestId !== self._previewRequestId || !self._auth ||
+                !self._auth.currentUser || self._auth.currentUser.uid !== uid) {
                 return false;
             }
             if (!Array.isArray(remote)) {
@@ -107,9 +124,15 @@ var FirebaseIdentityModule = {
                 ', в облаке — ' + remote.length + '. Перенос не выполнялся.';
             return true;
         }).catch(function() {
-            if (status) status.textContent = 'Не удалось проверить перенос. Локальные данные не изменены.';
+            if (requestId === self._previewRequestId && status) {
+                status.textContent = 'Не удалось проверить перенос. Локальные данные не изменены.';
+            }
             return false;
-        }).finally(function() { self._previewBusy = false; self._render(); });
+        }).finally(function() {
+            if (requestId !== self._previewRequestId) return;
+            self._previewBusy = false;
+            self._render();
+        });
     },
     _render: function() {
         var button = document.getElementById('cloudIdentityBtn');
