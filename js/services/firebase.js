@@ -153,13 +153,31 @@ var FirebaseService = {
         try {
             var project = JSON.parse(data.payload);
             if (!project || typeof project !== 'object' || Array.isArray(project) ||
-                project.id !== documentId || Object.keys(project).some(function(key) {
-                    return key === '__proto__' || key === 'constructor' || key === 'prototype';
-                })) return null;
+                project.id !== documentId || !this._isSafePrivateProjectTree(project)) return null;
             return project;
         } catch (error) {
             return null;
         }
+    },
+
+    // Prevent dangerous keys at ANY depth, and limit nesting/node count before
+    // a future cloud download can be merged into local application state.
+    _isSafePrivateProjectTree: function(root) {
+        var stack = [{ value: root, depth: 0 }];
+        var nodes = 0;
+        while (stack.length) {
+            var current = stack.pop();
+            if (++nodes > 10000 || current.depth > 40) return false;
+            var value = current.value;
+            if (!value || typeof value !== 'object') continue;
+            var keys = Object.keys(value);
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') return false;
+                stack.push({ value: value[key], depth: current.depth + 1 });
+            }
+        }
+        return true;
     },
 
     // Builds data matching the prototype Firestore rules; does NOT write it.

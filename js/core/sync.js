@@ -69,6 +69,24 @@ var SyncModule = {
         // a password embedded in public client code.
     },
 
+    _isSafeMigrationTree: function(root) {
+        var stack = [{ value: root, depth: 0 }];
+        var nodes = 0;
+        while (stack.length) {
+            var current = stack.pop();
+            if (++nodes > 10000 || current.depth > 40) return false;
+            var value = current.value;
+            if (!value || typeof value !== 'object') continue;
+            var keys = Object.keys(value);
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') return false;
+                stack.push({ value: value[key], depth: current.depth + 1 });
+            }
+        }
+        return true;
+    },
+
     // Dry-run planner. No Firestore reads/writes are triggered here.
     // Existing remote documents always win until a user explicitly resolves
     // conflicts; local records remain untouched in every case.
@@ -101,14 +119,12 @@ var SyncModule = {
             var serialized;
             try { serialized = JSON.stringify(project); } catch (error) { skipped++; return; }
             if (!serialized || serialized.length < 2 || serialized.length > 200000 ||
-                Object.keys(project).some(function(key) {
-                    return key === '__proto__' || key === 'constructor' || key === 'prototype';
-                })) {
+                !this._isSafeMigrationTree(JSON.parse(serialized))) {
                 skipped++;
                 return;
             }
             upload.push(JSON.parse(serialized));
-        });
+        }, this);
         return { upload: upload, conflicts: conflicts, skipped: skipped };
     },
 
