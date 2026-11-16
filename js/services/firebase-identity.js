@@ -114,7 +114,8 @@ var FirebaseIdentityModule = {
                 return false;
             }
             if (!Array.isArray(remote)) {
-                if (status) status.textContent = 'Приватное облако пока недоступно. Проверь правила Firestore; локальные проекты сохранены.';
+                if (status) status.textContent = FirebaseService._describePrivatePreviewError(
+                    FirebaseService._lastPrivatePreviewError) + ' Локальные проекты сохранены.';
                 return false;
             }
             var local = StateManager.get('projects') || [];

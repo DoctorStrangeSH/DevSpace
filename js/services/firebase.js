@@ -22,6 +22,19 @@ var FirebaseService = {
     // Anonymous static pages must never be able to mutate shared data.
     // A real server-verified owner session is required before enabling writes.
     _writesEnabled: false,
+    _lastPrivatePreviewError: null,
+
+    _describePrivatePreviewError: function(code) {
+        switch (code) {
+            case 'permission-denied': return 'Доступ запрещён правилами Firestore. Проверь разрешения для своего UID.';
+            case 'unauthenticated': return 'Сессия Google истекла. Выйди и войди снова.';
+            case 'unavailable': return 'Firestore временно недоступен. Проверь интернет и повтори попытку.';
+            case 'deadline-exceeded': return 'Firestore не ответил вовремя. Повтори попытку.';
+            case 'invalid-document': return 'В облаке есть повреждённый или неподдерживаемый проект. Перенос остановлен.';
+            case 'too-many-projects': return 'В облаке 100 или больше проектов. Требуется постраничная проверка.';
+            default: return 'Не удалось прочитать приватные проекты. Повтори попытку позже.';
+        }
+    },
 
     COLLECTIONS: {
         PROJECTS: 'projects',
@@ -84,8 +97,10 @@ var FirebaseService = {
     // Read-only private preview; never merges into local state. The Firebase
     // authenticated session, not a user-provided UID, determines the path.
     getPrivateProjectPreview: function() {
+        this._lastPrivatePreviewError = null;
         if (!this._db || typeof firebase === 'undefined' || !firebase.auth ||
             !firebase.auth().currentUser || !firebase.auth().currentUser.uid) {
+            this._lastPrivatePreviewError = 'unauthenticated';
             return Promise.resolve(null);
         }
         var uid = firebase.auth().currentUser.uid;
@@ -102,10 +117,21 @@ var FirebaseService = {
                     else invalid = true;
                 });
                 // A partial or malformed inventory must never produce a migration plan.
-                if (invalid || result.length >= 100) return null;
+                if (invalid) {
+                    self._lastPrivatePreviewError = 'invalid-document';
+                    return null;
+                }
+                if (result.length >= 100) {
+                    self._lastPrivatePreviewError = 'too-many-projects';
+                    return null;
+                }
                 return result;
             }).catch(function(error) {
-                console.warn('Private project preview unavailable:', error);
+                if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== uid) return null;
+                var allowed = ['permission-denied', 'unauthenticated', 'unavailable', 'deadline-exceeded'];
+                var code = error && error.code;
+                self._lastPrivatePreviewError = allowed.indexOf(code) !== -1 ? code : 'unknown';
+                console.warn('Private project preview unavailable:', self._lastPrivatePreviewError);
                 return null;
             });
     },
