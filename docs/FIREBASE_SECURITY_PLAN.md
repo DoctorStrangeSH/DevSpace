@@ -18,6 +18,8 @@
 
 `FirebaseService.getPrivateProjectPreview()` — отдельная ограниченная (100 документов) операция чтения `users/{uid}/projects`, где UID берётся только из активной Firebase Auth-сессии. Она ничего не сохраняет, не заменяет локальные проекты и отбрасывает результат, если аккаунт сменился во время запроса. До публикации и проверки соответствующих правил она может возвращать `null` из-за отказа Firestore.
 
+Предварительное чтение теперь принимает **только** конверты версии 1 с допустимым ID и JSON-объектом, чей `id` совпадает с ID документа. Повреждённые записи пропускаются, не исправляются автоматически и не импортируются в локальное хранилище. `FirebaseService._preparePrivateProjectEnvelope(project)` готовит `{id, schemaVersion, payload}` без `updatedAt` и без сетевого запроса — для будущей операции записи потребуется серверная метка времени и отдельное подтверждение пользователя.
+
 ## Автоматическая проверка Security Rules
 
 Добавлен отдельный CI job `Firestore rules emulator`, использующий исключительно тестовый проект `demo-devspace-rules`. Тесты в `tests/firestore.rules.test.cjs` проверяют чтение своего/чужого профиля, запрет старых коллекций, запрет записи проектов и контроль структуры истории. Локально их можно запустить после установки `firebase-tools`, `@firebase/rules-unit-testing` и `firebase` командой:
@@ -48,36 +50,9 @@ npx firebase emulators:exec --only firestore --project demo-devspace-rules 'node
 
 Ни email, ни включённый локальный редактор, ни `userId: 'owner'` не являются доказательством прав доступа.
 
-## Фрагмент правил для НОВЫХ путей
+## Источник прототипа правил
 
-Добавить внутрь существующего `match /databases/{database}/documents` после проверки текущих правил. **Не заменять им автоматически все правила:** старые публичные маршруты могут обслуживать портфолио.
-
-```firestore
-function isSelf(uid) {
-  return request.auth != null && request.auth.uid == uid;
-}
-
-match /users/{uid}/healthHistory/{date} {
-  allow get, list, delete: if isSelf(uid);
-  allow create, update: if isSelf(uid)
-    && request.resource.data.keys().hasAll(['date', 'scores', 'updatedAt'])
-    && request.resource.data.keys().hasOnly(['date', 'scores', 'updatedAt'])
-    && request.resource.data.date == date
-    && request.resource.data.scores is map
-    && request.resource.data.scores.size() <= 500
-    && request.resource.data.updatedAt is timestamp;
-}
-
-match /users/{uid}/settings/{documentId} {
-  allow read, write: if isSelf(uid);
-}
-
-match /users/{uid}/projects/{projectId} {
-  allow read, write: if isSelf(uid);
-}
-```
-
-Для новых приватных документов нужны ограничения размера, типов и состава полей на уровне приложения и правил. Перед публикацией следует ужесточить схемы `projects` и `settings`; пример выше намеренно не включает публичные записи в старые коллекции.
+Единственный актуальный прототип — [`firestore.rules`](../firestore.rules). Более ранние сокращённые примеры с `allow write: if isSelf(uid)` **не использовать**: они не проверяют структуру документов. Перед будущим деплоем обязательны успешные эмуляторные тесты, сверка с действующими правилами и отдельное согласование.
 
 ## Проверки перед переключением
 

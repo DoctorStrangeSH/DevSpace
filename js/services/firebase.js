@@ -89,21 +89,60 @@ var FirebaseService = {
             return Promise.resolve(null);
         }
         var uid = firebase.auth().currentUser.uid;
+        var self = this;
         return this._db.collection('users').doc(uid).collection('projects')
             .limit(100).get().then(function(snapshot) {
                 // Discard results if the identity changed during the request.
                 if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== uid) return null;
                 var result = [];
                 snapshot.forEach(function(doc) {
-                    var data = doc.data();
-                    if (!data || typeof data !== 'object') return;
-                    result.push(Object.assign({}, data, { id: doc.id }));
+                    var project = self._decodePrivateProjectDocument(doc.data(), doc.id);
+                    if (project) result.push(project);
                 });
                 return result;
             }).catch(function(error) {
                 console.warn('Private project preview unavailable:', error);
                 return null;
             });
+    },
+
+    // Validate untrusted JSON before showing it in a read-only preview.
+    // No preview result is ever merged into the local project store.
+    _decodePrivateProjectDocument: function(data, documentId) {
+        if (!data || typeof data !== 'object' || Array.isArray(data) ||
+            typeof documentId !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(documentId) ||
+            data.id !== documentId || data.schemaVersion !== 1 ||
+            typeof data.payload !== 'string' || data.payload.length < 2 || data.payload.length > 200000 ||
+            Object.keys(data).some(function(key) {
+                return ['id', 'schemaVersion', 'payload', 'updatedAt'].indexOf(key) === -1;
+            })) return null;
+        try {
+            var project = JSON.parse(data.payload);
+            if (!project || typeof project !== 'object' || Array.isArray(project) ||
+                project.id !== documentId || Object.keys(project).some(function(key) {
+                    return key === '__proto__' || key === 'constructor' || key === 'prototype';
+                })) return null;
+            return project;
+        } catch (error) {
+            return null;
+        }
+    },
+
+    // Builds data matching the prototype Firestore rules; does NOT write it.
+    // A future explicit upload must attach firebase.firestore.FieldValue.serverTimestamp().
+    _preparePrivateProjectEnvelope: function(project) {
+        if (!project || typeof project !== 'object' || Array.isArray(project) ||
+            typeof project.id !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(project.id)) return null;
+        try {
+            var payload = JSON.stringify(project);
+            if (!payload || payload.length < 2 || payload.length > 200000 ||
+                !this._decodePrivateProjectDocument({
+                    id: project.id, schemaVersion: 1, payload: payload
+                }, project.id)) return null;
+            return { id: project.id, schemaVersion: 1, payload: payload };
+        } catch (error) {
+            return null;
+        }
     },
 
     deleteProject: function(projectId) {
