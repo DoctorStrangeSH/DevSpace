@@ -8,8 +8,11 @@ service cloud.firestore {
     // Assumed data model:
     // users/{uid}/healthHistory/{date}: date YYYY-MM-DD (string),
     // scores (map with <= 500 project keys), updatedAt (timestamp).
-    // users/{uid}/settings/main and users/{uid}/projects/{id}:
-    // reserved for future validated schemas; no writes yet.
+    // users/{uid}/projects/{id}: id (immutable string matching path),
+    // schemaVersion (integer 1), payload (JSON string <= 200000 chars),
+    // updatedAt (server timestamp). Only the UID owner can create/update;
+    // no client-side deletes. JSON content is not trusted by other users.
+    // users/{uid}/settings/main: reserved; no writes yet.
 
     function isAuthenticated() {
       return request.auth != null;
@@ -31,6 +34,21 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function isValidPrivateProject(data, projectId) {
+      return data.keys().hasAll(['id', 'schemaVersion', 'payload', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'schemaVersion', 'payload', 'updatedAt'])
+        && data.id is string
+        && data.id == projectId
+        && projectId.matches('^[a-zA-Z0-9_-]{1,150}$')
+        && data.schemaVersion is int
+        && data.schemaVersion == 1
+        && data.payload is string
+        && data.payload.size() > 1
+        && data.payload.size() <= 200000
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
     match /users/{uid}/healthHistory/{date} {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid) && isValidHealthHistory(request.resource.data, date);
@@ -45,7 +63,9 @@ service cloud.firestore {
 
     match /users/{uid}/projects/{projectId} {
       allow read: if isOwner(uid);
-      allow write: if false;
+      allow create: if isOwner(uid) && isValidPrivateProject(request.resource.data, projectId);
+      allow update: if isOwner(uid) && isValidPrivateProject(request.resource.data, projectId);
+      allow delete: if false;
     }
 
     match /{document=**} {

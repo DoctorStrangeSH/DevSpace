@@ -39,6 +39,27 @@ test('private Firestore rules enforce UID isolation and block legacy collections
   }
 });
 
+test('project writes use bounded immutable ID and versioned JSON envelope', async () => {
+  const env = await envPromise;
+  try {
+    const owner = env.authenticatedContext('user-A').firestore();
+    const stranger = env.authenticatedContext('user-B').firestore();
+    const item = 'users/user-A/projects/new-project';
+    const valid = { id: 'new-project', schemaVersion: 1, payload: '{"name":"Example"}', updatedAt: serverTimestamp() };
+    await assertFails(setDoc(doc(stranger, item), valid));
+    await assertFails(setDoc(doc(owner, item), { ...valid, id: 'other-project' }));
+    await assertFails(setDoc(doc(owner, item), { ...valid, role: 'admin' }));
+    await assertFails(setDoc(doc(owner, item), { ...valid, payload: 'x'.repeat(200001) }));
+    await assertSucceeds(setDoc(doc(owner, item), valid));
+    await assertFails(setDoc(doc(owner, item), { ...valid, schemaVersion: 2 }));
+    await assertFails(setDoc(doc(owner, item), { ...valid, payload: 123 }));
+    await assertSucceeds(setDoc(doc(owner, item), { ...valid, payload: '{"name":"Updated"}' }));
+    await assertFails(deleteDoc(doc(owner, item)));
+  } finally {
+    await env.clearFirestore();
+  }
+});
+
 test('health history is scoped to its owner and validates document shape on create/update', async () => {
   const env = await envPromise;
   try {
