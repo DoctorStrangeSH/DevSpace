@@ -96,11 +96,14 @@ var SyncModule = {
                 conflicts.push(project.id);
                 return;
             }
-            // Firestore documents cap at 1 MiB; keep ample room for metadata.
+            // Match the strict payload limit in firestore.rules; do not promise
+            // uploads the security rules will reject.
             var serialized;
             try { serialized = JSON.stringify(project); } catch (error) { skipped++; return; }
-            // URL encoding may overestimate UTF-8 size, which is safe here.
-            if (!serialized || encodeURIComponent(serialized).length > 800000) {
+            if (!serialized || serialized.length < 2 || serialized.length > 200000 ||
+                Object.keys(project).some(function(key) {
+                    return key === '__proto__' || key === 'constructor' || key === 'prototype';
+                })) {
                 skipped++;
                 return;
             }

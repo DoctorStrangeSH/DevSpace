@@ -13,6 +13,10 @@ var FirebaseIdentityModule = {
         button.addEventListener('click', function() { self.toggleSignIn(); });
         var previewButton = document.getElementById('cloudMigrationPreviewBtn');
         if (previewButton) previewButton.addEventListener('click', function() { self.previewMigration(); });
+        var backupButton = document.getElementById('cloudMigrationBackupBtn');
+        if (backupButton) backupButton.addEventListener('click', function() {
+            if (typeof ExportModule !== 'undefined') ExportModule.createBackup();
+        });
         button.disabled = true;
         this._render();
         // Prepare the SDK first so the Google popup can be opened directly on click.
