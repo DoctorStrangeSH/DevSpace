@@ -122,7 +122,9 @@ var FirebaseIdentityModule = {
             var plan = SyncModule._planPrivateMigration(local, remote);
             if (status) status.textContent = 'Предпросмотр: новых — ' + plan.upload.length +
                 ', совпадающих ID — ' + plan.conflicts.length + ', пропущено — ' + plan.skipped +
-                ', в облаке — ' + remote.length + '. Перенос не выполнялся.';
+                ', в облаке — ' + remote.length + '. Перенос не выполнялся. ' +
+                (plan.upload.length ? 'Следующий шаг: скачай резервную копию. Загрузка станет доступна после проверки правил безопасности.' :
+                    'Новых проектов для загрузки нет. Локальные данные сохранены.');
             return true;
         }).catch(function() {
             if (requestId === self._previewRequestId && status) {
