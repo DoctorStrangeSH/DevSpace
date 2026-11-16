@@ -622,6 +622,11 @@
 .health-transfer { display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px; }
 .health-transfer button { padding:7px 11px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);font-size:11px;cursor:pointer; }
 .health-transfer button:hover,.health-transfer button:focus-visible { border-color:var(--accent);outline-offset:2px; }
+.cloud-migration-preview { display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px; }
+.cloud-migration-preview button { padding:8px 12px;border:1px solid var(--accent);border-radius:9px;background:var(--bg-primary);color:var(--text-primary);font-size:12px;cursor:pointer; }
+.cloud-migration-preview button:hover,.cloud-migration-preview button:focus-visible { background:var(--bg-secondary);outline-offset:2px; }
+.cloud-migration-preview button:disabled { opacity:.5;cursor:not-allowed; }
+.cloud-migration-preview .health-history-note { flex:1 1 260px;margin:0; }
 .health-trend { font-weight:700; }
 .health-trend.trend-up { color:var(--color-success); }
 .health-trend.trend-down { color:var(--color-danger); }

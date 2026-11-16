@@ -95,10 +95,14 @@ var FirebaseService = {
                 // Discard results if the identity changed during the request.
                 if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== uid) return null;
                 var result = [];
+                var invalid = false;
                 snapshot.forEach(function(doc) {
                     var project = self._decodePrivateProjectDocument(doc.data(), doc.id);
                     if (project) result.push(project);
+                    else invalid = true;
                 });
+                // A partial or malformed inventory must never produce a migration plan.
+                if (invalid || result.length >= 100) return null;
                 return result;
             }).catch(function(error) {
                 console.warn('Private project preview unavailable:', error);

@@ -5,11 +5,14 @@ var FirebaseIdentityModule = {
     _lastError: null,
     _ready: false,
     _sdkPromise: null,
+    _previewBusy: false,
     init: function() {
         var self = this;
         var button = document.getElementById('cloudIdentityBtn');
         if (!button) return;
         button.addEventListener('click', function() { self.toggleSignIn(); });
+        var previewButton = document.getElementById('cloudMigrationPreviewBtn');
+        if (previewButton) previewButton.addEventListener('click', function() { self.previewMigration(); });
         button.disabled = true;
         this._render();
         // Prepare the SDK first so the Google popup can be opened directly on click.
@@ -75,6 +78,35 @@ var FirebaseIdentityModule = {
             if (typeof NotificationModule !== 'undefined') NotificationModule.error('Вход в облако: ' + message);
         }).finally(function() { if (button) button.disabled = false; self._render(); });
     },
+    previewMigration: function() {
+        var self = this;
+        var status = document.getElementById('cloudMigrationPreviewStatus');
+        var user = this._auth && this._auth.currentUser;
+        if (this._previewBusy || !user || !user.uid || !this._ready) return Promise.resolve(false);
+        var uid = user.uid;
+        this._previewBusy = true;
+        this._render();
+        if (status) status.textContent = 'Проверяем облачные проекты… Никакой записи не выполняется.';
+        return FirebaseService.getPrivateProjectPreview().then(function(remote) {
+            if (!self._auth || !self._auth.currentUser || self._auth.currentUser.uid !== uid) {
+                if (status) status.textContent = 'Аккаунт изменился. Проверка отменена.';
+                return false;
+            }
+            if (!Array.isArray(remote)) {
+                if (status) status.textContent = 'Приватное облако пока недоступно. Проверь правила Firestore; локальные проекты сохранены.';
+                return false;
+            }
+            var local = StateManager.get('projects') || [];
+            var plan = SyncModule._planPrivateMigration(local, remote);
+            if (status) status.textContent = 'Предпросмотр: новых — ' + plan.upload.length +
+                ', совпадающих ID — ' + plan.conflicts.length + ', пропущено — ' + plan.skipped +
+                ', в облаке — ' + remote.length + '. Перенос не выполнялся.';
+            return true;
+        }).catch(function() {
+            if (status) status.textContent = 'Не удалось проверить перенос. Локальные данные не изменены.';
+            return false;
+        }).finally(function() { self._previewBusy = false; self._render(); });
+    },
     _render: function() {
         var button = document.getElementById('cloudIdentityBtn');
         if (!button) return;
@@ -84,6 +116,12 @@ var FirebaseIdentityModule = {
         button.setAttribute('aria-label', button.title);
         var status = document.getElementById('cloudIdentityStatus');
         if (status) status.textContent = user ? 'Вход выполнен · синхронизация записи ещё не включена' : (this._lastError || 'Облачная запись недоступна до настройки правил доступа');
+        var previewButton = document.getElementById('cloudMigrationPreviewBtn');
+        if (previewButton) previewButton.disabled = !user || !this._ready || this._previewBusy;
+        if (!user) {
+            var previewStatus = document.getElementById('cloudMigrationPreviewStatus');
+            if (previewStatus) previewStatus.textContent = 'Войди через Google, чтобы проверить возможные конфликты. Данные не будут отправлены.';
+        }
     }
 };
 window.FirebaseIdentityModule = FirebaseIdentityModule;
