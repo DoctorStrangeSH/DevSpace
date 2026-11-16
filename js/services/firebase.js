@@ -22,6 +22,10 @@ var FirebaseService = {
     // Anonymous static pages must never be able to mutate shared data.
     // A real server-verified owner session is required before enabling writes.
     _writesEnabled: false,
+    // Separate, deliberately closed gate for future owner-only migration.
+    // Do not enable until create-only security rules pass emulator tests and
+    // the owner explicitly publishes them.
+    _privateProjectCreatesEnabled: false,
     _lastPrivatePreviewError: null,
 
     _describePrivatePreviewError: function(code) {
@@ -173,6 +177,49 @@ var FirebaseService = {
         } catch (error) {
             return null;
         }
+    },
+
+    // Create ONE private project only if absent. A Firestore transaction makes
+    // the absence check atomic with creation, even across several devices.
+    // This is intentionally unreachable in production while the gate is false.
+    createPrivateProjectIfAbsent: function(project, expectedUid) {
+        if (!this._privateProjectCreatesEnabled || !this._db ||
+            typeof firebase === 'undefined' || !firebase.auth ||
+            !firebase.firestore || !firebase.firestore.FieldValue ||
+            !firebase.firestore.FieldValue.serverTimestamp) return Promise.resolve(false);
+        var envelope = this._preparePrivateProjectEnvelope(project);
+        if (!envelope || typeof expectedUid !== 'string' || !expectedUid ||
+            !firebase.auth().currentUser || firebase.auth().currentUser.uid !== expectedUid) {
+            return Promise.resolve(false);
+        }
+        var self = this;
+        var reference = this._db.collection('users').doc(expectedUid)
+            .collection('projects').doc(envelope.id);
+        return this._db.runTransaction(function(transaction) {
+            return transaction.get(reference).then(function(snapshot) {
+                // Never replace an existing project, even when contents match.
+                if (snapshot.exists || !firebase.auth().currentUser ||
+                    firebase.auth().currentUser.uid !== expectedUid ||
+                    !self._privateProjectCreatesEnabled) return false;
+                transaction.set(reference, {
+                    id: envelope.id,
+                    schemaVersion: envelope.schemaVersion,
+                    payload: envelope.payload,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                return true;
+            });
+        }).then(function(created) {
+            if (!created || !firebase.auth().currentUser ||
+                firebase.auth().currentUser.uid !== expectedUid) return false;
+            return reference.get().then(function(saved) {
+                if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== expectedUid ||
+                    !saved.exists) return false;
+                var data = saved.data();
+                return !!(data && data.payload === envelope.payload &&
+                    self._decodePrivateProjectDocument(data, envelope.id));
+            });
+        }).catch(function() { return false; });
     },
 
     deleteProject: function(projectId) {

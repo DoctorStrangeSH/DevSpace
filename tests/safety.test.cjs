@@ -1,1835 +1,24 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
-const test = require('node:test');
-
-const root = path.join(__dirname, '..');
-
-test('draft Firestore rules deny legacy and anonymous access, scope private records by UID', () => {
-  const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
-  assert.match(rules, /request\.auth\.uid == uid/);
-  assert.doesNotMatch(rules, /allow create:|allow update:|allow delete:/);
-  assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false/);
-  assert.doesNotMatch(rules, /allow\s+(?:read|write|create|update|delete)\s*:\s*if\s*true/);
-  assert.match(rules, /match \/users\/\{uid\}\/projects\/\{projectId\} \{\s*allow read: if isOwner\(uid\);\s*allow write: if false/);
-});
-
-test('private migration dry-run never overwrites cloud records or mutates local projects', () => {
-  const sync = execute('js/core/sync.js').SyncModule;
-  const local = [{ id: 'new', name: 'Ð›Ð¾ÐºÐ°Ð»ÑŒÐ½Ñ‹Ð¹' }, { id: 'shared', name: 'Ð›Ð¾ÐºÐ°Ð»ÑŒÐ½Ð°Ñ Ð²ÐµÑ€ÑÐ¸Ñ' }, { id: 'new', name: 'Ð”ÑƒÐ±Ð»Ð¸ÐºÐ°Ñ‚' }, { id: '../bad' }];
-  const remote = [{ id: 'shared', name: 'ÐžÐ±Ð»Ð°Ñ‡Ð½Ð°Ñ Ð²ÐµÑ€ÑÐ¸Ñ' }];
-  const original = JSON.stringify({ local, remote });
-  const plan = sync._planPrivateMigration(local, remote);
-  assert.deepEqual(Array.from(plan.upload, p => p.id), ['new']);
-  assert.deepEqual(Array.from(plan.conflicts), ['shared']);
-  assert.equal(plan.skipped, 2);
-  assert.equal(JSON.stringify({ local, remote }), original);
-  plan.upload[0].name = 'ÐœÐµÐ½ÑÐµÐ¼ ÐºÐ¾Ð¿Ð¸ÑŽ';
-  assert.equal(local[0].name, 'Ð›Ð¾ÐºÐ°Ð»ÑŒÐ½Ñ‹Ð¹');
-  assert.throws(() => sync._planPrivateMigration(null, []), /ÐžÐ¶Ð¸Ð´Ð°ÑŽÑ‚ÑÑ Ð´Ð²Ð° Ð¼Ð°ÑÑÐ¸Ð²Ð°/);
-  const oversized = sync._planPrivateMigration([{ id: 'huge', name: 'Ð°'.repeat(200001) }], []);
-  assert.equal(oversized.upload.length, 0);
-  assert.equal(oversized.skipped, 1);
-  const exact = sync._planPrivateMigration([{ id: 'small', name: 'Ð¾Ð±Ñ‹Ñ‡Ð½Ñ‹Ð¹' }], []);
-  assert.equal(exact.upload.length, 1);
-});
-
-test('private cloud preview uses authenticated UID and discards stale session results', async () => {
-  let user = { uid: 'user-A' };
-  const calls = [];
-  let resolveRead;
-  const db = { collection(name) {
-    calls.push(name);
-    return { doc(uid) {
-      calls.push(uid);
-      return { collection(child) {
-        calls.push(child);
-        return { limit(n) {
-          calls.push(n);
-          return { get() { return new Promise(resolve => { resolveRead = resolve; }); } };
-        } };
-      } };
-    } };
-  } };
-  const ctx = execute('js/services/firebase.js', { firebase: { auth: () => ({ currentUser: user }) } });
-  ctx.FirebaseService._db = db;
-  const pending = ctx.FirebaseService.getPrivateProjectPreview();
-  assert.deepEqual(calls, ['users', 'user-A', 'projects', 100]);
-  user = { uid: 'user-B' };
-  resolveRead({ forEach(cb) { cb({ id: 'a', data: () => ({ name: 'A' }) }); } });
-  assert.equal(await pending, null);
-  user = null;
-  assert.equal(await ctx.FirebaseService.getPrivateProjectPreview(), null);
-  assert.equal(ctx.FirebaseService._writesEnabled, false);
-});
-
-test('private cloud diagnostics distinguish rule denial and malformed data', async () => {
-  const user = { uid: 'owner' };
-  let result = Promise.reject({ code: 'permission-denied' });
-  const db = { collection: () => ({ doc: () => ({ collection: () => ({ limit: () => ({
-    get: () => result
-  }) }) }) }) };
-  const ctx = execute('js/services/firebase.js', { firebase: { auth: () => ({ currentUser: user }) } });
-  const service = ctx.FirebaseService;
-  service._db = db;
-  assert.equal(await service.getPrivateProjectPreview(), null);
-  assert.equal(service._lastPrivatePreviewError, 'permission-denied');
-  assert.match(service._describePrivatePreviewError(service._lastPrivatePreviewError), /Ð¿Ñ€Ð°Ð²Ð¸Ð»Ð°Ð¼Ð¸ Firestore/);
-  result = Promise.resolve({ forEach(fn) { fn({ id: 'broken', data: () => ({ payload: '{' }) }); } });
-  assert.equal(await service.getPrivateProjectPreview(), null);
-  assert.equal(service._lastPrivatePreviewError, 'invalid-document');
-  result = Promise.resolve({ forEach() {} });
-  assert.deepEqual(Array.from(await service.getPrivateProjectPreview()), []);
-  assert.equal(service._lastPrivatePreviewError, null);
-  assert.equal(service._writesEnabled, false);
-});
-
-test('private project envelope round-trips only matching, bounded JSON', () => {
-  const service = execute('js/services/firebase.js').FirebaseService;
-  const project = { id: 'valid_1', name: 'Ð¢ÐµÑÑ‚', nested: { progress: 42 } };
-  const original = JSON.stringify(project);
-  const envelope = service._preparePrivateProjectEnvelope(project);
-  assert.deepEqual(Object.keys(envelope).sort(), ['id', 'payload', 'schemaVersion']);
-  assert.equal(envelope.schemaVersion, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(service._decodePrivateProjectDocument(envelope, 'valid_1'))), project);
-  assert.equal(JSON.stringify(project), original);
-  assert.equal(service._preparePrivateProjectEnvelope({ id: '../bad' }), null);
-  assert.equal(service._preparePrivateProjectEnvelope({ id: 'valid', value: 'x'.repeat(200001) }), null);
-  assert.equal(service._preparePrivateProjectEnvelope({ id: 'valid', toJSON() { throw Error('bad'); } }), null);
-  for (const corrupt of [
-    { ...envelope, schemaVersion: 2 },
-    { ...envelope, payload: '{' },
-    { ...envelope, id: 'other' },
-    { ...envelope, payload: '{"id":"other"}' },
-    { ...envelope, payload: '{"id":"valid_1","__proto__":{"admin":true}}' },
-    { ...envelope, extra: true }
-  ]) assert.equal(service._decodePrivateProjectDocument(corrupt, 'valid_1'), null);
-  assert.equal(service._writesEnabled, false);
-});
-
-test('private project preview refuses incomplete or malformed inventories', async () => {
-  const user = { uid: 'owner-uid' };
-  const serviceCtx = execute('js/services/firebase.js', { firebase: { auth: () => ({ currentUser: user }) } });
-  const service = serviceCtx.FirebaseService;
-  const good = service._preparePrivateProjectEnvelope({ id: 'good', name: 'Valid' });
-  const docs = [
-    { id: 'good', data: () => good },
-    { id: 'bad', data: () => ({ id: 'bad', schemaVersion: 1, payload: '<img onerror=alert(1)>' }) }
-  ];
-  service._db = { collection: () => ({ doc: () => ({ collection: () => ({ limit: () => ({
-    get: async () => ({ forEach: fn => docs.forEach(fn) })
-  }) }) }) }) };
-  const preview = await service.getPrivateProjectPreview();
-  assert.equal(preview, null);
-  assert.equal(service._writesEnabled, false);
-});
-
-test('cloud migration preview is user-initiated, read-only and reports conflicts', async () => {
-  const source = fs.readFileSync(path.join(root, 'js/services/firebase-identity.js'), 'utf8');
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.match(html, /id="cloudMigrationPreviewBtn" disabled/);
-  assert.match(html, /id="cloudMigrationBackupBtn"/);
-  assert.match(html, /id="cloudMigrationPreviewStatus" role="status" aria-live="polite"/);
-  assert.match(source, /FirebaseService\.getPrivateProjectPreview\(\)/);
-  assert.match(source, /SyncModule\._planPrivateMigration\(local, remote\)/);
-  assert.doesNotMatch(source, /FirebaseService\.saveAllProjects|\.set\(|\.batch\(/);
-  assert.match(source, /ExportModule\.createBackup\(\)/);
-});
-
-test('cloud migration preview ignores an older response after an account switch', async () => {
-  const status = { textContent: '' };
-  const button = { disabled: false };
-  const identityButton = { textContent: '', title: '', setAttribute() {} };
-  const elements = {
-    cloudMigrationPreviewStatus: status,
-    cloudMigrationPreviewBtn: button,
-    cloudIdentityBtn: identityButton
-  };
-  let resolveRead;
-  let localReads = 0;
-  const user = { uid: 'user-A', email: 'a@example.com' };
-  const auth = { currentUser: user };
-  const ctx = execute('js/services/firebase-identity.js', {
-    document: { getElementById: id => elements[id] || null },
-    FirebaseService: { getPrivateProjectPreview: () => new Promise(resolve => { resolveRead = resolve; }) },
-    StateManager: { get() { localReads++; return [{ id: 'local' }]; } },
-    SyncModule: { _planPrivateMigration() { throw Error('Stale result must not be planned'); } }
-  });
-  const identity = ctx.FirebaseIdentityModule;
-  identity._auth = auth;
-  identity._user = user;
-  identity._ready = true;
-  const pending = identity.previewMigration();
-  assert.equal(button.disabled, true);
-  auth.currentUser = { uid: 'user-B' };
-  identity._user = auth.currentUser;
-  identity._activeUid = 'user-B';
-  identity._previewRequestId++;
-  identity._previewBusy = false;
-  status.textContent = 'ÐÐºÐºÐ°ÑƒÐ½Ñ‚ B';
-  resolveRead([{ id: 'remote' }]);
-  assert.equal(await pending, false);
-  assert.equal(status.textContent, 'ÐÐºÐºÐ°ÑƒÐ½Ñ‚ B');
-  assert.equal(localReads, 0);
-  assert.equal(identity._previewBusy, false);
-});
-
-test('cloud migration preview reports a read failure without changing local projects', async () => {
-  const status = { textContent: '' };
-  const button = { disabled: false };
-  const user = { uid: 'owner', email: 'owner@example.com' };
-  let localWrites = 0;
-  const ctx = execute('js/services/firebase-identity.js', {
-    document: { getElementById: id => ({
-      cloudMigrationPreviewStatus: status,
-      cloudMigrationPreviewBtn: button,
-      cloudIdentityBtn: { setAttribute() {} }
-    })[id] || null },
-    FirebaseService: { getPrivateProjectPreview: () => Promise.reject(Error('permission-denied')) },
-    StateManager: { get() { throw Error('Must not read projects on failed Firestore read'); }, set() { localWrites++; } }
-  });
-  const identity = ctx.FirebaseIdentityModule;
-  identity._auth = { currentUser: user };
-  identity._user = user;
-  identity._ready = true;
-  assert.equal(await identity.previewMigration(), false);
-  assert.match(status.textContent, /ÐÐµ ÑƒÐ´Ð°Ð»Ð¾ÑÑŒ Ð¿Ñ€Ð¾Ð²ÐµÑ€Ð¸Ñ‚ÑŒ Ð¿ÐµÑ€ÐµÐ½Ð¾Ñ/);
-  assert.equal(localWrites, 0);
-  assert.equal(button.disabled, false);
-});
-
-test('cloud sync security plan requires UID ownership and preserves disabled client writes', () => {
-  const plan = fs.readFileSync(path.join(root, 'docs/FIREBASE_SECURITY_PLAN.md'), 'utf8');
-  const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
-  assert.match(plan, /Ð•Ð´Ð¸Ð½ÑÑ‚Ð²ÐµÐ½Ð½Ñ‹Ð¹ Ð°ÐºÑ‚ÑƒÐ°Ð»ÑŒÐ½Ñ‹Ð¹ Ð¿Ñ€Ð¾Ñ‚Ð¾Ñ‚Ð¸Ð¿/);
-  assert.match(fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8'), /request\.auth\.uid == uid/);
-  assert.match(plan, /Ð½Ðµ Ð¿Ñ€Ð¸Ð¼ÐµÐ½Ñ‘Ð½ Ð² Firebase/);
-  assert.match(plan, /ÐŸÐµÑ€ÐµÐ´ Ð±ÑƒÐ´ÑƒÑ‰Ð¸Ð¼ Ð´ÐµÐ¿Ð»Ð¾ÐµÐ¼ Ð¾Ð±ÑÐ·Ð°Ñ‚ÐµÐ»ÑŒÐ½Ñ‹ ÑƒÑÐ¿ÐµÑˆÐ½Ñ‹Ðµ ÑÐ¼ÑƒÐ»ÑÑ‚Ð¾Ñ€Ð½Ñ‹Ðµ Ñ‚ÐµÑÑ‚Ñ‹/);
-  assert.match(firebaseService, /_writesEnabled: false/);
-});
-
-test('Google identity is separated from local owner editing and cloud writes remain disabled', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const identity = fs.readFileSync(path.join(root, 'js/services/firebase-identity.js'), 'utf8');
-  const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
-  const sync = fs.readFileSync(path.join(root, 'js/core/sync.js'), 'utf8');
-  assert.match(html, /id="cloudIdentityBtn"/);
-  assert.match(identity, /signInWithPopup\(new firebase\.auth\.GoogleAuthProvider\(\)\)/);
-  assert.match(identity, /onAuthStateChanged/);
-  assert.doesNotMatch(identity, /AuthService\.login|_writesEnabled\s*=\s*true|uploadToCloud/);
-  assert.match(firebaseService, /_writesEnabled: false/);
-  assert.match(sync, /uploadToCloud: function\(\) \{\s*return Promise\.resolve\(false\)/);
-});
-
-test('Google login errors show actionable Firebase codes', () => {
-  const identity = execute('js/services/firebase-identity.js').FirebaseIdentityModule;
-  assert.match(identity._describeAuthError({ code: 'auth/unauthorized-domain' }), /doctorstrangesh\.github\.io/);
-  assert.match(identity._describeAuthError({ code: 'auth/operation-not-allowed' }), /Ð¡Ð¾Ñ…Ñ€Ð°Ð½Ð¸ Ð½Ð°ÑÑ‚Ñ€Ð¾Ð¹ÐºÐ¸/);
-  assert.match(identity._describeAuthError({ code: 'auth/popup-blocked' }), /Ð²ÑÐ¿Ð»Ñ‹Ð²Ð°ÑŽÑ‰Ð¸Ðµ Ð¾ÐºÐ½Ð°/);
-  assert.match(identity._describeAuthError({ code: 'auth/unknown' }), /\[auth\/unknown\]/);
-});
-
-test('health history transfer validates and merges daily readings without overwriting local scores', () => {
-  const exportModule = execute('js/modules/export.js').ExportModule;
-  const incoming = [{ date: '2026-11-14', scores: { a: 70, b: 60 } }, { date: '2026-11-15', scores: { a: 80, __proto__: 10 } }];
-  const local = [{ date: '2026-11-14', scores: { a: 72 } }];
-  const combined = exportModule._mergeHealthHistory(local, incoming);
-  assert.equal(combined.length, 2);
-  assert.equal(combined[0].scores.a, 72);
-  assert.equal(combined[0].scores.b, 60);
-  assert.equal(combined[1].scores.a, 80);
-  assert.equal(exportModule._cleanHealthHistory([{ date: '2026-02-30', scores: { a: 50 } }]).length, 0);
-  assert.throws(() => exportModule._cleanHealthHistory(null));
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.match(html, /id="healthExportBtn"/);
-  assert.match(html, /id="healthImportBtn"/);
-});
-
-test('project backup carries health history while legacy backup import remains supported', () => {
-  const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
-  assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
-  assert.match(source, /Array\.isArray\(data\.healthHistory\)/);
-  assert.match(source, /data\.healthHistory !== undefined/);
-  assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
-});
-
-test('health analytics creates safe bounded trends and explains score penalties', () => {
-  const renderer = execute('js/ui/renderer.js').RendererModule;
-  const series = renderer._healthSeries([{ date: '2026-11-14', scores: { a: 62 } }, { date: '2026-11-15', scores: { a: 80 } }], 'a');
-  assert.deepEqual(Array.from(series, item => item.score), [62, 80]);
-  const svg = renderer._healthChartSvg(series);
-  assert.match(svg, /<svg/);
-  assert.match(svg, /80\/100/);
-  const compared = renderer._healthChartSvg(series, [{ date: '2026-11-15', score: 45 }]);
-  assert.match(compared, /health-comparison/);
-  assert.match(compared, /Ð¡Ñ€Ð°Ð²Ð½ÐµÐ½Ð¸Ðµ: 45\/100/);
-  assert.match(renderer._healthChartSvg([]), /Ð˜ÑÑ‚Ð¾Ñ€Ð¸Ñ Ð¿Ð¾ÑÐ²Ð¸Ñ‚ÑÑ/);
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.match(html, /id="healthProjectFilter"/);
-  assert.match(html, /id="healthScoreDetails"/);
-  assert.match(html, /id="healthCompareFilter"/);
-  assert.match(html, /id="healthPeriodFilter"/);
-  assert.match(html, /id="healthRecommendations"/);
-});
-
-test('health recommendations prioritize overdue, stale and undated work', () => {
-  const renderer = execute('js/ui/renderer.js').RendererModule;
-  const tips = renderer._healthRecommendations({ score: 35, overdue: 2, inactiveDays: 30, completed: 0, total: 3, undated: 0 });
-  assert.deepEqual(Array.from(tips, tip => tip.kind), ['overdue', 'stale', 'progress']);
-  assert.match(tips[0].detail, /20 Ð±Ð°Ð»Ð»Ð¾Ð²/);
-  assert.equal(renderer._healthRecommendations({ score: null })[0].kind, 'plan');
-  assert.equal(renderer._healthRecommendations({ score: 100, overdue: 0, inactiveDays: 0, completed: 1, total: 1, undated: 0 })[0].kind, 'stable');
-});
-
-test('project health alerts identify significant score drops and critical risk', () => {
-  const renderer = execute('js/ui/renderer.js').RendererModule;
-  const history = [{ date: '2026-11-14', scores: { a: 90, b: 40 } }, { date: '2026-11-15', scores: { a: 55, b: 45 } }];
-  const alerts = renderer._collectHealthAlerts([{ id: 'a', name: 'A', score: 55 }, { id: 'b', name: 'B', score: 45 }, { id: 'c', name: 'C', score: null }], history);
-  assert.deepEqual(Array.from(alerts, alert => alert.kind), ['decline', 'risk', 'risk']);
-  assert.equal(alerts[0].id, 'a');
-  assert.equal(renderer._collectHealthAlerts([{ id: 'a', name: 'A', score: 95 }], history).length, 0);
-  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /id="healthAlerts"/);
-});
-
-test('deadline outlook buckets real unfinished work and ignores closed projects', () => {
-  const renderer = execute('js/ui/renderer.js').RendererModule;
-  const projects = [
-    { id: 'a', name: 'Active', status: 'active', checklist: [
-      { text: 'Late', deadline: '2026-11-14' }, { text: 'Soon', deadline: '2026-11-15' },
-      { text: 'This week', deadline: '2026-11-21' }, { text: 'Next week', deadline: '2026-11-22' },
-      { text: 'Future', deadline: '2026-11-29' }, { text: 'Unscheduled' },
-      { text: 'Bad date', deadline: '2026-02-30' }, { text: 'Finished', deadline: '2026-11-01', completed: true }
-    ] },
-    { id: 'b', status: 'completed', checklist: [{ text: 'Archived deadline', deadline: '2026-11-01' }] }
-  ];
-  const result = renderer._collectDeadlineOutlook(projects, new Date(2026, 10, 15));
-  assert.deepEqual([result.overdue, result.week, result.fortnight, result.later, result.unscheduled], [1, 2, 1, 1, 2]);
-  assert.equal(result.projects.length, 1);
-  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /id="deadlineOutlook"/);
-});
-
-test('health history records real daily scores, overwrites same-day readings and caps retention', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const renderer = ctx.RendererModule;
-  const one = renderer._updateHealthHistory([], [{ id: 'p', score: 70 }, { id: 'q', score: null }], new Date(2026, 10, 14));
-  const sameDay = renderer._updateHealthHistory(one, [{ id: 'p', score: 75 }], new Date(2026, 10, 14));
-  assert.equal(sameDay.length, 1);
-  assert.equal(sameDay[0].scores.p, 75);
-  assert.equal(sameDay[0].scores.q, undefined);
-  const second = renderer._updateHealthHistory(sameDay, [{ id: 'p', score: 85 }], new Date(2026, 10, 15));
-  assert.deepEqual(JSON.parse(JSON.stringify(renderer._healthTrend(second, 'p', 85))), { label: 'â†‘ +10 Ñ Ð¿Ñ€Ð¾ÑˆÐ»Ð¾Ð³Ð¾ Ð·Ð°Ð¼ÐµÑ€Ð°', direction: 'up' });
-  assert.equal(renderer._healthTrend(second, 'missing', null).direction, 'neutral');
-  assert.equal(one[0].scores.p, 70);
-  let rolling = second;
-  for (let i = 0; i < 45; i++) rolling = renderer._updateHealthHistory(rolling, [{ id: 'p', score: 80 }], new Date(2026, 10, 16 + i));
-  assert.equal(rolling.length, 30);
-  assert.equal(rolling.at(-1).scores.p, 80);
-});
-
-test('project health distinguishes risk, inactivity and missing plans without mutating projects', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const projects = [
-    { id: 'r', name: 'Ð Ð¸ÑÐº', status: 'active', updatedAt: '2026-10-01', checklist: [{ text: 'ÐŸÑ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð¾', deadline: '2026-11-10' }, { text: 'Ð’Ñ‚Ð¾Ñ€Ð°Ñ', deadline: '2026-11-09' }] },
-    { id: 'g', name: 'Ð¥Ð¾Ñ€Ð¾ÑˆÐ¾', status: 'active', updatedAt: '2026-11-14', checklist: [{ text: 'Ð Ð°Ð±Ð¾Ñ‚Ð°', deadline: '2026-11-23' }] },
-    { id: 'u', name: 'Ð‘ÐµÐ· Ð·Ð°Ð´Ð°Ñ‡', status: 'planning', checklist: [] },
-    { id: 'c', name: 'Ð—Ð°ÐºÑ€Ñ‹Ñ‚', status: 'completed', checklist: [{ text: 'Ð¡Ñ‚Ð°Ñ€Ð¾Ðµ' }] }
-  ];
-  const snapshot = JSON.stringify(projects);
-  const results = ctx.RendererModule._collectProjectHealth(projects, new Date(2026, 10, 15));
-  assert.deepEqual(Array.from(results, item => item.id), ['r', 'g', 'u']);
-  assert.equal(results[0].score, 35);
-  assert.equal(results[1].score, 90);
-  assert.equal(results[2].score, null);
-  assert.equal(results[2].advice, 'Ð”Ð¾Ð±Ð°Ð²ÑŒ Ð¿ÐµÑ€Ð²Ñ‹Ðµ Ð·Ð°Ð´Ð°Ñ‡Ð¸');
-  assert.equal(JSON.stringify(projects), snapshot);
-});
-
-test('smart project overview detects stale active projects and overdue tasks only', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const projects = [
-    { id: 'old', name: 'Ð”Ð°Ð²Ð½Ð¾ Ð½Ðµ Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÐ»Ð¸', status: 'active', updatedAt: '2026-10-20T12:00:00Z', checklist: [{ text: 'ÐžÑ‚ÐºÑ€Ñ‹Ñ‚Ð°Ñ', deadline: '2026-11-10' }, { text: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð°Ñ', completed: true, deadline: '2026-11-01' }] },
-    { id: 'done', status: 'completed', updatedAt: '2026-10-01T12:00:00Z', checklist: [{ text: 'ÐŸÐ¾Ð·Ð´Ð½Ð¾', deadline: '2026-11-01' }] },
-    { id: 'new', status: 'planning', updatedAt: '2026-11-14T12:00:00Z', checklist: [{ text: 'Ð¡ÐºÐ¾Ñ€Ð¾', deadline: '2026-11-20' }] }
-  ];
-  const snapshot = JSON.stringify(projects);
-  const insights = ctx.RendererModule._collectInsights(projects, new Date(2026, 10, 15));
-  assert.deepEqual(Array.from(insights, item => item.kind), ['overdue', 'stale']);
-  assert.ok(insights.every(item => item.projectId === 'old'));
-  assert.equal(JSON.stringify(projects), snapshot);
-});
-
-test('smart overview has safe project navigation elements', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const js = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
-  assert.match(html, /id="insightsPanel"/);
-  assert.match(js, /data-insight-project/);
-  assert.match(js, /Helpers\.escapeHtml\(item\.name\)/);
-});
-
-test('collapsible tracker panels expose accessible controls and preserve section structure', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/components/cards.css'), 'utf8');
-  for (const id of ['todayPanel', 'productivityPanel', 'roadmapOverview', 'scheduleCalendar', 'focusPanel']) {
-    assert.ok(html.includes(`data-collapse-panel="${id}"`));
-  }
-  assert.match(css, /\.schedule-calendar\.is-collapsed/);
-  assert.match(css, /\.today-panel\.is-collapsed/);
-});
-
-test('collapsed panel state updates button label and aria-expanded consistently', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const classes = new Set();
-  const panel = { classList: { toggle(cls, enabled) { if (enabled) classes.add(cls); else classes.delete(cls); } } };
-  const button = { textContent: '', setAttribute(key, value) { this[key] = value; } };
-  ctx.RendererModule._setPanelCollapsed(panel, button, true);
-  assert.ok(classes.has('is-collapsed'));
-  assert.equal(button['aria-expanded'], 'false');
-  assert.equal(button.textContent, 'Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ');
-  ctx.RendererModule._setPanelCollapsed(panel, button, false);
-  assert.equal(classes.has('is-collapsed'), false);
-  assert.equal(button['aria-expanded'], 'true');
-});
-
-test('today dashboard prioritizes overdue and high-priority tasks from every project', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const now = new Date(2026, 10, 15);
-  const projects = [
-    { id: 'a', name: 'ÐŸÐµÑ€Ð²Ñ‹Ð¹', checklist: [{ id: '1', text: 'Ð’Ð°Ð¶Ð½Ð¾', priority: 'high' }, { id: '2', text: 'Ð”Ð°Ð²Ð½Ð¾ Ð¿Ð¾Ñ€Ð°', deadline: '2026-11-14', priority: 'low' }] },
-    { id: 'b', name: 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹', checklist: [{ id: '3', text: 'Ð—Ð°ÐºÑ€Ñ‹Ñ‚Ð¾', completed: true, priority: 'high' }, { id: '4', text: 'ÐžÐ±Ñ‹Ñ‡Ð½Ð°Ñ Ð±ÐµÐ· ÑÑ€Ð¾ÐºÐ°' }, { id: '5', text: 'Ð¡Ñ€Ð¾Ðº ÑÐµÐ³Ð¾Ð´Ð½Ñ', deadline: '2026-11-15' }] }
-  ];
-  const urgent = ctx.RendererModule._collectTodayTasks(projects, now, 'all', 'urgent');
-  assert.deepEqual(Array.from(urgent, task => task.text), ['Ð”Ð°Ð²Ð½Ð¾ Ð¿Ð¾Ñ€Ð°', 'Ð’Ð°Ð¶Ð½Ð¾', 'Ð¡Ñ€Ð¾Ðº ÑÐµÐ³Ð¾Ð´Ð½Ñ']);
-  assert.equal(ctx.RendererModule._collectTodayTasks(projects, now, 'high', 'all').length, 1);
-  assert.equal(ctx.RendererModule._collectTodayTasks(projects, now, 'all', 'all').length, 4);
-});
-
-test('today dashboard filters weekly due tasks and ignores completed entries', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const tasks = [{ id: '1', text: 'Ð£ÑÐ¿ÐµÑ‚ÑŒ', deadline: '2026-11-21' }, { id: '2', text: 'ÐŸÐ¾Ð·Ð¶Ðµ', deadline: '2026-11-22' }, { id: '3', text: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', completed: true, deadline: '2026-11-15' }];
-  const result = ctx.RendererModule._collectTodayTasks([{ id: 'p', checklist: tasks }], new Date(2026, 10, 15), 'all', 'week');
-  assert.deepEqual(Array.from(result, task => task.text), ['Ð£ÑÐ¿ÐµÑ‚ÑŒ']);
-  assert.equal(tasks.length, 3);
-});
-
-test('calendar filters by project and event type without mutating events', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const events = [{ projectId: 'a', type: 'task' }, { projectId: 'a', type: 'stage' }, { projectId: 'b', type: 'task' }];
-  assert.equal(ctx.RendererModule._filterScheduleItems(events, 'a', 'task').length, 1);
-  assert.equal(ctx.RendererModule._filterScheduleItems(events, 'a', 'all').length, 2);
-  assert.equal(ctx.RendererModule._filterScheduleItems(events, 'all', 'stage').length, 1);
-  assert.equal(ctx.RendererModule._filterScheduleItems(events, 'missing', 'all').length, 0);
-  assert.equal(events.length, 3);
-});
-
-test('calendar exposes accessible project and type selectors and nearest-work list', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/components/cards.css'), 'utf8');
-  const js = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
-  assert.match(html, /id="scheduleProjectFilter"/);
-  assert.match(html, /id="scheduleTypeFilter"/);
-  assert.match(html, /id="scheduleUpcoming"/);
-  assert.match(css, /\.schedule-day\.is-overdue/);
-  assert.match(js, /schedule-upcoming-item/);
-});
-
-test('monthly development calendar combines unfinished checklist and roadmap dates without changing source data', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const projects = [{ id: 'one', name: 'ÐŸÑ€Ð¾ÐµÐºÑ‚', milestones: ['ÐŸÑ€Ð¾Ñ‚Ð¾Ñ‚Ð¸Ð¿', 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾'], milestoneDeadlines: { ÐŸÑ€Ð¾Ñ‚Ð¾Ñ‚Ð¸Ð¿: '2026-11-18', Ð“Ð¾Ñ‚Ð¾Ð²Ð¾: '2026-11-02' }, completedMilestones: ['Ð“Ð¾Ñ‚Ð¾Ð²Ð¾'], checklist: [{ text: 'ÐŸÑ€Ð¾Ð²ÐµÑ€ÐºÐ°', deadline: '2026-11-18', completed: false }, { text: 'Ð—Ð°ÐºÑ€Ñ‹Ñ‚Ð¾', deadline: '2026-11-01', completed: true }] }];
-  const before = JSON.stringify(projects);
-  const events = ctx.RendererModule._collectScheduleItems(projects);
-  assert.equal(events.length, 2);
-  assert.deepEqual(Array.from(events, item => item.type).sort(), ['stage', 'task']);
-  assert.ok(events.every(item => item.date === '2026-11-18'));
-  assert.equal(JSON.stringify(projects), before);
-});
-
-test('monthly development calendar rejects invalid dates and completed linked stages', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const events = ctx.RendererModule._collectScheduleItems([{ id: 'a', milestones: ['Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', 'ÐžÑ‚ÐºÑ€Ñ‹Ñ‚Ð¾'], milestoneDeadlines: { Ð“Ð¾Ñ‚Ð¾Ð²Ð¾: '2026-11-20', ÐžÑ‚ÐºÑ€Ñ‹Ñ‚Ð¾: '2026-02-30' }, checklist: [{ milestone: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', completed: true }, { text: 'ÐžÑˆÐ¸Ð±ÐºÐ°', deadline: '2026-11-31' }, { text: 'ÐÐ¾Ñ€Ð¼Ð°', deadline: '2026-12-01' }] }]);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].name, 'ÐÐ¾Ñ€Ð¼Ð°');
-});
-
-test('cross-project roadmap overview separates late and upcoming stages while excluding completed stages', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const projects = [{
-    id: 'a', name: 'ÐžÑÑ‚Ñ€Ð¾Ð²Ð°',
-    milestones: ['ÐžÐ¿Ð¾Ð·Ð´Ð°Ð»', 'ÐÐ° Ð½ÐµÐ´ÐµÐ»Ðµ', 'ÐŸÐ¾Ð·Ð¶Ðµ', 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', 'Ð‘ÐµÐ· ÑÑ€Ð¾ÐºÐ°'],
-    milestoneDeadlines: { 'ÐžÐ¿Ð¾Ð·Ð´Ð°Ð»': '2026-11-13', 'ÐÐ° Ð½ÐµÐ´ÐµÐ»Ðµ': '2026-11-18', 'ÐŸÐ¾Ð·Ð¶Ðµ': '2026-11-22', 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾': '2026-11-10' },
-    checklist: [{ milestone: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', completed: true }]
-  }];
-  const result = ctx.RendererModule._collectRoadmapDeadlines(projects, new Date(2026, 10, 14));
-  assert.equal(result.total, 5);
-  assert.equal(result.completed, 1);
-  assert.deepEqual(Array.from(result.overdue, item => item.stage), ['ÐžÐ¿Ð¾Ð·Ð´Ð°Ð»']);
-  assert.deepEqual(Array.from(result.week, item => item.stage), ['ÐÐ° Ð½ÐµÐ´ÐµÐ»Ðµ']);
-});
-
-test('cross-project roadmap overview counts manually finished milestones and sorts upcoming dates', () => {
-  const ctx = execute('js/ui/renderer.js');
-  const projects = [
-    { id: 'a', name: 'Ð', milestones: ['Ð¡Ð´ÐµÐ»Ð°Ð½Ð¾', 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹'], completedMilestones: ['Ð¡Ð´ÐµÐ»Ð°Ð½Ð¾'], milestoneDeadlines: { 'Ð¡Ð´ÐµÐ»Ð°Ð½Ð¾': '2026-11-01', 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹': '2026-11-20' } },
-    { id: 'b', name: 'Ð‘', milestones: ['ÐŸÐµÑ€Ð²Ñ‹Ð¹'], milestoneDeadlines: { 'ÐŸÐµÑ€Ð²Ñ‹Ð¹': '2026-11-14' } }
-  ];
-  const result = ctx.RendererModule._collectRoadmapDeadlines(projects, new Date(2026, 10, 14));
-  assert.equal(result.completed, 1);
-  assert.equal(result.overdue.length, 0);
-  assert.deepEqual(Array.from(result.week, item => item.stage), ['ÐŸÐµÑ€Ð²Ñ‹Ð¹', 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹']);
-});
-function execute(file, context = {}) {
-  const sandbox = { console, Promise, ...context };
-  sandbox.window = sandbox;
-  vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
-  return sandbox;
-}
-
-test('public Firebase client rejects writes before touching a database', async () => {
-  const ctx = execute('js/services/firebase.js');
-  const firebase = ctx.FirebaseService;
-  let writes = 0;
-  firebase._db = { collection() { writes++; throw new Error('Unexpected remote write'); } };
-
-  assert.equal(await firebase.deleteProject('p1'), false);
-  assert.equal(await firebase.saveAllProjects([{ id: 'p1' }]), false);
-  assert.equal(await firebase.saveSettings({ favorites: [] }), false);
-  assert.equal(await firebase.clearAllProjects(), false);
-  assert.equal(await firebase.clearAllData(), false);
-  assert.equal(writes, 0);
-});
-
-test('tracker renders large project lists in batches and resets pagination on filter change', () => {
-  const allProjects = Array.from({ length: 65 }, (_, i) => ({ id: 'p' + i }));
-  const container = { innerHTML: '' };
-  const count = { textContent: '' };
-  const loadMore = { hidden: true, textContent: '', addEventListener(event, fn) { if (event === 'click') this.click = fn; } };
-  const elements = { projectsContainer: container, filteredCount: count, projectsLoadMore: loadMore };
-  let status = 'all';
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return elements[id] || null; } },
-    StateManager: { get(key) { return key === 'filters.status' ? status : ''; } },
-    ProjectsModule: { getFilteredProjects() { return allProjects; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer._cacheContainers();
-  renderer._renderProjectCard = item => `<div data-id="${item.id}"></div>`;
-  renderer._attachProjectEvents = () => {};
-  renderer.renderProjects();
-  assert.equal((container.innerHTML.match(/data-id=/g) || []).length, 24);
-  assert.equal(count.textContent, 65);
-  assert.equal(loadMore.hidden, false);
-  assert.match(loadMore.textContent, /24 Ð¸Ð· 41/);
-  loadMore.click();
-  assert.equal((container.innerHTML.match(/data-id=/g) || []).length, 48);
-  loadMore.click();
-  assert.equal((container.innerHTML.match(/data-id=/g) || []).length, 65);
-  assert.equal(loadMore.hidden, true);
-  status = 'development';
-  renderer.renderProjects();
-  assert.equal((container.innerHTML.match(/data-id=/g) || []).length, 24);
-  assert.equal(loadMore.hidden, false);
-});
-
-test('tracker sorting changes card order, resets pagination, and remembers selection', () => {
-  const projects = Array.from({ length: 30 }, (_, i) => ({
-    id: String(i), name: 'ÐŸÑ€Ð¾ÐµÐºÑ‚ ' + String(i + 1).padStart(2, '0'),
-    status: i % 2 ? 'planning' : 'completed',
-    updatedAt: new Date(Date.UTC(2026, 0, i + 1)).toISOString()
-  }));
-  const container = { innerHTML: '' };
-  const sort = { value: 'updated', addEventListener(type, fn) { if (type === 'change') this.change = fn; } };
-  const loadMore = { hidden: true, addEventListener(type, fn) { if (type === 'click') this.click = fn; } };
-  const elements = { projectsContainer: container, projectsSort: sort, projectsLoadMore: loadMore };
-  const saved = {};
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return elements[id] || null; } },
-    sessionStorage: { getItem(key) { return saved[key]; }, setItem(key, value) { saved[key] = value; } },
-    StateManager: { get() { return ''; } },
-    ProjectsModule: { getFilteredProjects() { return projects; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer._renderProjectCard = p => `[${p.id}]`;
-  renderer._attachProjectEvents = () => {};
-  renderer._cacheContainers();
-  renderer.renderProjects();
-  assert.ok(container.innerHTML.startsWith('[29]'), 'default newest first');
-  loadMore.click();
-  assert.equal((container.innerHTML.match(/\[\d+\]/g) || []).length, 30);
-  sort.value = 'name';
-  sort.change();
-  assert.equal(saved.devspace_sort, 'name');
-  assert.ok(container.innerHTML.startsWith('[0]'), 'alphabetical first');
-  assert.equal((container.innerHTML.match(/\[\d+\]/g) || []).length, 24);
-  sort.value = 'status';
-  sort.change();
-  assert.ok(container.innerHTML.startsWith('[28]'), 'completed before planning');
-});
-
-test('tracker switches between grid and list without re-rendering projects', () => {
-  const saved = {};
-  const classes = new Set();
-  const container = { classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); } } };
-  const makeButton = mode => ({ dataset: { projectsView: mode }, attrs: {},
-    classList: { toggle(name, enabled) { this.active = enabled; } },
-    addEventListener(event, callback) { if (event === 'click') this.click = callback; },
-    setAttribute(name, value) { this.attrs[name] = value; }
-  });
-  const grid = makeButton('grid');
-  const list = makeButton('list');
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'projectsContainer' ? container : null; }, querySelectorAll() { return [grid, list]; } },
-    sessionStorage: { getItem(key) { return saved[key]; }, setItem(key, value) { saved[key] = value; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer.renderProjects = () => { throw new Error('View toggle must not re-render the project cards'); };
-  renderer._cacheContainers();
-  assert.equal(grid.attrs['aria-pressed'], 'true');
-  list.click();
-  assert.equal(saved.devspace_view, 'list');
-  assert.equal(classes.has('list-view'), true);
-  assert.equal(list.attrs['aria-pressed'], 'true');
-  assert.equal(grid.attrs['aria-pressed'], 'false');
-  grid.click();
-  assert.equal(classes.has('list-view'), false);
-  assert.equal(saved.devspace_view, 'grid');
-});
-
-test('pinned projects stay first across sort modes and persist locally', () => {
-  const saved = {};
-  const projects = [
-    { id: 'a', name: 'Alpha', status: 'development', updatedAt: '2026-11-01' },
-    { id: 'b', name: 'Bravo', status: 'completed', updatedAt: '2026-11-02' },
-    { id: 'c', name: 'Charlie', status: 'development', updatedAt: '2026-11-03' }
-  ];
-  const container = { innerHTML: '' };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'projectsContainer' ? container : null; } },
-    StorageService: { get(key, fallback) { return saved[key] || fallback; }, set(key, value) { saved[key] = value; } },
-    StateManager: { get() { return ''; } },
-    ProjectsModule: { getFilteredProjects() { return projects; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer._renderProjectCard = p => `[${p.id}]`;
-  renderer._attachProjectEvents = () => {};
-  renderer._updateQuickAccess = () => {};
-  renderer.containers = { projects: container };
-  renderer.renderProjects();
-  assert.equal(container.innerHTML, '[c][b][a]');
-  renderer.togglePinned('a');
-  assert.equal(container.innerHTML, '[a][c][b]');
-  assert.deepEqual(Array.from(saved.pinnedProjects), ['a']);
-  renderer._sortMode = 'status';
-  renderer.renderProjects();
-  assert.ok(container.innerHTML.startsWith('[a]'));
-  renderer.togglePinned('a');
-  assert.equal(renderer.isPinned('a'), false);
-  assert.deepEqual(Array.from(saved.pinnedProjects), []);
-});
-
-test('focus panel summarizes pinned projects and their next incomplete checklist item', () => {
-  const panel = { hidden: true };
-  const focus = { innerHTML: '' };
-  const projects = [
-    { id: 'a', name: 'Skyward Tales', status: 'development', checklist: [
-      { text: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', completed: true }, { text: 'Ð”Ð¾Ð´ÐµÐ»Ð°Ñ‚ÑŒ Ð¾ÑÑ‚Ñ€Ð¾Ð²', completed: false }
-    ] },
-    { id: 'b', name: 'Last Ritual', status: 'planning', checklist: [] }
-  ];
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return { focusPanel: panel, focusProjects: focus }[id] || null; } },
-    StateManager: { get() { return projects; } },
-    Helpers: { escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); },
-      getStatusText(s) { return s; }, truncateText(s) { return s; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer._renderFocus();
-  assert.equal(panel.hidden, true);
-  renderer._pinnedIds = ['a'];
-  renderer._renderFocus();
-  assert.equal(panel.hidden, false);
-  assert.match(focus.innerHTML, /Skyward Tales/);
-  assert.match(focus.innerHTML, /Ð”Ð¾Ð´ÐµÐ»Ð°Ñ‚ÑŒ Ð¾ÑÑ‚Ñ€Ð¾Ð²/);
-  assert.match(focus.innerHTML, /width:50%/);
-  assert.doesNotMatch(focus.innerHTML, /Last Ritual/);
-  renderer._pinnedIds = [];
-  renderer._renderFocus();
-  assert.equal(panel.hidden, true);
-  assert.equal(focus.innerHTML, '');
-});
-
-test('focus task list includes only unfinished tasks from pinned projects and clears when unpinned', () => {
-  const panel = { hidden: true }, focus = { innerHTML: '' }, taskArea = { hidden: true };
-  const list = { innerHTML: '' }, count = { textContent: '' };
-  const projects = [
-    { id: 'a', name: 'ÐŸÐµÑ€Ð²Ñ‹Ð¹', status: 'development', checklist: [
-      { text: 'Ð£Ð¶Ðµ Ð³Ð¾Ñ‚Ð¾Ð²Ð¾', completed: true }, { text: 'ÐÐ½Ð¸Ð¼Ð°Ñ†Ð¸Ð¸', completed: false }, { text: 'Ð—Ð²ÑƒÐºÐ¸', completed: false }
-    ] },
-    { id: 'b', name: 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹', status: 'planning', checklist: [{ text: 'ÐÐµ Ð´Ð¾Ð»Ð¶ÐµÐ½ Ð¿Ð¾ÑÐ²Ð¸Ñ‚ÑŒÑÑ', completed: false }] }
-  ];
-  const nodes = { focusPanel: panel, focusProjects: focus, focusTaskArea: taskArea, focusTaskList: list, focusTaskCount: count };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return nodes[id] || null; } },
-    StateManager: { get() { return projects; } },
-    Helpers: { escapeHtml(s) { return String(s); }, getStatusText(s) { return s; }, truncateText(s) { return s; } }
-  });
-  const renderer = ctx.RendererModule;
-  renderer._pinnedIds = ['a'];
-  renderer._renderFocus();
-  assert.equal(taskArea.hidden, false);
-  assert.equal(count.textContent, '(2)');
-  assert.match(list.innerHTML, /ÐÐ½Ð¸Ð¼Ð°Ñ†Ð¸Ð¸/);
-  assert.match(list.innerHTML, /Ð—Ð²ÑƒÐºÐ¸/);
-  assert.doesNotMatch(list.innerHTML, /Ð£Ð¶Ðµ Ð³Ð¾Ñ‚Ð¾Ð²Ð¾|ÐÐµ Ð´Ð¾Ð»Ð¶ÐµÐ½ Ð¿Ð¾ÑÐ²Ð¸Ñ‚ÑŒÑÑ/);
-  renderer._pinnedIds = [];
-  renderer._renderFocus();
-  assert.equal(taskArea.hidden, true);
-  assert.equal(list.innerHTML, '');
-});
-
-test('focus task completion uses checklist handler without opening project details', () => {
-  let handler;
-  const toggled = [], opened = [];
-  const focusPanel = { addEventListener(type, callback) { if (type === 'click') handler = callback; } };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'focusPanel' ? focusPanel : null; }, querySelectorAll() { return []; } },
-    ChecklistModule: { toggleItem(project, task) { toggled.push([project, task]); } },
-    ProjectDetailModule: { show(project) { opened.push(project); } }
-  });
-  ctx.RendererModule._cacheContainers();
-  assert.equal(typeof handler, 'function');
-  const taskButton = { dataset: { focusProjectId: 'project-a', focusComplete: 'task-1' } };
-  handler({ target: { closest(selector) { return selector === '[data-focus-complete]' ? taskButton : { dataset: { focusProject: 'project-a' } }; } } });
-  assert.deepEqual(toggled, [['project-a', 'task-1']]);
-  assert.deepEqual(opened, []);
-  handler({ target: { closest(selector) { return selector === '[data-focus-project]' ? { dataset: { focusProject: 'project-a' } } : null; } } });
-  assert.deepEqual(opened, ['project-a']);
-});
-
-test('focus task list shows separate controls only for tasks with identifiers', () => {
-  const nodes = { focusPanel: { hidden: true }, focusProjects: { innerHTML: '' }, focusTaskArea: { hidden: true }, focusTaskList: { innerHTML: '' } };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return nodes[id] || null; } },
-    StateManager: { get() { return [{ id: 'a', name: 'ÐŸÑ€Ð¾ÐµÐºÑ‚', checklist: [{ id: 'task-1', text: 'Ð¡Ð´ÐµÐ»Ð°Ñ‚ÑŒ', completed: false }, { text: 'Ð‘ÐµÐ· ID', completed: false }] }]; } },
-    Helpers: { escapeHtml(s) { return String(s); }, getStatusText(s) { return s; }, truncateText(s) { return s; } }
-  });
-  ctx.RendererModule._pinnedIds = ['a'];
-  ctx.RendererModule._renderFocus();
-  assert.match(nodes.focusTaskList.innerHTML, /data-focus-complete="task-1"/);
-  assert.match(nodes.focusTaskList.innerHTML, /aria-label="ÐžÑ‚Ð¼ÐµÑ‚Ð¸Ñ‚ÑŒ Ð²Ñ‹Ð¿Ð¾Ð»Ð½ÐµÐ½Ð½Ð¾Ð¹: Ð¡Ð´ÐµÐ»Ð°Ñ‚ÑŒ"/);
-  assert.equal((nodes.focusTaskList.innerHTML.match(/data-focus-complete=/g) || []).length, 1);
-  assert.equal((nodes.focusTaskList.innerHTML.match(/data-focus-project="a"/g) || []).length, 2);
-});
-
-test('priority changes persist in checklist without changing completion', () => {
-  const task = { id: 't1', text: 'Ð“Ð»Ð°Ð²Ð½Ð°Ñ Ð·Ð°Ð´Ð°Ñ‡Ð°', completed: false };
-  const project = { id: 'p1', checklist: [task] };
-  const updates = [], events = [];
-  const ctx = execute('js/modules/checklist.js', {
-    StateManager: { getProject(id) { return id === 'p1' ? project : null; }, updateProject(id, changes) { updates.push([id, changes]); } },
-    EventBus: { emit(name, data) { events.push([name, data]); } }
-  });
-  assert.equal(ctx.ChecklistModule.setPriority('p1', 't1', 'high'), true);
-  assert.equal(task.priority, 'high');
-  assert.equal(task.completed, false);
-  assert.equal(updates.length, 1);
-  assert.equal(events[0][0], 'checklist:changed');
-  assert.equal(ctx.ChecklistModule.setPriority('p1', 't1', 'unknown'), false);
-  assert.equal(updates.length, 1);
-  assert.equal(ctx.ChecklistModule.setPriority('p1', 't1', 'normal'), true);
-  assert.equal(Object.hasOwn(task, 'priority'), false);
-  assert.equal(updates.length, 2);
-  assert.equal(ctx.ChecklistModule.setPriority('p1', 'missing', 'high'), false);
-});
-
-test('focus tasks are sorted globally by priority and keep legacy default normal', () => {
-  const nodes = { focusPanel: { hidden: true }, focusProjects: { innerHTML: '' }, focusTaskArea: { hidden: true }, focusTaskList: { innerHTML: '' }, focusTaskCount: { textContent: '' } };
-  const projects = [{ id: 'a', name: 'Ð', checklist: [
-    { id: '1', text: 'ÐÐ¸Ð·ÐºÐ°Ñ', priority: 'low' },
-    { id: '2', text: 'Ð‘ÐµÐ· Ð¿Ñ€Ð¸Ð¾Ñ€Ð¸Ñ‚ÐµÑ‚Ð°' },
-    { id: '3', text: 'Ð¡Ð°Ð¼Ð°Ñ Ð²Ð°Ð¶Ð½Ð°Ñ', priority: 'high' }
-  ] }];
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return nodes[id] || null; } },
-    StateManager: { get() { return projects; } },
-    Helpers: { escapeHtml(s) { return String(s); }, getStatusText(s) { return s; }, truncateText(s) { return s; } }
-  });
-  ctx.RendererModule._pinnedIds = ['a'];
-  ctx.RendererModule._renderFocus();
-  const html = nodes.focusTaskList.innerHTML;
-  assert.ok(html.indexOf('Ð¡Ð°Ð¼Ð°Ñ Ð²Ð°Ð¶Ð½Ð°Ñ') < html.indexOf('Ð‘ÐµÐ· Ð¿Ñ€Ð¸Ð¾Ñ€Ð¸Ñ‚ÐµÑ‚Ð°'));
-  assert.ok(html.indexOf('Ð‘ÐµÐ· Ð¿Ñ€Ð¸Ð¾Ñ€Ð¸Ñ‚ÐµÑ‚Ð°') < html.indexOf('ÐÐ¸Ð·ÐºÐ°Ñ'));
-  assert.match(html, /data-focus-priority="3"/);
-  assert.match(html, /priority-high/);
-  assert.equal(nodes.focusTaskCount.textContent, '(3)');
-});
-
-test('focus priority selector calls the checklist service without opening details', () => {
-  const callbacks = {}, updates = [], opened = [];
-  const panel = { addEventListener(name, fn) { callbacks[name] = fn; } };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'focusPanel' ? panel : null; }, querySelectorAll() { return []; } },
-    ChecklistModule: { setPriority(project, task, priority) { updates.push([project, task, priority]); } },
-    ProjectDetailModule: { show(id) { opened.push(id); } }
-  });
-  ctx.RendererModule._cacheContainers();
-  const selector = { dataset: { focusProjectId: 'project-a', focusPriority: 'task-b' }, value: 'high' };
-  callbacks.change({ target: { closest(query) { return query === '[data-focus-priority]' ? selector : null; } } });
-  assert.deepEqual(updates, [['project-a', 'task-b', 'high']]);
-  assert.deepEqual(opened, []);
-});
-
-test('checklist deadline validates calendar dates and preserves other task fields', () => {
-  const task = { id: 't1', text: 'Ð—Ð°Ð´Ð°Ñ‡Ð°', priority: 'high', completed: false };
-  const project = { id: 'p1', checklist: [task] };
-  const saved = [], events = [];
-  const ctx = execute('js/modules/checklist.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { saved.push(patch); } },
-    EventBus: { emit(name) { events.push(name); } }
-  });
-  const module = ctx.ChecklistModule;
-  assert.equal(module.setDeadline('p1', 't1', '2026-02-30'), false);
-  assert.equal(module.setDeadline('p1', 't1', '2026-11-17'), true);
-  assert.equal(task.deadline, '2026-11-17');
-  assert.equal(task.priority, 'high');
-  assert.equal(task.completed, false);
-  assert.equal(saved.length, 1);
-  assert.deepEqual(events, ['checklist:changed']);
-  assert.equal(module.setDeadline('p1', 't1', '2026-11-17'), true);
-  assert.equal(saved.length, 1);
-  assert.equal(module.setDeadline('p1', 't1', ''), true);
-  assert.equal(Object.hasOwn(task, 'deadline'), false);
-  assert.equal(module.setDeadline('p1', 'missing', '2026-11-18'), false);
-});
-
-test('deadline input routes changes to checklist service', () => {
-  const callbacks = {}, changed = [];
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'focusPanel' ? { addEventListener(name, fn) { callbacks[name] = fn; } } : null; }, querySelectorAll() { return []; } },
-    ChecklistModule: { setDeadline(project, task, value) { changed.push([project, task, value]); } }
-  });
-  ctx.RendererModule._cacheContainers();
-  const control = { dataset: { focusProjectId: 'p', focusDeadline: 't' }, value: '2026-11-17' };
-  callbacks.change({ target: { closest(selector) { return selector === '[data-focus-deadline]' ? control : null; } } });
-  assert.deepEqual(changed, [['p', 't', '2026-11-17']]);
-});
-
-test('focus deadline summary and weekly list use local dates and hide completed tasks', () => {
-  const nodes = { focusPanel: { hidden: true }, focusProjects: { innerHTML: '' }, focusTaskArea: { hidden: true }, focusTaskList: { innerHTML: '' }, focusTaskCount: { textContent: '' }, focusDeadlineSummary: { hidden: true, textContent: '' }, focusWeekArea: { hidden: true }, focusWeekList: { innerHTML: '' }, focusWeekCount: { textContent: '' } };
-  const now = new Date();
-  const localDate = (d) => [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
-  const yesterday = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-  const tomorrow = localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
-  const projects = [{ id: 'p', name: 'Ð”ÐµÐ»Ð°', checklist: [
-    { id: '1', text: 'ÐŸÑ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð¾', deadline: yesterday, completed: false },
-    { id: '2', text: 'ÐÐ° Ð·Ð°Ð²Ñ‚Ñ€Ð°', deadline: tomorrow, completed: false },
-    { id: '3', text: 'Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', deadline: yesterday, completed: true }
-  ] }];
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return nodes[id] || null; } },
-    StateManager: { get() { return projects; } },
-    Helpers: { escapeHtml(s) { return String(s); }, getStatusText(s) { return s; }, truncateText(s) { return s; } }
-  });
-  ctx.RendererModule._pinnedIds = ['p'];
-  ctx.RendererModule._renderFocus();
-  assert.equal(nodes.focusDeadlineSummary.hidden, false);
-  assert.match(nodes.focusDeadlineSummary.textContent, /ÐŸÑ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð¾: 1/);
-  assert.equal(nodes.focusWeekArea.hidden, false);
-  assert.match(nodes.focusWeekList.innerHTML, /ÐÐ° Ð·Ð°Ð²Ñ‚Ñ€Ð°/);
-  assert.doesNotMatch(nodes.focusWeekList.innerHTML, /Ð“Ð¾Ñ‚Ð¾Ð²Ð¾|ÐŸÑ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð¾/);
-  assert.match(nodes.focusTaskList.innerHTML, /focus-task-overdue/);
-  ctx.RendererModule._pinnedIds = [];
-  ctx.RendererModule._renderFocus();
-  assert.equal(nodes.focusWeekArea.hidden, true);
-});
-
-test('productivity summarizes dated completions without inventing old completion dates', () => {
-  const now = new Date();
-  const previous = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 15);
-  const old = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 12, 15);
-  const nodes = {
-    productivityPanel: { hidden: true }, productivityDone: { textContent: '' }, productivityStreak: { textContent: '' },
-    productivityProgress: { textContent: '' }, productivityBarFill: { style: {} },
-    productivityBar: { attrs: {}, setAttribute(key, value) { this.attrs[key] = value; } },
-    productivityAchievement: { hidden: true }
-  };
-  const projects = [{ checklist: [
-    { id: 'a', completed: true, completedAt: now.toISOString() },
-    { id: 'b', completed: true, completedAt: previous.toISOString() },
-    { id: 'c', completed: true, completedAt: old.toISOString() },
-    { id: 'd', completed: true },
-    { id: 'e', completed: false, completedAt: now.toISOString() }
-  ] }];
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return nodes[id] || null; } },
-    StateManager: { get() { return projects; } },
-    StorageService: { get() { return 2; } }
-  });
-  ctx.RendererModule._renderProductivity();
-  assert.equal(nodes.productivityPanel.hidden, false);
-  assert.equal(nodes.productivityDone.textContent, '2');
-  assert.equal(nodes.productivityStreak.textContent, '2');
-  assert.equal(nodes.productivityProgress.textContent, '100%');
-  assert.equal(nodes.productivityBarFill.style.width, '100%');
-  assert.equal(nodes.productivityBar.attrs['aria-valuenow'], '100');
-  assert.equal(nodes.productivityAchievement.hidden, false);
-});
-
-test('weekly goal validates values and stores only chosen target', () => {
-  const saved = [];
-  const goal = { value: '', addEventListener(name, fn) { if (name === 'change') this.changed = fn; } };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'productivityGoal' ? goal : null; }, querySelectorAll() { return []; } },
-    StorageService: { get() { return 5; }, set(key, value) { saved.push([key, value]); } }
-  });
-  ctx.RendererModule._renderProductivity = () => {};
-  ctx.RendererModule._cacheContainers();
-  assert.equal(goal.value, '5');
-  goal.value = '0';
-  goal.changed();
-  assert.equal(goal.value, '5');
-  goal.value = '7';
-  goal.changed();
-  assert.deepEqual(saved, [['weeklyGoal', 7]]);
-});
-
-test('productivity panel hides when no project checklist has tasks', () => {
-  const panel = { hidden: false };
-  const ctx = execute('js/ui/renderer.js', {
-    document: { getElementById(id) { return id === 'productivityPanel' ? panel : null; } },
-    StateManager: { get() { return [{ id: 'p', checklist: [] }]; } }
-  });
-  ctx.RendererModule._renderProductivity();
-  assert.equal(panel.hidden, true);
-});
-
-test('roadmap derives stage progress from linked checklist tasks without modifying legacy milestones', () => {
-  const project = {
-    id: 'p', milestones: ['Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚', 'ÐŸÐµÑ€Ð²Ñ‹Ð¹ Ð¾ÑÑ‚Ñ€Ð¾Ð²'], completedMilestones: ['Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚'],
-    checklist: [{ id: 'a', text: 'Ð¡Ñ†ÐµÐ½Ð°', milestone: 'ÐŸÐµÑ€Ð²Ñ‹Ð¹ Ð¾ÑÑ‚Ñ€Ð¾Ð²', completed: true }, { id: 'b', text: 'Ð’Ð¾Ð´Ð¾Ð¿Ð°Ð´', milestone: 'ÐŸÐµÑ€Ð²Ñ‹Ð¹ Ð¾ÑÑ‚Ñ€Ð¾Ð²', completed: false }]
-  };
-  const ctx = execute('js/modules/project-detail.js', {
-    Helpers: { escapeHtml(x) { return String(x); } }, AuthService: { isOwner() { return true; } }
-  });
-  const html = ctx.ProjectDetailModule._renderRoadmap(project);
-  assert.match(html, /Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚/);
-  assert.match(html, /ÐŸÐµÑ€Ð²Ñ‹Ð¹ Ð¾ÑÑ‚Ñ€Ð¾Ð²/);
-  assert.match(html, /50%/);
-  assert.match(html, /Ð¡Ñ†ÐµÐ½Ð°/);
-  assert.match(html, /Ð’Ð¾Ð´Ð¾Ð¿Ð°Ð´/);
-  assert.match(html, /data-roadmap-task="b"/);
-  assert.deepEqual(project.milestones, ['Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚', 'ÐŸÐµÑ€Ð²Ñ‹Ð¹ Ð¾ÑÑ‚Ñ€Ð¾Ð²']);
-});
-
-test('roadmap task assignment validates stage names and keeps checklist flags', () => {
-  const project = { id: 'p', milestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½', 'Ð¢ÐµÑÑ‚Ñ‹'], checklist: [{ id: 't', text: 'ÐœÐµÐ½ÑŽ', completed: true }] };
-  const saved = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, data) { saved.push(data); } },
-    AuthService: { isOwner() { return true; } },
-    document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.assignTaskStage('p', 't', 'Unknown'), false);
-  assert.equal(roadmap.assignTaskStage('p', 't', 'Ð”Ð¸Ð·Ð°Ð¹Ð½'), true);
-  assert.equal(project.checklist[0].milestone, 'Ð”Ð¸Ð·Ð°Ð¹Ð½');
-  assert.equal(project.checklist[0].completed, true);
-  assert.equal(saved.length, 1);
-  assert.equal(roadmap.assignTaskStage('p', 't', ''), true);
-  assert.equal(Object.hasOwn(project.checklist[0], 'milestone'), false);
-});
-
-test('manual roadmap completion refuses stages containing linked tasks', () => {
-  const project = { id: 'p', milestones: ['Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°', 'Ð ÐµÐ»Ð¸Ð·'], completedMilestones: [], checklist: [{ id: 't', milestone: 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°' }] };
-  const saved = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, data) { saved.push(data); } },
-    AuthService: { isOwner() { return true; } },
-    document: { getElementById() { return null; } }
-  });
-  assert.equal(ctx.ProjectDetailModule.toggleRoadmapStage('p', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°'), false);
-  assert.equal(ctx.ProjectDetailModule.toggleRoadmapStage('p', 'Ð ÐµÐ»Ð¸Ð·'), true);
-  assert.equal(saved.length, 1);
-  assert.deepEqual([...project.completedMilestones], []);
-  assert.deepEqual([...saved[0].completedMilestones], ['Ð ÐµÐ»Ð¸Ð·']);
-});
-
-test('roadmap remains read-only without local editing enabled', () => {
-  const project = { id: 'p', milestones: ['Ð­Ñ‚Ð°Ð¿'], checklist: [{ id: 't', text: 'Ð—Ð°Ð´Ð°Ñ‡Ð°' }] };
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject() { throw Error('Must not save'); } },
-    AuthService: { isOwner() { return false; } },
-    Helpers: { escapeHtml(s) { return String(s); } }
-  });
-  assert.equal(ctx.ProjectDetailModule.assignTaskStage('p', 't', 'Ð­Ñ‚Ð°Ð¿'), false);
-  assert.equal(ctx.ProjectDetailModule.toggleRoadmapStage('p', 'Ð­Ñ‚Ð°Ð¿'), false);
-  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-task|data-roadmap-stage/);
-  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-create|data-roadmap-move/);
-  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-rename|data-roadmap-task-create/);
-  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-remove/);
-  assert.doesNotMatch(ctx.ProjectDetailModule._renderRoadmap(project), /data-roadmap-deadline/);
-  assert.equal(ctx.ProjectDetailModule.addRoadmapStage('p', 'ÐÐ¾Ð²Ñ‹Ð¹'), false);
-  assert.equal(ctx.ProjectDetailModule.moveRoadmapStage('p', 0, 'down'), false);
-  assert.equal(ctx.ProjectDetailModule.renameRoadmapStage('p', 'Ð­Ñ‚Ð°Ð¿', 'Ð”Ñ€ÑƒÐ³Ð¾Ð¹'), false);
-  assert.equal(ctx.ProjectDetailModule.addRoadmapTask('p', 'Ð­Ñ‚Ð°Ð¿', 'Ð—Ð°Ð´Ð°Ñ‡Ð°'), false);
-  assert.equal(ctx.ProjectDetailModule.removeRoadmapStage('p', 'Ð­Ñ‚Ð°Ð¿'), false);
-  assert.equal(ctx.ProjectDetailModule.setRoadmapDeadline('p', 'Ð­Ñ‚Ð°Ð¿', '2026-12-15'), false);
-});
-
-test('roadmap deadlines validate calendar dates, persist by stage and allow clearing', () => {
-  const project = { id: 'p', milestones: ['Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°'], checklist: [] };
-  const patches = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { patches.push(patch); Object.assign(project, patch); } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } },
-    Helpers: { escapeHtml(s) { return String(s); } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.setRoadmapDeadline('p', 'ÐÐµÑÑƒÑ‰ÐµÑÑ‚Ð²ÑƒÑŽÑ‰Ð¸Ð¹', '2026-12-15'), false);
-  assert.equal(roadmap.setRoadmapDeadline('p', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°', '2026-02-30'), false);
-  assert.equal(roadmap.setRoadmapDeadline('p', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°', 'tomorrow'), false);
-  assert.equal(patches.length, 0);
-  assert.equal(roadmap.setRoadmapDeadline('p', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°', '2026-12-15'), true);
-  assert.equal(project.milestoneDeadlines['Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°'], '2026-12-15');
-  assert.match(roadmap._renderRoadmap(project), /data-roadmap-deadline="Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°" value="2026-12-15"/);
-  assert.equal(roadmap.setRoadmapDeadline('p', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°', ''), true);
-  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°'), false);
-});
-
-test('project cards show next unfinished milestone and actual completed count from linked tasks', () => {
-  const ctx = execute('js/ui/renderer.js', { Helpers: { escapeHtml(s) { return String(s); }, truncateText(s) { return s; } } });
-  const project = { milestones: ['ÐŸÐµÑ€Ð²Ñ‹Ð¹', 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹', 'Ð¢Ñ€ÐµÑ‚Ð¸Ð¹'], completedMilestones: ['Ð¢Ñ€ÐµÑ‚Ð¸Ð¹'], checklist: [{ id: 1, milestone: 'ÐŸÐµÑ€Ð²Ñ‹Ð¹', completed: true }, { id: 2, milestone: 'Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹', completed: false }] };
-  const html = ctx.RendererModule._roadmapCardSummary(project);
-  assert.match(html, /2\/3/);
-  assert.match(html, /Ð¡Ð»ÐµÐ´ÑƒÑŽÑ‰Ð¸Ð¹ ÑÑ‚Ð°Ð¿/);
-  assert.match(html, /Ð’Ñ‚Ð¾Ñ€Ð¾Ð¹/);
-  assert.doesNotMatch(html, /roadmap-card-late/);
-  assert.equal(ctx.RendererModule._roadmapCardSummary({ milestones: [] }), '');
-});
-
-test('project card marks overdue next stage and escapes its title', () => {
-  const ctx = execute('js/ui/renderer.js', { Helpers: { escapeHtml(s) { return String(s).replace(/</g, '&lt;'); }, truncateText(s) { return s; } } });
-  const html = ctx.RendererModule._roadmapCardSummary({ milestones: ['<Ð”Ð¸Ð·Ð°Ð¹Ð½>'], milestoneDeadlines: { '<Ð”Ð¸Ð·Ð°Ð¹Ð½>': '2020-01-01' } });
-  assert.match(html, /roadmap-card-late/);
-  assert.match(html, /ÐŸÑ€Ð¾ÑÑ€Ð¾Ñ‡ÐµÐ½Ð¾ Â· 01\.01\.2020/);
-  assert.match(html, /&lt;Ð”Ð¸Ð·Ð°Ð¹Ð½>/);
-  assert.doesNotMatch(html, /<Ð”Ð¸Ð·Ð°Ð¹Ð½>/);
-});
-
-test('roadmap stage rename moves deadline and removal cleans it without touching tasks', () => {
-  const project = { id: 'p', milestones: ['Ð¡Ñ‚Ð°Ñ€Ñ‹Ð¹', 'Ð”Ñ€ÑƒÐ³Ð¾Ð¹'], milestoneDeadlines: { Ð¡Ñ‚Ð°Ñ€Ñ‹Ð¹: '2026-11-01', Ð”Ñ€ÑƒÐ³Ð¾Ð¹: '2026-12-31' }, checklist: [{ id: 1, milestone: 'Ð¡Ñ‚Ð°Ñ€Ñ‹Ð¹', completed: false }] };
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { Object.assign(project, patch); } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.renameRoadmapStage('p', 'Ð¡Ñ‚Ð°Ñ€Ñ‹Ð¹', 'ÐÐ¾Ð²Ñ‹Ð¹'), true);
-  assert.equal(project.milestoneDeadlines['ÐÐ¾Ð²Ñ‹Ð¹'], '2026-11-01');
-  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'Ð¡Ñ‚Ð°Ñ€Ñ‹Ð¹'), false);
-  assert.equal(project.milestoneDeadlines['Ð”Ñ€ÑƒÐ³Ð¾Ð¹'], '2026-12-31');
-  assert.equal(roadmap.removeRoadmapStage('p', 'ÐÐ¾Ð²Ñ‹Ð¹'), true);
-  assert.equal(Object.hasOwn(project.milestoneDeadlines, 'ÐÐ¾Ð²Ñ‹Ð¹'), false);
-  assert.equal(project.checklist.length, 1);
-});
-
-test('roadmap summary averages stages and reports accessible progress without mutating project', () => {
-  const project = { id: 'p', milestones: ['Ð“Ð¾Ñ‚Ð¾Ð²Ð¾', 'Ð Ð°Ð±Ð¾Ñ‚Ð°', 'ÐŸÐ¾Ð·Ð¶Ðµ'], completedMilestones: ['Ð“Ð¾Ñ‚Ð¾Ð²Ð¾'], checklist: [{ id: 1, milestone: 'Ð Ð°Ð±Ð¾Ñ‚Ð°', completed: true }, { id: 2, milestone: 'Ð Ð°Ð±Ð¾Ñ‚Ð°', completed: false }] };
-  const ctx = execute('js/modules/project-detail.js', {
-    Helpers: { escapeHtml(s) { return String(s); } }, AuthService: { isOwner() { return false; } }
-  });
-  const html = ctx.ProjectDetailModule._renderRoadmap(project);
-  assert.match(html, /ÐžÐ±Ñ‰Ð¸Ð¹ Ð¿Ñ€Ð¾Ð³Ñ€ÐµÑÑ/);
-  assert.match(html, /aria-valuenow="50"/);
-  assert.match(html, /50% Â· 3 ÑÑ‚Ð°Ð¿Ð¾Ð²/);
-  assert.equal(project.checklist[0].completed, true);
-});
-
-test('removing roadmap stage keeps tasks and their completion but clears stage assignment', () => {
-  const project = { id: 'p', milestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½', 'Ð ÐµÐ»Ð¸Ð·'], completedMilestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½'], checklist: [{ id: 1, milestone: 'Ð”Ð¸Ð·Ð°Ð¹Ð½', text: 'ÐœÐ°ÐºÐµÑ‚', completed: true, priority: 'high' }, { id: 2, milestone: 'Ð ÐµÐ»Ð¸Ð·', completed: false }] };
-  const patches = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { patches.push(patch); Object.assign(project, patch); } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.removeRoadmapStage('p', 'ÐÐµ ÑÑƒÑ‰ÐµÑÑ‚Ð²ÑƒÐµÑ‚'), false);
-  assert.equal(roadmap.removeRoadmapStage('p', 'Ð”Ð¸Ð·Ð°Ð¹Ð½'), true);
-  assert.deepEqual([...project.milestones], ['Ð ÐµÐ»Ð¸Ð·']);
-  assert.equal(project.checklist.length, 2);
-  assert.equal(Object.hasOwn(project.checklist[0], 'milestone'), false);
-  assert.equal(project.checklist[0].text, 'ÐœÐ°ÐºÐµÑ‚');
-  assert.equal(project.checklist[0].completed, true);
-  assert.equal(project.checklist[0].priority, 'high');
-  assert.equal(project.checklist[1].milestone, 'Ð ÐµÐ»Ð¸Ð·');
-  assert.deepEqual([...project.completedMilestones], []);
-  assert.equal(patches.length, 1);
-});
-
-test('roadmap rename updates linked checklist and manual completion in one patch', () => {
-  const project = { id: 'p', milestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½', 'Ð ÐµÐ»Ð¸Ð·'], completedMilestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½'], checklist: [{ id: 't', text: 'ÐœÐ°ÐºÐµÑ‚', milestone: 'Ð”Ð¸Ð·Ð°Ð¹Ð½', completed: true }] };
-  const writes = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { writes.push(patch); Object.assign(project, patch); } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.renameRoadmapStage('p', 'Ð”Ð¸Ð·Ð°Ð¹Ð½', ' Ð ÐµÐ»Ð¸Ð· '), false);
-  assert.equal(roadmap.renameRoadmapStage('p', 'Ð”Ð¸Ð·Ð°Ð¹Ð½', ''), false);
-  assert.equal(roadmap.renameRoadmapStage('p', 'ÐÐµÑ‚', 'UI'), false);
-  assert.equal(roadmap.renameRoadmapStage('p', 'Ð”Ð¸Ð·Ð°Ð¹Ð½', ' Ð˜Ð½Ñ‚ÐµÑ€Ñ„ÐµÐ¹Ñ '), true);
-  assert.deepEqual([...project.milestones], ['Ð˜Ð½Ñ‚ÐµÑ€Ñ„ÐµÐ¹Ñ', 'Ð ÐµÐ»Ð¸Ð·']);
-  assert.equal(project.checklist[0].milestone, 'Ð˜Ð½Ñ‚ÐµÑ€Ñ„ÐµÐ¹Ñ');
-  assert.equal(project.checklist[0].completed, true);
-  assert.deepEqual([...project.completedMilestones], ['Ð˜Ð½Ñ‚ÐµÑ€Ñ„ÐµÐ¹Ñ']);
-  assert.equal(writes.length, 1);
-});
-
-test('roadmap creates checklist tasks only for a valid stage and links returned id', () => {
-  const project = { id: 'p', milestones: ['Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚'], checklist: [] };
-  const calls = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { calls.push(patch); } },
-    ChecklistModule: { addItem(id, name) { calls.push({ name }); const item = { id: 14, text: name, completed: false }; project.checklist.push(item); return item; } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.addRoadmapTask('p', 'Ð§ÑƒÐ¶Ð¾Ð¹ ÑÑ‚Ð°Ð¿', 'Ð¢ÐµÑÑ‚'), false);
-  assert.equal(roadmap.addRoadmapTask('p', 'Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚', ' '), false);
-  assert.equal(roadmap.addRoadmapTask('p', 'Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚', 'x'.repeat(241)), false);
-  assert.equal(calls.length, 0);
-  assert.equal(roadmap.addRoadmapTask('p', 'Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚', '  ÐŸÑ€Ð¾Ð²ÐµÑ€Ð¸Ñ‚ÑŒ ÑÐ±Ð¾Ñ€ÐºÑƒ '), true);
-  assert.equal(project.checklist[0].text, 'ÐŸÑ€Ð¾Ð²ÐµÑ€Ð¸Ñ‚ÑŒ ÑÐ±Ð¾Ñ€ÐºÑƒ');
-  assert.equal(project.checklist[0].milestone, 'Ð¤ÑƒÐ½Ð´Ð°Ð¼ÐµÐ½Ñ‚');
-  assert.equal(calls.length, 2);
-});
-
-test('roadmap can add distinct stages without changing checklist or completed stages', () => {
-  const project = { id: 'p', milestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½'], completedMilestones: ['Ð”Ð¸Ð·Ð°Ð¹Ð½'], checklist: [{ id: 1, text: 'ÐœÐµÐ½ÑŽ' }] };
-  const saved = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { saved.push(patch); project.milestones = patch.milestones; } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } },
-    Helpers: { escapeHtml(s) { return String(s); } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.addRoadmapStage('p', '  Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°  '), true);
-  assert.equal(roadmap.addRoadmapStage('p', 'Ñ€Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°'), false);
-  assert.equal(roadmap.addRoadmapStage('p', '  '), false);
-  assert.equal(roadmap.addRoadmapStage('p', 'x'.repeat(101)), false);
-  assert.deepEqual([...project.milestones], ['Ð”Ð¸Ð·Ð°Ð¹Ð½', 'Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚ÐºÐ°']);
-  assert.deepEqual(project.completedMilestones, ['Ð”Ð¸Ð·Ð°Ð¹Ð½']);
-  assert.equal(project.checklist[0].text, 'ÐœÐµÐ½ÑŽ');
-  assert.equal(saved.length, 1);
-  assert.match(roadmap._renderRoadmap(project), /data-roadmap-create/);
-});
-
-test('roadmap stage reordering preserves task links by name and rejects invalid moves', () => {
-  const project = { id: 'p', milestones: ['Ð', 'Ð‘', 'Ð’'], checklist: [{ id: 1, milestone: 'Ð‘', completed: true }] };
-  const saved = [];
-  const ctx = execute('js/modules/project-detail.js', {
-    StateManager: { getProject() { return project; }, updateProject(id, patch) { saved.push(patch); project.milestones = patch.milestones; } },
-    AuthService: { isOwner() { return true; } }, document: { getElementById() { return null; } }
-  });
-  const roadmap = ctx.ProjectDetailModule;
-  assert.equal(roadmap.moveRoadmapStage('p', 1, 'up'), true);
-  assert.deepEqual([...project.milestones], ['Ð‘', 'Ð', 'Ð’']);
-  assert.equal(project.checklist[0].milestone, 'Ð‘');
-  assert.equal(roadmap.moveRoadmapStage('p', 0, 'up'), false);
-  assert.equal(roadmap.moveRoadmapStage('p', 2, 'down'), false);
-  assert.equal(roadmap.moveRoadmapStage('p', 1.5, 'down'), false);
-  assert.equal(roadmap.moveRoadmapStage('p', 0, 'sideways'), false);
-  assert.equal(saved.length, 1);
-});
-
-test('public page loads only vendor SDKs that it actually uses', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  const sync = fs.readFileSync(path.join(root, 'js/core/sync.js'), 'utf8');
-  for (const unused of ['typed.js@', 'firebase-auth-compat.js', '@supabase/supabase-js@']) {
-    assert.ok(!html.includes(unused), `${unused} should not load on a public page`);
-  }
-  assert.ok(!html.includes('firebase-app-compat.js'), 'Firebase must not delay the first paint');
-  assert.ok(!html.includes('firebase-firestore-compat.js'), 'Firestore must not delay the first paint');
-  assert.ok(sync.includes('firebase-app-compat.js'));
-  assert.ok(sync.includes('firebase-firestore-compat.js'));
-  assert.ok(html.includes('aos.js'));
-  assert.ok(!app.includes('new Typed('));
-});
-
-test('all external scripts load in parallel while preserving execution order', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g)];
-  assert.ok(scripts.length >= 35);
-  for (const [tag, src] of scripts) {
-    assert.match(tag, /\sdefer(?:\s|>)/, `${src} should not block HTML parsing`);
-    assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
-  }
-  const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.62.5') < sources.indexOf('js/app.js?v=3.62.5'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.62.5') < sources.indexOf('js/app.js?v=3.62.5'));
-});
-
-test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
-  const injected = [];
-  const idle = [];
-  const sync = execute('js/core/sync.js', {
-    document: {
-      getElementById() { return { textContent: '' }; },
-      createElement() { return {}; },
-      head: { appendChild(script) { injected.push(script); } }
-    },
-    requestIdleCallback(callback) { idle.push(callback); },
-    LocalStorageService: { get(key) { return key === 'settings' ? { syncMode: 'read-only' } : null; } },
-    FirebaseService: { _initialized: false, init() { this._initialized = true; return Promise.resolve(); } }
-  });
-  let cloudReads = 0;
-  sync.SyncModule._syncFromCloud = () => { cloudReads++; return Promise.resolve(); };
-  const pending = sync.SyncModule.init();
-  assert.equal(injected.length, 0);
-  assert.equal(cloudReads, 0);
-  assert.equal(idle.length, 1);
-  idle[0]();
-  assert.match(injected[0].src, /firebase-app-compat\.js$/);
-  injected[0].onload();
-  assert.match(injected[1].src, /firebase-firestore-compat\.js$/);
-  injected[1].onload();
-  await pending;
-  assert.equal(cloudReads, 1);
-
-  const local = execute('js/core/sync.js', {
-    document: { getElementById() { return null; } },
-    LocalStorageService: { get(key) { return key === 'settings' ? { syncMode: 'local' } : null; } },
-    FirebaseService: { init() { throw Error('Local mode should never fetch SDK'); } }
-  });
-  await local.SyncModule.init();
-  assert.equal(local.SyncModule._sdkPromise, null);
-});
-
-test('decorative particles are fetched only after idle on capable screens', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  assert.ok(!html.includes('particles.min.js'), 'particle script must not block page parsing');
-  assert.ok(app.includes("window.requestIdleCallback(loadParticles"));
-  assert.ok(app.includes('!prefersReducedMotion && !compactViewport'));
-  assert.ok(app.includes('if (document.hidden) return;'));
-  assert.ok(app.includes("script.onload = startParticles"));
-});
-
-test('tracker never intercepts native browser new-window or text-undo shortcuts', () => {
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
-  assert.ok(!app.includes("e.ctrlKey && e.key === 'n'"));
-  assert.ok(!projects.includes("e.ctrlKey && e.key === 'n'"));
-  assert.ok(!projects.includes("e.ctrlKey && e.key === 'z'"));
-});
-
-test('scroll controls honour reduced motion and expose an accessible name', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  assert.match(html, /id="scrollTopBtn"[^>]+aria-label="ÐÐ°Ð²ÐµÑ€Ñ…"/);
-  assert.ok((app.match(/reduceMotion \? 'instant' : 'smooth'/g) || []).length >= 2);
-});
-
-test('mobile menu announces its state, supports Escape and fits the viewport', () => {
-  const navigation = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/components/navbar.css'), 'utf8');
-  assert.ok(navigation.includes('shown.bs.collapse'));
-  assert.ok(navigation.includes('hidden.bs.collapse'));
-  assert.ok(navigation.includes('Ð—Ð°ÐºÑ€Ñ‹Ñ‚ÑŒ Ð¼ÐµÐ½ÑŽ Ð½Ð°Ð²Ð¸Ð³Ð°Ñ†Ð¸Ð¸'));
-  assert.ok(navigation.includes("event.key !== 'Escape'"));
-  assert.ok(navigation.includes('toggler.focus()'));
-  assert.ok(css.includes('max-height: calc(100dvh - 92px)'));
-  assert.ok(css.includes('overscroll-behavior: contain'));
-});
-
-test('project story keeps the active section tab visible in narrow viewports', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  assert.ok(source.includes("button.closest('.showcase-section-nav')"));
-  assert.ok(source.includes('nav.scrollWidth > nav.clientWidth'));
-  assert.ok(source.includes('active && !wasActive'));
-  assert.ok(source.includes('buttonRect.left - navRect.left'));
-  assert.ok(source.includes("behavior: 'auto'"));
-});
-
-test('mobile gallery only swipes from the image and explains touch controls', () => {
-  const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(script.includes("event.target.closest('.portfolio-gallery-stage figure')"));
-  assert.ok(html.includes('Ð›Ð¸ÑÑ‚Ð°Ð¹Ñ‚Ðµ ÑÐ²Ð°Ð¹Ð¿Ð¾Ð¼'));
-  assert.ok(html.includes('aria-keyshortcuts="ArrowLeft"'));
-  assert.ok(html.includes('aria-keyshortcuts="ArrowRight"'));
-  assert.ok(css.includes('touch-action:pan-y pinch-zoom'));
-});
-
-test('screenshot viewer distinguishes loading, loaded and failed images', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(html.includes('id="portfolioGalleryLoading"'));
-  assert.ok(html.includes('Ð—Ð°Ð³Ñ€ÑƒÐ¶Ð°ÐµÐ¼ ÑÐºÑ€Ð¸Ð½ÑˆÐ¾Ñ‚'));
-  assert.ok(script.includes('pendingImage.onload = () =>'));
-  assert.ok(script.includes('pendingImage.onerror = () =>'));
-  assert.ok(script.includes('imageLoading.hidden = false'));
-  assert.ok(script.includes('imageLoading.hidden = true'));
-  assert.ok(css.includes('.portfolio-gallery-loading[hidden]'));
-});
-
-test('sync never uploads a visitorâ€™s local projects', async () => {
-  const ctx = execute('js/core/sync.js');
-  assert.equal(await ctx.SyncModule.uploadToCloud(), false);
-  const source = fs.readFileSync(path.join(root, 'js/core/sync.js'), 'utf8');
-  assert.doesNotMatch(source, /FirebaseService\.(saveAllProjects|saveSettings|clearAllProjects|deleteProject)\s*\(/);
-});
-
-test('featured projects are accessible links and GitHub Pages cache is scoped', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  for (const repo of ['Skyward-Tales', 'Last-Ritual', 'GhostSignal', 'WorkPilot']) {
-    assert.ok(stories.includes(`repository: '${repo}'`));
-  }
-  for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
-    assert.ok(html.includes(`href="#project/${slug}"`));
-  }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.62.5" defer></script>'));
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(worker.includes("'css/portfolio.css'"));
-  assert.ok(worker.includes("'js/portfolio.js'"));
-  assert.doesNotMatch(worker, /^\s*'\/index\.html'/m);
-});
-
-test('public web-project cards have keyboard focus, touch targets and reduced motion', () => {
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.match(css, /\.web-project-card:focus-within\s*\{/);
-  assert.match(css, /\.web-project-links a:focus-visible\s*\{/);
-  assert.match(css, /\.web-project-links a\s*\{[^}]*min-height:46px/);
-  assert.match(css, /@media \(prefers-reduced-motion:reduce\)\s*\{[^}]*\.web-project-card/);
-  assert.match(css, /\.web-project-links a\{flex:1 1 160px\}/);
-});
-
-test('Vercel projects are represented without leaking private source links', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  for (const name of ['dm-workspace', 'wanderers-order', 'aethel-vtt-web', 'ashes-of-truth']) {
-    assert.ok(html.includes(`https://${name}.vercel.app`));
-  }
-  assert.ok(html.includes('href="#web-projects"'));
-  assert.ok(html.includes('Ð”Ð¾ÑÑ‚ÑƒÐ¿ Ð¼Ð¾Ð¶ÐµÑ‚ Ñ‚Ñ€ÐµÐ±Ð¾Ð²Ð°Ñ‚ÑŒ Ð²Ñ…Ð¾Ð´Ð°'));
-  assert.ok(!html.includes('github.com/DoctorStrangeSH/WanderersOrder'));
-});
-
-test('GitHub live metadata is allowlisted, optional and token-free', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.62.5"'));
-  assert.ok(worker.includes("'js/github-metadata.js'"));
-  assert.ok(source.includes('value.private !== false'));
-  assert.ok(source.includes('value.full_name !=='));
-  assert.ok(source.includes('sessionStorage'));
-  assert.doesNotMatch(source, /WanderersOrder|SUPABASE_SERVICE_ROLE_KEY|Authorization:\s*['"`]/);
-});
-
-test('visual galleries use confirmed public repository screenshot paths', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  for (const file of ['08-vtt-scene', '07-character-sheet', '03-dashboard']) {
-    assert.ok(html.includes(`${file}-chromium-win32.png`));
-  }
-  for (const file of ['greenreach_village.png', 'greenreach_waterfall.png', 'greenreach_grove.jpg']) {
-    assert.ok(stories.includes(file));
-  }
-  assert.ok(html.includes('ÐÐ°ÑÑ‚Ð¾ÑÑ‰Ð¸Ðµ Ñ‚ÐµÑÑ‚Ð¾Ð²Ñ‹Ðµ ÑÐºÑ€Ð¸Ð½ÑˆÐ¾Ñ‚Ñ‹'));
-  assert.ok(stories.includes('ÐœÐÐ¢Ð•Ð Ð˜ÐÐ›Ð« Ð˜Ð— Ð Ð•ÐŸÐžÐ—Ð˜Ð¢ÐžÐ Ð˜Ð¯'));
-});
-
-test('portfolio has a dedicated accessible screenshot viewer', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('id="portfolioGalleryViewer"'));
-  assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.62.5"'));
-  assert.ok(sw.includes("'js/portfolio-gallery.js'"));
-  for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
-  assert.ok(source.includes('stopImmediatePropagation'));
-  assert.ok(source.includes('returnFocus.focus()'));
-});
-
-test('legacy password is discarded and editing is explicitly browser-local', () => {
-  const storage = new Map([['devspace_auth_key', 'legacy-credential']]);
-  const localStorage = {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, val) => storage.set(key, val),
-    removeItem: key => storage.delete(key)
-  };
-  const button = { style: {}, setAttribute() {} };
-  const document = {
-    getElementById: id => id === 'authBtn' ? button : null,
-    querySelectorAll: () => []
-  };
-  const ctx = execute('js/services/auth.js', { localStorage, document, confirm: () => true });
-  ctx.AuthService.init();
-  assert.equal(storage.has('devspace_auth_key'), false);
-  assert.equal(ctx.AuthService.isOwner(), false);
-  ctx.AuthService._showLoginDialog();
-  assert.equal(ctx.AuthService.isOwner(), true);
-  assert.equal(storage.get('devspace_local_edit_mode'), 'enabled');
-  assert.match(button.title, /Ð»Ð¾ÐºÐ°Ð»ÑŒÐ½Ð¾Ðµ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ðµ/);
-  ctx.AuthService.logout();
-  assert.equal(ctx.AuthService.isOwner(), false);
-  assert.equal(storage.has('devspace_local_edit_mode'), false);
-  const source = fs.readFileSync(path.join(root, 'js/services/auth.js'), 'utf8');
-  assert.doesNotMatch(source, /_secretKey\s*:/);
-});
-
-test('mobile navigation is labelled and collapses after in-page navigation', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
-  assert.ok(html.includes('aria-controls="navbarContent"'));
-  assert.ok(html.includes('aria-label="ÐžÑ‚ÐºÑ€Ñ‹Ñ‚ÑŒ Ð¼ÐµÐ½ÑŽ Ð½Ð°Ð²Ð¸Ð³Ð°Ñ†Ð¸Ð¸"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.62.5"'));
-  assert.ok(worker.includes("'js/portfolio-nav.js'"));
-  assert.ok(source.includes("navigation.classList.contains('show')"));
-  assert.ok(source.includes('getOrCreateInstance'));
-  assert.ok(source.includes('.hide()'));
-});
-
-test('mobile screenshot gestures ignore vertical swipes and keep touch targets accessible', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(source.includes('Math.abs(dx) > Math.abs(dy) * 1.3'));
-  assert.ok(source.includes("'touchcancel'"));
-  assert.match(css, /portfolio-gallery-viewer button\{width:44px;height:44px\}/);
-  assert.ok(css.includes('safe-area-inset-bottom'));
-});
-
-test('each featured story explains its intent, current focus and next step', () => {
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.equal((stories.match(/journey:\s*\[/g) || []).length, 4);
-  assert.ok(stories.includes('project.journey.forEach'));
-  assert.ok(stories.includes("aria-label', 'ÐŸÑƒÑ‚ÑŒ Ñ€Ð°Ð·Ð²Ð¸Ñ‚Ð¸Ñ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°'"));
-  assert.ok(css.includes('.showcase-journey-grid'));
-  assert.ok(css.includes('grid-template-columns:1fr'));
-});
-
-test('Skyward Tales uses a verified screenshot as the leading visual', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(source.includes('showcase-gallery-item showcase-gallery-featured'));
-  assert.ok(source.includes('Ð“Ð›ÐÐ’ÐÐ«Ð™ ÐšÐÐ”Ð '));
-  assert.ok(css.includes('.showcase-gallery-featured img'));
-  assert.ok(source.includes('greenreach_village.png'));
-  assert.ok(css.includes('.showcase-gallery-grid { grid-template-columns:repeat(2'));
-});
-
-test('offline page fallback respects GitHub Pages subpath', async () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(manifest.start_url, './');
-  assert.equal(manifest.scope, './');
-  const callbacks = {};
-  const seen = [];
-  const offlinePage = { ok: true, source: 'cached-home' };
-  const scope = 'https://doctorstrangesh.github.io/DevSpace/';
-  const sandbox = {
-    console, Promise, URL, Response,
-    self: { registration: { scope }, addEventListener: (name, callback) => { callbacks[name] = callback; } },
-    caches: { match: async key => { seen.push(key); return key === scope + 'index.html' ? offlinePage : undefined; } },
-    fetch: async () => { throw new Error('offline'); }
-  };
-  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
-  let response;
-  callbacks.fetch({
-    request: { url: scope + 'unknown', method: 'GET', mode: 'navigate', headers: { get: () => 'text/html' } },
-    respondWith: value => { response = value; }
-  });
-  assert.equal(await response, offlinePage);
-  assert.ok(seen.includes(scope + 'index.html'));
-  assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
-});
-
-test('PWA manifest icon declarations resolve to real PNGs', () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(manifest.icons.length >= 2);
-  for (const icon of manifest.icons) {
-    const file = path.join(root, icon.src);
-    assert.ok(fs.existsSync(file), `Missing app icon: ${icon.src}`);
-    const data = fs.readFileSync(file);
-    assert.equal(data.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
-    const [width, height] = [data.readUInt32BE(16), data.readUInt32BE(20)];
-    assert.equal(`${width}x${height}`, icon.sizes);
-  }
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(html.includes('rel="icon"'));
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(worker.includes("'images/icons/icon-192x192.png'"));
-  assert.ok(worker.includes("'images/icons/icon-512x512.png'"));
-  assert.ok(worker.includes("clients.openWindow(self.registration.scope)"));
-});
-
-test('installed DevSpace keeps its scope, supports rotation and exposes quick links', () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(manifest.id, './');
-  assert.equal(manifest.orientation, 'any');
-  assert.deepEqual(manifest.shortcuts.map(item => item.url), ['./#featured', './#web-projects']);
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  for (const anchor of ['featured', 'web-projects']) assert.ok(html.includes(`id="${anchor}"`));
-});
-
-test('conceptual project artwork is distinct and never mislabelled as gameplay', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  for (const theme of ['work', 'ghost', 'ritual']) {
-    assert.ok(css.includes(`.showcase-art.art-${theme}::before`));
-    assert.ok(css.includes(`.showcase-art.art-${theme} .showcase-symbol`));
-  }
-  assert.ok(source.includes('Ð”ÐµÐºÐ¾Ñ€Ð°Ñ‚Ð¸Ð²Ð½Ð°Ñ ÐºÐ¾Ð½Ñ†ÐµÐ¿Ñ‚ÑƒÐ°Ð»ÑŒÐ½Ð°Ñ Ð¸Ð»Ð»ÑŽÑÑ‚Ñ€Ð°Ñ†Ð¸Ñ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°'));
-  assert.ok(source.includes('ÐšÐžÐÐ¦Ð•ÐŸÐ¢Ð£ÐÐ›Ð¬ÐÐÐ¯ ÐžÐ‘Ð›ÐžÐ–ÐšÐ'));
-  assert.ok(source.includes('coverTagline'));
-});
-
-test('featured cards use a genuine Skyward image and keyboard-visible focus', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(html.includes('class="feature-art art-sky feature-art-screenshot"'));
-  assert.ok(html.includes('Skyward-Tales/main/docs/screenshots/greenreach_village.png'));
-  assert.ok(html.includes('Ð Ð•ÐÐ›Ð¬ÐÐ«Ð™ ÐšÐÐ”Ð  Â· SKYWARD TALES'));
-  assert.ok(css.includes('.feature-card:focus-visible'));
-  assert.ok(css.includes('.feature-art.art-ghost::before'));
-  assert.ok(css.includes('.feature-art.art-ritual::before'));
-  assert.ok(css.includes('.feature-art.art-work::before'));
-});
-
-test('project stories offer accessible links to the other three projects', () => {
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(stories.includes("related.setAttribute('aria-label', 'Ð”Ñ€ÑƒÐ³Ð¸Ðµ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ñ‹')"));
-  assert.ok(stories.includes("entry !== project"));
-  assert.ok(stories.includes('card.href = `#project/${slug}`'));
-  assert.ok(stories.includes('journey, related'));
-  assert.ok(css.includes('.showcase-related-card:focus-visible'));
-  assert.ok(css.includes('.showcase-related-grid{grid-template-columns:1fr}'));
-});
-
-test('public portfolio search filters featured and web cards without touching tracker', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(root, 'js/portfolio-search.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('id="portfolioSearch"'));
-  assert.ok(html.includes('id="webProjectsGrid"'));
-  assert.ok(html.includes('id="featuredGrid"'));
-  assert.ok(html.includes('role="status" aria-live="polite"'));
-  assert.ok(source.includes("#featuredGrid .feature-card"));
-  assert.ok(source.includes("#webProjectsGrid .web-project-card"));
-  assert.doesNotMatch(source, /StateManager|StorageService|localStorage|searchProjects/);
-  assert.ok(css.includes('.web-project-card[hidden]'));
-  assert.ok(worker.includes("'js/portfolio-search.js'"));
-});
-
-test('portfolio search matches words in any order and links to web-only results', () => {
-  const listeners = {};
-  const input = { value: '', addEventListener: (name, cb) => { listeners[name] = cb; }, focus() {} };
-  const clear = { hidden: true, addEventListener: (name, cb) => { listeners[`clear-${name}`] = cb; } };
-  const status = { textContent: '' };
-  const empty = { hidden: true, textContent: '', children: [], appendChild(node) { this.children.push(node); } };
-  const featured = [{ textContent: 'Skyward Tales RPG Godot', hidden: false }];
-  const web = [{ textContent: 'DM Workspace Ð¿Ð»Ð°Ñ‚Ñ„Ð¾Ñ€Ð¼Ð° Next.js VTT', hidden: false }];
-  const elements = { portfolioSearch: input, portfolioSearchClear: clear, portfolioSearchStatus: status, portfolioSearchEmpty: empty };
-  const document = {
-    getElementById: id => elements[id],
-    querySelectorAll: selector => selector === '#featuredGrid .feature-card' ? featured : web,
-    createElement: tag => ({ tagName: tag, href: '', textContent: '' })
-  };
-  execute('js/portfolio-search.js', { document });
-  input.value = 'godot skyward';
-  listeners.input();
-  assert.equal(featured[0].hidden, false);
-  assert.equal(web[0].hidden, true);
-  input.value = 'workspace next.js';
-  listeners.input();
-  assert.equal(featured[0].hidden, true);
-  assert.equal(web[0].hidden, false);
-  assert.equal(empty.hidden, false);
-  assert.equal(empty.children.at(-1).href, '#web-projects');
-  assert.match(status.textContent, /Ð’ÐµÐ±-Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð¾Ð²: 1/);
-  listeners['clear-click']();
-  assert.equal(input.value, '');
-  assert.equal(featured[0].hidden, false);
-  assert.equal(web[0].hidden, false);
-});
-
-
-test('each project detail explains its real core gameplay or work loop', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.equal((source.match(/loop:\s*\[/g) || []).length, 4);
-  assert.ok(source.includes("aria-label', 'ÐžÑÐ½Ð¾Ð²Ð½Ð¾Ð¹ Ð¸Ð³Ñ€Ð¾Ð²Ð¾Ð¹ Ð¸Ð»Ð¸ Ñ€Ð°Ð±Ð¾Ñ‡Ð¸Ð¹ Ñ†Ð¸ÐºÐ»'"));
-  assert.ok(source.includes("node('h2', '', 'ÐšÐ°Ðº ÑÑ‚Ð¾ Ñ€Ð°Ð±Ð¾Ñ‚Ð°ÐµÑ‚')"));
-  for (const step of ['Ð˜Ð¡Ð¡Ð›Ð•Ð”ÐžÐ’ÐÐ¢Ð¬', 'ÐŸÐžÐ”Ð¢Ð’Ð•Ð Ð”Ð˜Ð¢Ð¬ Ð Ð•Ð—Ð£Ð›Ð¬Ð¢ÐÐ¢', 'ÐŸÐ ÐžÐ’Ð•Ð Ð˜Ð¢Ð¬ Ð’Ð•Ð Ð¡Ð˜Ð˜', 'Ð’Ð«Ð–Ð˜Ð¢Ð¬ ÐÐžÐ§Ð¬']) assert.ok(source.includes(step));
-  assert.ok(css.includes('.showcase-loop-grid'));
-  assert.ok(css.includes('@media(max-width:700px){.showcase-loop{margin-top:58px}.showcase-loop-grid{grid-template-columns:1fr}'));
-});
-
-test('Skyward Tales gallery links five genuine repository visuals, including resource animation', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  for (const asset of ['greenreach_village.png', 'greenreach_waterfall.png', 'greenreach_grove.jpg', 'greenreach_preview.jpg', 'resource_growth.gif']) {
-    assert.ok(source.includes(`file: '${asset}'`));
-  }
-  assert.ok(source.includes("kind: 'animation'"));
-  assert.ok(source.includes('project.gallery && project.gallery.length'));
-  assert.ok(source.includes('encodeURIComponent(project.repository)'));
-  assert.ok(css.includes('.showcase-gallery-note'));
-});
-
-test('every project story has honest materials navigation without invented screenshots', () => {
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(stories.includes("['ÐœÐ°Ñ‚ÐµÑ€Ð¸Ð°Ð»Ñ‹', 'showcase-media']"));
-  assert.ok(stories.includes("section.id = 'showcase-media'"));
-  assert.ok(stories.includes('ÐŸÐ¾ÐºÐ° Ð±ÐµÐ· Ð¿ÑƒÐ±Ð»Ð¸Ñ‡Ð½Ð¾Ð¹ Ð³Ð°Ð»ÐµÑ€ÐµÐ¸'));
-  assert.ok(stories.includes('ÐºÐ¾Ð½Ñ†ÐµÐ¿Ñ‚ÑƒÐ°Ð»ÑŒÐ½Ð°Ñ Ð¸Ð»Ð»ÑŽÑÑ‚Ñ€Ð°Ñ†Ð¸Ñ, Ð° Ð½Ðµ ÐºÐ°Ð´Ñ€ Ð¸Ð· Ð¿Ñ€Ð¸Ð»Ð¾Ð¶ÐµÐ½Ð¸Ñ'));
-  assert.ok(stories.includes('ÐŸÐ¾ÑÐ¼Ð¾Ñ‚Ñ€ÐµÑ‚ÑŒ Ð¸ÑÑ…Ð¾Ð´Ð½Ð¸ÐºÐ¸ Ð¸ Ð´Ð¾ÐºÑƒÐ¼ÐµÐ½Ñ‚Ð°Ñ†Ð¸ÑŽ'));
-  assert.ok(css.includes('.showcase-media-pending'));
-  for (const repo of ['WorkPilot', 'GhostSignal', 'Last-Ritual']) {
-    assert.ok(stories.includes(`repository: '${repo}'`));
-  }
-});
-
-test('project stories update browser title and offer a safe shareable deep link', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(source.includes('const portfolioTitle = document.title'));
-  assert.ok(source.includes('document.title = portfolioTitle'));
-  assert.ok(source.includes('document.title = `${project.title} | DevSpace`'));
-  assert.ok(source.includes('navigator.clipboard.writeText(window.location.href)'));
-  assert.ok(source.includes("shareStatus.setAttribute('role', 'status')"));
-  assert.ok(source.includes('ÐÐµ ÑƒÐ´Ð°Ð»Ð¾ÑÑŒ ÑÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ñ‚ÑŒ'));
-  assert.ok(css.includes('.showcase-share:focus-visible'));
-});
-
-test('project section navigation tracks scroll position and follows visual order', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(source.includes("shell.addEventListener('scroll'"));
-  assert.ok(source.includes('requestAnimationFrame('));
-  assert.ok(source.includes("button.setAttribute('aria-current', 'location')"));
-  assert.ok(source.includes("button.removeAttribute('aria-current')"));
-  assert.ok(source.includes('content.append(header, sectionNav, main, section, loop, journey, related)'));
-  assert.ok(css.includes('.showcase-section-link.is-active'));
-});
-
-test('project stories expose keyboard-friendly local section navigation with graceful image failure', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(source.includes("sectionNav.setAttribute('aria-label', 'Ð Ð°Ð·Ð´ÐµÐ»Ñ‹ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°')"));
-  for (const label of ['Ðž Ð¿Ñ€Ð¾ÐµÐºÑ‚Ðµ', 'ÐœÐ°Ñ‚ÐµÑ€Ð¸Ð°Ð»Ñ‹', 'ÐšÐ°Ðº Ñ€Ð°Ð±Ð¾Ñ‚Ð°ÐµÑ‚', 'ÐŸÑƒÑ‚ÑŒ Ð¿Ñ€Ð¾ÐµÐºÑ‚Ð°', 'Ð”Ñ€ÑƒÐ³Ð¸Ðµ Ñ€Ð°Ð±Ð¾Ñ‚Ñ‹']) assert.ok(source.includes(label));
-  for (const id of ['showcase-overview', 'showcase-media', 'showcase-process', 'showcase-progress', 'showcase-more']) assert.ok(source.includes(id));
-  assert.ok(source.includes("button.type = 'button'"));
-  assert.ok(source.includes("img.addEventListener('error'"));
-  assert.ok(source.includes('link.replaceWith(unavailable)'));
-  assert.ok(css.includes('.showcase-section-link:focus-visible'));
-  assert.ok(css.includes('.showcase-gallery-unavailable'));
-});
-
-test('nested project and image dialogs isolate background content and restore prior inert state', () => {
-  const stories = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  const gallery = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  for (const source of [stories, gallery]) {
-    assert.ok(source.includes('backgroundInert'));
-    assert.ok(source.includes('element.inert = true'));
-    assert.ok(source.includes('element.inert = inert'));
-    assert.ok(source.includes('restoreBackground()'));
-  }
-  assert.ok(stories.includes('isolateShowcase()'));
-  assert.ok(gallery.includes('isolateViewer()'));
-});
-
-
-test('mobile navbar controls fill the available width without affecting unrelated flex layouts', () => {
-  const css = fs.readFileSync(path.join(root, 'css/components/navbar.css'), 'utf8');
-  assert.ok(css.includes('.navbar-collapse > .d-flex.align-items-center'));
-  assert.ok(css.includes('.navbar-collapse .search-box'));
-  assert.ok(css.includes('.navbar-collapse .search-input:focus'));
-  assert.ok(css.includes('flex: 0 0 40px'));
-  assert.doesNotMatch(css, /\.d-flex\.align-items-center\s*\{\s*flex-wrap:\s*wrap/);
-});
-
-test('project card actions remain visible on touch devices and keyboard focus', () => {
-  const css = fs.readFileSync(path.join(root, 'css/components/cards.css'), 'utf8');
-  assert.ok(css.includes('.project-card:focus-within .project-actions'));
-  assert.ok(css.includes('@media (hover: none), (pointer: coarse)'));
-  assert.ok(css.includes('grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr))'));
-});
-
-
-test('project detail dialog traps Tab across every control, not only links', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
-  assert.ok(source.includes('button:not([disabled])'));
-  assert.ok(source.includes('focusIsOutside = !shell.contains(document.activeElement)'));
-  assert.ok(source.includes('focusable[focusable.length - 1]'));
-});
-
-test('screenshot viewer keeps keyboard focus inside when focus starts outside', () => {
-  const source = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  assert.ok(source.includes('focusIsOutside = !viewer.contains(document.activeElement)'));
-  assert.ok(source.includes('closeButton.focus()'));
-});
-
-test('3.62.5 cache, HTML fallback and visible application version are aligned', () => {
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.62.5'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.62.5'"));
-  assert.ok(html.includes('id="appVersion">v3.62.5</span>'));
-});
-
-test('every local script and stylesheet is versioned and included in offline precache', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
-  assert.ok(resources.length > 40);
-  for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.62.5', `${file} is not versioned`);
-    assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
-  }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.62.5'"));
-  assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
-  assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
-});
-
-test('public header and hero remain legible with a light tracker theme', () => {
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(css.includes('#mainNavbar .nav-link { color:#d5d0dc!important; }'));
-  assert.ok(css.includes('.hero-section .hero-title { color:#f3eef1; }'));
-  assert.ok(css.includes('.hero-section .btn-glass { color:#ece6f1;'));
-  assert.ok(css.includes('#mainNavbar .navbar-collapse.show'));
-});
-
-test('featured portfolio cards expose a consistent visible action and flexible content', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.equal((html.match(/class="feature-open" aria-hidden="true"/g) || []).length, 4);
-  assert.ok(css.includes('.feature-card .feature-copy { display:flex;flex:1;flex-direction:column; }'));
-  assert.ok(css.includes('.feature-card .feature-tags { margin-top:auto;'));
-  assert.ok(css.includes('.feature-card:focus-visible .feature-open i'));
-  assert.ok(css.includes('@media (max-width: 670px)'));
-});
-
-test('gallery failure provides a visible accessible fallback and mobile image keeps its width', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(html.includes('id="portfolioGalleryError"'));
-  assert.ok(html.includes('class="portfolio-gallery-unavailable" role="status" hidden'));
-  assert.ok(js.includes('pendingImage.onerror = () =>'));
-  assert.ok(js.includes('imageError.hidden = false'));
-  assert.ok(js.includes('imageError.hidden = true'));
-  assert.ok(css.includes('.portfolio-gallery-unavailable[hidden]'));
-  assert.ok(css.includes('.portfolio-gallery-stage { position:relative;display:flex;'));
-  assert.ok(css.includes('#portfolioGalleryPrev { left:calc(50% - 55px); }'));
-});
-
-test('gallery ignores late loads and failures after rapid navigation or close', () => {
-  const handlers = new Map();
-  const images = [];
-  const elements = Object.fromEntries([
-    'portfolioGalleryViewer', 'portfolioGalleryImage', 'portfolioGalleryLoading',
-    'portfolioGalleryError', 'portfolioGalleryRetry', 'portfolioGalleryCaption', 'portfolioGalleryCount',
-    'portfolioGalleryOriginal', 'portfolioGalleryClose', 'portfolioGalleryPrev',
-    'portfolioGalleryNext'
-  ].map(id => [id, {
-    hidden: id === 'portfolioGalleryViewer',
-    addEventListener(type, fn) { handlers.set(`${id}:${type}`, fn); },
-    removeAttribute(key) { delete this[key]; },
-    focus() {},
-    contains() { return false; }
-  }]));
-  const anchor = (src) => ({ href: src, querySelector(selector) {
-    return selector === 'img' ? { alt: src } : { textContent: src };
-  } });
-  const links = [anchor('/first.png'), anchor('/second.png')];
-  const gallery = { querySelectorAll() { return links; } };
-  links.forEach(link => {
-    link.closest = selector => selector.includes('gallery-item') ? link : gallery;
-  });
-  const document = {
-    body: { children: [elements.portfolioGalleryViewer], classList: { add() {}, remove() {} } },
-    getElementById(id) { return elements[id]; },
-    addEventListener(type, fn) { handlers.set(`document:${type}`, fn); }
-  };
-  class PendingImage { constructor() { images.push(this); } }
-  execute('js/portfolio-gallery.js', { document, Image: PendingImage });
-
-  handlers.get('document:click')({
-    defaultPrevented: false, button: 0, target: { closest() { return links[0]; } },
-    preventDefault() {}
-  });
-  assert.equal(images.length, 1);
-  handlers.get('portfolioGalleryNext:click')();
-  assert.equal(images.length, 2);
-  images[0].onerror();
-  assert.equal(elements.portfolioGalleryError.hidden, true);
-  assert.equal(elements.portfolioGalleryLoading.hidden, false);
-  images[1].onload();
-  assert.equal(elements.portfolioGalleryImage.src, '/second.png');
-  assert.equal(elements.portfolioGalleryLoading.hidden, true);
-  images[0].onload();
-  assert.equal(elements.portfolioGalleryImage.src, '/second.png');
-  handlers.get('portfolioGalleryPrev:click')();
-  images[2].onerror();
-  assert.equal(elements.portfolioGalleryError.hidden, false);
-  assert.equal(elements.portfolioGalleryRetry.hidden, false);
-  handlers.get('portfolioGalleryRetry:click')();
-  assert.equal(images.length, 4);
-  images[3].onload();
-  assert.equal(elements.portfolioGalleryError.hidden, true);
-  assert.equal(elements.portfolioGalleryRetry.hidden, true);
-  handlers.get('portfolioGalleryClose:click')();
-  images[3].onerror();
-  assert.equal(elements.portfolioGalleryError.hidden, true);
-  assert.equal(elements.portfolioGalleryViewer.hidden, true);
-});
-
-test('gallery offers an accessible retry after a failed image download', () => {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.match(html, /id="portfolioGalleryRetry"[^>]+hidden>ÐŸÐ¾Ð²Ñ‚Ð¾Ñ€Ð¸Ñ‚ÑŒ Ð·Ð°Ð³Ñ€ÑƒÐ·ÐºÑƒ/);
-  assert.ok(js.includes("retryButton.addEventListener('click', display)"));
-  assert.ok(js.includes('retryButton.hidden = false'));
-  assert.ok(js.includes('retryButton.hidden = true'));
-  assert.ok(js.includes('prev, next, retryButton, original'));
-  assert.ok(css.includes('.portfolio-gallery-retry[hidden]'));
-});
-
-test('adjacent preloading respects metered connections and stays bounded', () => {
-  const js = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
-  assert.ok(js.includes("connection.effectiveType !== '4g'"));
-  assert.ok(js.includes('connection.saveData'));
-  assert.ok(js.includes("window.matchMedia('(min-width: 900px)').matches"));
-  assert.ok(js.includes('request !== imageRequest'));
-  assert.ok(js.includes('prefetchedImage = null'));
-  assert.ok(js.includes('pendingImage.complete && pendingImage.naturalWidth > 0'));
-});
-
-test('reduced motion and compact displays skip costly background animation', () => {
-  const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-  assert.ok(app.includes("window.matchMedia('(prefers-reduced-motion: reduce)').matches"));
-  assert.ok(app.includes("window.matchMedia('(max-width: 670px)').matches"));
-  assert.ok(app.includes('disable: !!prefersReducedMotion'));
-  assert.ok(app.includes('!prefersReducedMotion && !compactViewport'));
-});
-
-test('mobile first screen fits content and reduced motion leaves hero text visible', () => {
-  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
-  assert.ok(css.includes('@media (max-width: 670px)'));
-  assert.ok(css.includes('.hero-section .min-vh-100 { min-height: 0 !important;'));
-  assert.ok(css.includes('.hero-section .col-lg-6.text-center { display: none; }'));
-  assert.ok(css.includes('.hero-section .hero-actions > a'));
-  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
-  assert.ok(css.includes('.hero-title, .hero-description, .hero-actions, .hero-stats, .hero-badge { animation: none; opacity: 1; }'));
-});
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíßžúá:-jZ.¶›­–)Þ³V6öç7B76W'BÒ&WV—&R‚væöFS¦76W'B÷7G&–7Br“°¦6öç7Bg2Ò&WV—&R‚væöFS¦g2r“°¦6öç7BfÒÒ&WV—&R‚væöFS§fÒr“°¦6öç7BF‚Ò&WV—&R‚væöFS§F‚r“°¦6öç7BFW7BÒ&WV—&R‚væöFS§FW7Br“° ¦6öç7B&ö÷BÒF‚æ¦ö–â…õöF—&æÖRÂrââr“° §FW7B‚vG&gBf—&W7F÷&R'VÆW2FVç’ÆVv7’æBæöç–Ö÷W266W72Â66÷R&—fFR&V6÷&G2'’T”BrÂ‚’Óâ°¢6öç7B'VÆW2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂvf—&W7F÷&Rç'VÆW2r’ÂwWFc‚r“°¢76W'BæÖF6‚‡'VÆW2Â÷&WVW7EÂæWF…ÂçV–BÓÒV–Bò“°¢76W'BæFöW4æ÷DÖF6‚‡'VÆW2ÂöÆÆ÷r7&VFS§ÆÆÆ÷rWFFS§ÆÆÆ÷rFVÆWFS¢ò“°¢76W'BæÖF6‚‡'VÆW2ÂöÖF6‚ÂõÇ¶Fö7VÖVçCÕÂ¥Â¥ÇÒÇµÇ2¦ÆÆ÷r&VBÂw&—FS¢–bfÇ6Rò“°¢76W'BæFöW4æ÷DÖF6‚‡'VÆW2ÂöÆÆ÷uÇ2²ƒó§&VGÇw&—FWÆ7&VFWÇWFFWÆFVÆWFR•Ç2£¥Ç2¦–eÇ2§G'VRò“°¢76W'BæÖF6‚‡'VÆW2ÂöÖF6‚Â÷W6W'5ÂõÇ·V–EÇÕÂ÷&ö¦V7G5ÂõÇ·&ö¦V7D–EÇÒÇµÇ2¦ÆÆ÷r&VC¢–b—4÷væW%Â‡V–EÂ“µÇ2¦ÆÆ÷rw&—FS¢–bfÇ6Rò“°§Ò“° §FW7B‚w&—fFRÖ–w&F–öâG'’×'VâæWfW"÷fW'w&—FW26Æ÷VB&V6÷&G2÷"×WFFW2Æö6Â&ö¦V7G2rÂ‚’Óâ°¢6öç7B7–æ2ÒW†V7WFR‚v§2ö6÷&R÷7–æ2æ§2r’å7–æ4ÖöGVÆS°¢6öç7BÆö6ÂÒ·²–C¢væWrrÂæÖS¢}	½í­½ÍÝ½’rÒÂ²–C¢w6†&VBrÂæÖS¢}	½í­½ÍÝò-]òrÒÂ²–C¢væWrrÂæÖS¢}	M=½­"rÒÂ²–C¢rââö&BrÕÓ°¢6öç7B&VÖ÷FRÒ·²–C¢w6†&VBrÂæÖS¢}	í½}Ýò-]òrÕÓ°¢6öç7B÷&–v–æÂÒ¥4ôâç7G&–æv–g’‡²Æö6ÂÂ&VÖ÷FRÒ“°¢6öç7BÆâÒ7–æ2å÷Æå&—fFTÖ–w&F–öâ†Æö6ÂÂ&VÖ÷FR“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡ÆâçWÆöBÂÓâæ–B’Â²væWruÒ“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡Æâæ6öæfÆ–7G2’Â²w6†&VBuÒ“°¢76W'BæWVÂ‡Æâç6¶—VBÂ"“°¢76W'BæWVÂ„¥4ôâç7G&–æv–g’‡²Æö6ÂÂ&VÖ÷FRÒ’Â÷&–v–æÂ“°¢ÆâçWÆöE³ÒææÖRÒ}	Í]Ýý]Â­íýâs°¢76W'BæWVÂ†Æö6Å³ÒææÖRÂ}	½í­½ÍÝ½’r“°¢76W'BçF‡&÷w2‚‚’Óâ7–æ2å÷Æå&—fFTÖ–w&F–öâ†çVÆÂÂµÒ’Âý	ímMí-òM-Í-ò“°¢6öç7B÷fW'6—¦VBÒ7–æ2å÷Æå&—fFTÖ–w&F–öâ…·²–C¢v‡VvRrÂæÖS¢}rç&WVBƒ#’ÕÒÂµÒ“°¢76W'BæWVÂ†÷fW'6—¦VBçWÆöBæÆVæwF‚Â“°¢76W'BæWVÂ†÷fW'6—¦VBç6¶—VBÂ“°¢6öç7BW†7BÒ7–æ2å÷Æå&—fFTÖ–w&F–öâ…·²–C¢w6ÖÆÂrÂæÖS¢}í½}Ý½’rÕÒÂµÒ“°¢76W'BæWVÂ†W†7BçWÆöBæÆVæwF‚Â“°§Ò“° §FW7B‚w&—fFR6Æ÷VB&Wf–WrW6W2WF†VçF–6FVBT”BæBF—66&G27FÆR6W76–öâ&W7VÇG2rÂ7–æ2‚’Óâ°¢ÆWBW6W"Ò²V–C¢wW6W"ÔrÓ°¢6öç7B6ÆÇ2ÒµÓ°¢ÆWB&W6öÇfU&VC°¢6öç7BF"Ò²6öÆÆV7F–öâ†æÖR’°¢6ÆÇ2çW6‚†æÖR“°¢&WGW&â²Fö2‡V–B’°¢6ÆÇ2çW6‚‡V–B“°¢&WGW&â²6öÆÆV7F–öâ†6†–ÆB’°¢6ÆÇ2çW6‚†6†–ÆB“°¢&WGW&â²Æ–Ö—B†â’°¢6ÆÇ2çW6‚†â“°¢&WGW&â²vWB‚’²&WGW&âæWr&öÖ—6R‡&W6öÇfRÓâ²&W6öÇfU&VBÒ&W6öÇfS²Ò“²ÒÓ°¢ÒÓ°¢ÒÓ°¢ÒÓ°¢ÒÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2rÂ²f—&V&6S¢²WFƒ¢‚’Óâ‡²7W'&VçEW6W#¢W6W"Ò’ÒÒ“°¢7G‚äf—&V&6U6W'f–6RåöF"ÒF#°¢6öç7BVæF–ærÒ7G‚äf—&V&6U6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚“°¢76W'BæFVWWVÂ†6ÆÇ2Â²wW6W'2rÂwW6W"ÔrÂw&ö¦V7G2rÂÒ“°¢W6W"Ò²V–C¢wW6W"Ô"rÓ°¢&W6öÇfU&VB‡²f÷$V6‚†6"’²6"‡²–C¢vrÂFF¢‚’Óâ‡²æÖS¢trÒ’Ò“²ÒÒ“°¢76W'BæWVÂ†v—BVæF–ærÂçVÆÂ“°¢W6W"ÒçVÆÃ°¢76W'BæWVÂ†v—B7G‚äf—&V&6U6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚’ÂçVÆÂ“°¢76W'BæWVÂ†7G‚äf—&V&6U6W'f–6Rå÷w&—FW4Væ&ÆVBÂfÇ6R“°§Ò“° §FW7B‚w&—fFR6Æ÷VBF–væ÷7F–72F—7F–æwV—6‚'VÆRFVæ–ÂæBÖÆf÷&ÖVBFFrÂ7–æ2‚’Óâ°¢6öç7BW6W"Ò²V–C¢v÷væW"rÓ°¢ÆWB&W7VÇBÒ&öÖ—6Rç&V¦V7B‡²6öFS¢wW&Ö—76–öâÖFVæ–VBrÒ“°¢6öç7BF"Ò²6öÆÆV7F–öã¢‚’Óâ‡²Fö3¢‚’Óâ‡²6öÆÆV7F–öã¢‚’Óâ‡²Æ–Ö—C¢‚’Óâ‡°¢vWC¢‚’Óâ&W7VÇ@¢Ò’Ò’Ò’Ò’Ó°¢6öç7B7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2rÂ²f—&V&6S¢²WFƒ¢‚’Óâ‡²7W'&VçEW6W#¢W6W"Ò’ÒÒ“°¢6öç7B6W'f–6RÒ7G‚äf—&V&6U6W'f–6S°¢6W'f–6RåöF"ÒF#°¢76W'BæWVÂ†v—B6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚’ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6RåöÆ7E&—fFU&Wf–WtW'&÷"ÂwW&Ö—76–öâÖFVæ–VBr“°¢76W'BæÖF6‚‡6W'f–6RåöFW67&–&U&—fFU&Wf–WtW'&÷"‡6W'f–6RåöÆ7E&—fFU&Wf–WtW'&÷"’Âýý-½Í‚f—&W7F÷&Rò“°¢&W7VÇBÒ&öÖ—6Rç&W6öÇfR‡²f÷$V6‚†fâ’²fâ‡²–C¢v'&ö¶VârÂFF¢‚’Óâ‡²–ÆöC¢w²rÒ’Ò“²ÒÒ“°¢76W'BæWVÂ†v—B6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚’ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6RåöÆ7E&—fFU&Wf–WtW'&÷"Âv–çfÆ–BÖFö7VÖVçBr“°¢&W7VÇBÒ&öÖ—6Rç&W6öÇfR‡²f÷$V6‚‚’·ÒÒ“°¢76W'BæFVWWVÂ„'&’æg&öÒ†v—B6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚’’ÂµÒ“°¢76W'BæWVÂ‡6W'f–6RåöÆ7E&—fFU&Wf–WtW'&÷"ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷w&—FW4Væ&ÆVBÂfÇ6R“°§Ò“° §FW7B‚w&—fFR&ö¦V7BVçfVÆ÷R&÷VæB×G&—2öæÇ’ÖF6†–ærÂ&÷VæFVB¥4ôârÂ‚’Óâ°¢6öç7B6W'f–6RÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2r’äf—&V&6U6W'f–6S°¢6öç7B&ö¦V7BÒ²–C¢wfÆ–EórÂæÖS¢}
+-]"rÂæW7FVC¢²&öw&W73¢C"ÒÓ°¢6öç7B÷&–v–æÂÒ¥4ôâç7G&–æv–g’‡&ö¦V7B“°¢6öç7BVçfVÆ÷RÒ6W'f–6Rå÷&W&U&—fFU&ö¦V7DVçfVÆ÷R‡&ö¦V7B“°¢76W'BæFVWWVÂ„ö&¦V7Bæ¶W—2†VçfVÆ÷R’ç6÷'B‚’Â²v–BrÂw–ÆöBrÂw66†VÖfW'6–öâuÒ“°¢76W'BæWVÂ†VçfVÆ÷Rç66†VÖfW'6–öâÂ“°¢76W'BæFVWWVÂ„¥4ôâç'6R„¥4ôâç7G&–æv–g’‡6W'f–6RåöFV6öFU&—fFU&ö¦V7DFö7VÖVçB†VçfVÆ÷RÂwfÆ–Eór’’’Â&ö¦V7B“°¢76W'BæWVÂ„¥4ôâç7G&–æv–g’‡&ö¦V7B’Â÷&–v–æÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷&W&U&—fFU&ö¦V7DVçfVÆ÷R‡²–C¢rââö&BrÒ’ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷&W&U&—fFU&ö¦V7DVçfVÆ÷R‡²–C¢wfÆ–BrÂfÇVS¢w‚rç&WVBƒ#’Ò’ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷&W&U&—fFU&ö¦V7DVçfVÆ÷R‡²–C¢wfÆ–BrÂFô¥4ôâ‚’²F‡&÷rW'&÷"‚v&Br“²ÒÒ’ÂçVÆÂ“°¢f÷"†6öç7B6÷''WBöb°¢²ââæVçfVÆ÷RÂ66†VÖfW'6–öã¢"ÒÀ¢²ââæVçfVÆ÷RÂ–ÆöC¢w²rÒÀ¢²ââæVçfVÆ÷RÂ–C¢v÷F†W"rÒÀ¢²ââæVçfVÆ÷RÂ–ÆöC¢w²&–B#¢&÷F†W"'ÒrÒÀ¢²ââæVçfVÆ÷RÂ–ÆöC¢w²&–B#¢'fÆ–Eó"Â%õ÷&÷Fõõò#§²&FÖ–â#§G'VW×ÒrÒÀ¢²ââæVçfVÆ÷RÂW‡G&¢G'VRÐ¢Ò’76W'BæWVÂ‡6W'f–6RåöFV6öFU&—fFU&ö¦V7DFö7VÖVçB†6÷''WBÂwfÆ–Eór’ÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷w&—FW4Væ&ÆVBÂfÇ6R“°§Ò“° §FW7B‚w&—fFR6Æ÷VB7&VF–öâ—2F—6&ÆVB'’FVfVÇBv—F†÷WBF÷V6†–ærf—&W7F÷&RrÂ7–æ2‚’Óâ°¢6öç7B6W'f–6RÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2r’äf—&V&6U6W'f–6S°¢6W'f–6RåöF"Ò²6öÆÆV7F–öâ‚’²F‡&÷rW'&÷"‚tæòæWGv÷&²6ÆÇ2ÆÆ÷vVBr“²ÒÓ°¢76W'BæWVÂ‡6W'f–6Rå÷&—fFU&ö¦V7D7&VFW4Væ&ÆVBÂfÇ6R“°¢76W'BæWVÂ†v—B6W'f–6Ræ7&VFU&—fFU&ö¦V7D–d'6VçB‡²–C¢w6fRrÒÂv÷væW"r’ÂfÇ6R“°§Ò“° §FW7B‚w&—fFR6Æ÷VBG&ç67F–öâ7&VFW2öæÇ’'6VçB&ö¦V7G2f÷"F†R7F—fRT”BrÂ7–æ2‚’Óâ°¢ÆWBW6W"Ò²V–C¢v÷væW"rÓ°¢ÆWBW†—7G2ÒfÇ6S°¢ÆWBw&—FW2Ò°¢ÆWB&VG2Ò°¢ÆWB7F÷&VC°¢6öç7B&VfW&Væ6RÒ°¢vWC¢7–æ2‚’Óâ‡²W†—7G2ÂFF¢‚’Óâ7F÷&VBÒ¢Ó°¢6öç7BF"Ò°¢6öÆÆV7F–öã¢æÖRÓâ°¢76W'BæWVÂ†æÖRÂwW6W'2r“°¢&WGW&â²Fö3¢V–BÓâ°¢76W'BæWVÂ‡V–BÂv÷væW"r“°¢&WGW&â²6öÆÆV7F–öã¢6†–ÆBÓâ°¢76W'BæWVÂ†6†–ÆBÂw&ö¦V7G2r“°¢&WGW&â²Fö3¢–BÓâ²76W'BæWVÂ†–BÂw&ö¦V7Eór“²&WGW&â&VfW&Væ6S²ÒÓ°¢ÒÓ°¢ÒÓ°¢ÒÀ¢'VåG&ç67F–öã¢7–æ2fâÓâfâ‡°¢vWC¢7–æ2&VbÓâ²76W'BæWVÂ‡&VbÂ&VfW&Væ6R“²&VG2²³²&WGW&â²W†—7G2Ó²ÒÀ¢6WC¢‡&VbÂFF’Óâ²76W'BæWVÂ‡&VbÂ&VfW&Væ6R“²w&—FW2²³²7F÷&VBÒFF²W†—7G2ÒG'VS²Ð¢Ò¢Ó°¢6öç7Bf—&V&6RÒ°¢WFƒ¢‚’Óâ‡²7W'&VçEW6W#¢W6W"Ò’À¢f—&W7F÷&S¢ö&¦V7Bæ76–vâ‚‚’Óâ·ÒÂ²f–VÆEfÇVS¢²6W'fW%F–ÖW7F×¢‚’Óâu4U%dU%õD”ÔRrÒÒ¢Ó°¢6öç7B6W'f–6RÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2rÂ²f—&V&6RÒ’äf—&V&6U6W'f–6S°¢6W'f–6RåöF"ÒF#°¢6W'f–6Rå÷&—fFU&ö¦V7D7&VFW4Væ&ÆVBÒG'VS²òòFW7BÖöæÇ’FövvÆP¢6öç7B&ö¦V7BÒ²–C¢w&ö¦V7EórÂæÖS¢}	]}íýÝ½’ýí]­"rÓ°¢76W'BæWVÂ†v—B6W'f–6Ræ7&VFU&—fFU&ö¦V7D–d'6VçB‡&ö¦V7BÂw6öÖV&öG’ÖVÇ6Rr’ÂfÇ6R“°¢76W'BæWVÂ‡&VG2Â“°¢76W'BæWVÂ†v—B6W'f–6Ræ7&VFU&—fFU&ö¦V7D–d'6VçB‡&ö¦V7BÂv÷væW"r’ÂG'VR“°¢76W'BæWVÂ‡w&—FW2Â“°¢76W'BæFVWWVÂ„¥4ôâç'6R‡7F÷&VBç–ÆöB’Â&ö¦V7B“°¢76W'BæWVÂ‡7F÷&VBçWFFVDBÂu4U%dU%õD”ÔRr“°¢76W'BæWVÂ†v—B6W'f–6Ræ7&VFU&—fFU&ö¦V7D–d'6VçB‡&ö¦V7BÂv÷væW"r’ÂfÇ6R“°¢76W'BæWVÂ‡w&—FW2ÂÂvW†—7F–ærFF×W7Bæ÷B&R÷fW'w&—GFVâr“°¢W†—7G2ÒfÇ6S°¢W6W"Ò²V–C¢væ÷F†W"×W6W"rÓ°¢76W'BæWVÂ†v—B6W'f–6Ræ7&VFU&—fFU&ö¦V7D–d'6VçB‡&ö¦V7BÂv÷væW"r’ÂfÇ6R“°¢76W'BæWVÂ‡w&—FW2Â“°§Ò“° §FW7B‚w&—fFR&ö¦V7B&Wf–Wr&VgW6W2–æ6ö×ÆWFR÷"ÖÆf÷&ÖVB–çfVçF÷&–W2rÂ7–æ2‚’Óâ°¢6öç7BW6W"Ò²V–C¢v÷væW"×V–BrÓ°¢6öç7B6W'f–6T7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2rÂ²f—&V&6S¢²WFƒ¢‚’Óâ‡²7W'&VçEW6W#¢W6W"Ò’ÒÒ“°¢6öç7B6W'f–6RÒ6W'f–6T7G‚äf—&V&6U6W'f–6S°¢6öç7BvööBÒ6W'f–6Rå÷&W&U&—fFU&ö¦V7DVçfVÆ÷R‡²–C¢vvööBrÂæÖS¢ufÆ–BrÒ“°¢6öç7BFö72Ò°¢²–C¢vvööBrÂFF¢‚’ÓâvööBÒÀ¢²–C¢v&BrÂFF¢‚’Óâ‡²–C¢v&BrÂ66†VÖfW'6–öã¢Â–ÆöC¢sÆ–ÖröæW'&÷#ÖÆW'Bƒ“ârÒ’Ð¢Ó°¢6W'f–6RåöF"Ò²6öÆÆV7F–öã¢‚’Óâ‡²Fö3¢‚’Óâ‡²6öÆÆV7F–öã¢‚’Óâ‡²Æ–Ö—C¢‚’Óâ‡°¢vWC¢7–æ2‚’Óâ‡²f÷$V6ƒ¢fâÓâFö72æf÷$V6‚†fâ’Ò¢Ò’Ò’Ò’Ò’Ó°¢6öç7B&Wf–WrÒv—B6W'f–6RævWE&—fFU&ö¦V7E&Wf–Wr‚“°¢76W'BæWVÂ‡&Wf–WrÂçVÆÂ“°¢76W'BæWVÂ‡6W'f–6Rå÷w&—FW4Væ&ÆVBÂfÇ6R“°§Ò“° §FW7B‚v6Æ÷VBÖ–w&F–öâ&Wf–Wr—2W6W"Ö–æ—F–FVBÂ&VBÖöæÇ’æB&W÷'G26öæfÆ–7G2rÂ7–æ2‚’Óâ°¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷6W'f–6W2öf—&V&6RÖ–FVçF—G’æ§2r’ÂwWFc‚r“°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&6Æ÷VDÖ–w&F–öå&Wf–Wt'Fâ"F—6&ÆVBò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&6Æ÷VDÖ–w&F–öä&6·W'Fâ"ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&6Æ÷VDÖ–w&F–öå&Wf–Wu7FGW2"&öÆSÒ'7FGW2"&–ÖÆ—fSÒ'öÆ—FR"ò“°¢76W'BæÖF6‚‡6÷W&6RÂôf—&V&6U6W'f–6UÂævWE&—fFU&ö¦V7E&Wf–WuÂ…Â’ò“°¢76W'BæÖF6‚‡6÷W&6RÂõ7–æ4ÖöGVÆUÂå÷Æå&—fFTÖ–w&F–öåÂ†Æö6ÂÂ&VÖ÷FUÂ’ò“°¢76W'BæFöW4æ÷DÖF6‚‡6÷W&6RÂôf—&V&6U6W'f–6UÂç6fTÆÅ&ö¦V7G7ÅÂç6WEÂ‡ÅÂæ&F6…Â‚ò“°¢76W'BæÖF6‚‡6÷W&6RÂôW‡÷'DÖöGVÆUÂæ7&VFT&6·WÂ…Â’ò“°§Ò“° §FW7B‚v6Æ÷VBÖ–w&F–öâ&Wf–Wr–væ÷&W2âöÆFW"&W7öç6RgFW"â66÷VçB7v—F6‚rÂ7–æ2‚’Óâ°¢6öç7B7FGW2Ò²FW‡D6öçFVçC¢rrÓ°¢6öç7B'WGFöâÒ²F—6&ÆVC¢fÇ6RÓ°¢6öç7B–FVçF—G”'WGFöâÒ²FW‡D6öçFVçC¢rrÂF—FÆS¢rrÂ6WDGG&–'WFR‚’·ÒÓ°¢6öç7BVÆVÖVçG2Ò°¢6Æ÷VDÖ–w&F–öå&Wf–Wu7FGW3¢7FGW2À¢6Æ÷VDÖ–w&F–öå&Wf–Wt'Fã¢'WGFöâÀ¢6Æ÷VD–FVçF—G”'Fã¢–FVçF—G”'WGFöà¢Ó°¢ÆWB&W6öÇfU&VC°¢ÆWBÆö6Å&VG2Ò°¢6öç7BW6W"Ò²V–C¢wW6W"ÔrÂVÖ–Ã¢vW†×ÆRæ6öÒrÓ°¢6öç7BWF‚Ò²7W'&VçEW6W#¢W6W"Ó°¢6öç7B7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6RÖ–FVçF—G’æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–C¢–BÓâVÆVÖVçG5¶–EÒÇÂçVÆÂÒÀ¢f—&V&6U6W'f–6S¢²vWE&—fFU&ö¦V7E&Wf–Ws¢‚’ÓâæWr&öÖ—6R‡&W6öÇfRÓâ²&W6öÇfU&VBÒ&W6öÇfS²Ò’ÒÀ¢7FFTÖævW#¢²vWB‚’²Æö6Å&VG2²³²&WGW&â·²–C¢vÆö6ÂrÕÓ²ÒÒÀ¢7–æ4ÖöGVÆS¢²÷Æå&—fFTÖ–w&F–öâ‚’²F‡&÷rW'&÷"‚u7FÆR&W7VÇB×W7Bæ÷B&RÆææVBr“²ÒÐ¢Ò“°¢6öç7B–FVçF—G’Ò7G‚äf—&V&6T–FVçF—G”ÖöGVÆS°¢–FVçF—G’åöWF‚ÒWFƒ°¢–FVçF—G’å÷W6W"ÒW6W#°¢–FVçF—G’å÷&VG’ÒG'VS°¢6öç7BVæF–ærÒ–FVçF—G’ç&Wf–WtÖ–w&F–öâ‚“°¢76W'BæWVÂ†'WGFöâæF—6&ÆVBÂG'VR“°¢WF‚æ7W'&VçEW6W"Ò²V–C¢wW6W"Ô"rÓ°¢–FVçF—G’å÷W6W"ÒWF‚æ7W'&VçEW6W#°¢–FVçF—G’åö7F—fUV–BÒwW6W"Ô"s°¢–FVçF—G’å÷&Wf–Wu&WVW7D–B²³°¢–FVçF—G’å÷&Wf–Wt'W7’ÒfÇ6S°¢7FGW2çFW‡D6öçFVçBÒ}	­­=Ý""s°¢&W6öÇfU&VB…·²–C¢w&VÖ÷FRrÕÒ“°¢76W'BæWVÂ†v—BVæF–ærÂfÇ6R“°¢76W'BæWVÂ‡7FGW2çFW‡D6öçFVçBÂ}	­­=Ý""r“°¢76W'BæWVÂ†Æö6Å&VG2Â“°¢76W'BæWVÂ†–FVçF—G’å÷&Wf–Wt'W7’ÂfÇ6R“°§Ò“° §FW7B‚v6Æ÷VBÖ–w&F–öâ&Wf–Wr&W÷'G2&VBf–ÇW&Rv—F†÷WB6†æv–ærÆö6Â&ö¦V7G2rÂ7–æ2‚’Óâ°¢6öç7B7FGW2Ò²FW‡D6öçFVçC¢rrÓ°¢6öç7B'WGFöâÒ²F—6&ÆVC¢fÇ6RÓ°¢6öç7BW6W"Ò²V–C¢v÷væW"rÂVÖ–Ã¢v÷væW$W†×ÆRæ6öÒrÓ°¢ÆWBÆö6Åw&—FW2Ò°¢6öç7B7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6RÖ–FVçF—G’æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–C¢–BÓâ‡°¢6Æ÷VDÖ–w&F–öå&Wf–Wu7FGW3¢7FGW2À¢6Æ÷VDÖ–w&F–öå&Wf–Wt'Fã¢'WGFöâÀ¢6Æ÷VD–FVçF—G”'Fã¢²6WDGG&–'WFR‚’·ÒÐ¢Ò•¶–EÒÇÂçVÆÂÒÀ¢f—&V&6U6W'f–6S¢²vWE&—fFU&ö¦V7E&Wf–Ws¢‚’Óâ&öÖ—6Rç&V¦V7B„W'&÷"‚wW&Ö—76–öâÖFVæ–VBr’’ÒÀ¢7FFTÖævW#¢²vWB‚’²F‡&÷rW'&÷"‚t×W7Bæ÷B&VB&ö¦V7G2öâf–ÆVBf—&W7F÷&R&VBr“²ÒÂ6WB‚’²Æö6Åw&—FW2²³²ÒÐ¢Ò“°¢6öç7B–FVçF—G’Ò7G‚äf—&V&6T–FVçF—G”ÖöGVÆS°¢–FVçF—G’åöWF‚Ò²7W'&VçEW6W#¢W6W"Ó°¢–FVçF—G’å÷W6W"ÒW6W#°¢–FVçF—G’å÷&VG’ÒG'VS°¢76W'BæWVÂ†v—B–FVçF—G’ç&Wf–WtÖ–w&F–öâ‚’ÂfÇ6R“°¢76W'BæÖF6‚‡7FGW2çFW‡D6öçFVçBÂý	ÝR=M½íÂýí-]-Âý]]Ýíò“°¢76W'BæWVÂ†Æö6Åw&—FW2Â“°¢76W'BæWVÂ†'WGFöâæF—6&ÆVBÂfÇ6R“°§Ò“° §FW7B‚v6Æ÷VB7–æ26V7W&—G’Æâ&WV—&W2T”B÷væW'6†—æB&W6W'fW2F—6&ÆVB6Æ–VçBw&—FW2rÂ‚’Óâ°¢6öç7BÆâÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂvFö72ôd•$T$4Uõ4T5U$•E•õÄâæÖBr’ÂwWFc‚r“°¢6öç7Bf—&V&6U6W'f–6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷6W'f–6W2öf—&V&6Ræ§2r’ÂwWFc‚r“°¢76W'BæÖF6‚‡ÆâÂý	]MÝ--]ÝÝ½’­-=½ÍÝ½’ýí-í-òò“°¢76W'BæÖF6‚†g2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂvf—&W7F÷&Rç'VÆW2r’ÂwWFc‚r’Â÷&WVW7EÂæWF…ÂçV–BÓÒV–Bò“°¢76W'BæÖF6‚‡ÆâÂýýíM--]M²ý=½­mâý-²ò“°¢76W'BæÖF6‚‡ÆâÂý	ý]]B=M=ÂM]ý½í]Âíý}-]½ÍÝ²=ý]Ý½RÝÍ=½ý-íÝ½R-]-²ò“°¢76W'BæÖF6‚†f—&V&6U6W'f–6RÂõ÷w&—FW4Væ&ÆVC¢fÇ6Rò“°§Ò“° §FW7B‚tvöövÆR–FVçF—G’—26W&FVBg&öÒÆö6Â÷væW"VF—F–æræB6Æ÷VBw&—FW2&VÖ–âF—6&ÆVBrÂ‚’Óâ°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢6öç7B–FVçF—G’Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷6W'f–6W2öf—&V&6RÖ–FVçF—G’æ§2r’ÂwWFc‚r“°¢6öç7Bf—&V&6U6W'f–6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷6W'f–6W2öf—&V&6Ræ§2r’ÂwWFc‚r“°¢6öç7B7–æ2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2ö6÷&R÷7–æ2æ§2r’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&6Æ÷VD–FVçF—G”'Fâ"ò“°¢76W'BæÖF6‚†–FVçF—G’Â÷6–vä–åv—F…÷WÂ†æWrf—&V&6UÂæWF…ÂävöövÆTWF…&÷f–FW%Â…Â•Â’ò“°¢76W'BæÖF6‚†–FVçF—G’ÂööäWF…7FFT6†ævVBò“°¢76W'BæFöW4æ÷DÖF6‚†–FVçF—G’ÂôWF…6W'f–6UÂæÆöv–çÅ÷w&—FW4Væ&ÆVEÇ2£ÕÇ2§G'VWÇWÆöEFô6Æ÷VBò“°¢76W'BæÖF6‚†f—&V&6U6W'f–6RÂõ÷w&—FW4Væ&ÆVC¢fÇ6Rò“°¢76W'BæÖF6‚‡7–æ2Â÷WÆöEFô6Æ÷VC¢gVæ7F–öåÂ…Â’ÇµÇ2§&WGW&â&öÖ—6UÂç&W6öÇfUÂ†fÇ6UÂ’ò“°§Ò“° §FW7B‚tvöövÆRÆöv–âW'&÷'26†÷r7F–öæ&ÆRf—&V&6R6öFW2rÂ‚’Óâ°¢6öç7B–FVçF—G’ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6RÖ–FVçF—G’æ§2r’äf—&V&6T–FVçF—G”ÖöGVÆS°¢76W'BæÖF6‚†–FVçF—G’åöFW67&–&TWF„W'&÷"‡²6öFS¢vWF‚÷VæWF†÷&—¦VBÖFöÖ–ârÒ’ÂöFö7F÷'7G&ævW6…Âæv—F‡V%Âæ–òò“°¢76W'BæÖF6‚†–FVçF—G’åöFW67&–&TWF„W'&÷"‡²6öFS¢vWF‚ö÷W&F–öâÖæ÷BÖÆÆ÷vVBrÒ’Âý
+í]Ý‚Ý-í­‚ò“°¢76W'BæÖF6‚†–FVçF—G’åöFW67&–&TWF„W'&÷"‡²6öFS¢vWF‚÷÷WÖ&Æö6¶VBrÒ’Âý-ý½½-íRí­Ýò“°¢76W'BæÖF6‚†–FVçF—G’åöFW67&–&TWF„W'&÷"‡²6öFS¢vWF‚÷Væ¶æ÷vârÒ’ÂõÅ¶WF…Â÷Væ¶æ÷våÅÒò“°§Ò“° §FW7B‚v†VÇF‚†—7F÷'’G&ç6fW"fÆ–FFW2æBÖW&vW2F–Ç’&VF–æw2v—F†÷WB÷fW'w&—F–ærÆö6Â66÷&W2rÂ‚’Óâ°¢6öç7BW‡÷'DÖöGVÆRÒW†V7WFR‚v§2öÖöGVÆW2öW‡÷'Bæ§2r’äW‡÷'DÖöGVÆS°¢6öç7B–æ6öÖ–ærÒ·²FFS¢s##bÓÓBrÂ66÷&W3¢²¢sÂ#¢cÒÒÂ²FFS¢s##bÓÓRrÂ66÷&W3¢²¢ƒÂõ÷&÷Fõõó¢ÒÕÓ°¢6öç7BÆö6ÂÒ·²FFS¢s##bÓÓBrÂ66÷&W3¢²¢s"ÒÕÓ°¢6öç7B6öÖ&–æVBÒW‡÷'DÖöGVÆRåöÖW&vT†VÇF„†—7F÷'’†Æö6ÂÂ–æ6öÖ–ær“°¢76W'BæWVÂ†6öÖ&–æVBæÆVæwF‚Â"“°¢76W'BæWVÂ†6öÖ&–æVE³Òç66÷&W2æÂs"“°¢76W'BæWVÂ†6öÖ&–æVE³Òç66÷&W2æ"Âc“°¢76W'BæWVÂ†6öÖ&–æVE³Òç66÷&W2æÂƒ“°¢76W'BæWVÂ†W‡÷'DÖöGVÆRåö6ÆVä†VÇF„†—7F÷'’…·²FFS¢s##bÓ"Ó3rÂ66÷&W3¢²¢SÒÕÒ’æÆVæwF‚Â“°¢76W'BçF‡&÷w2‚‚’ÓâW‡÷'DÖöGVÆRåö6ÆVä†VÇF„†—7F÷'’†çVÆÂ’“°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF„W‡÷'D'Fâ"ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF„–×÷'D'Fâ"ò“°§Ò“° §FW7B‚w&ö¦V7B&6·W6'&–W2†VÇF‚†—7F÷'’v†–ÆRÆVv7’&6·W–×÷'B&VÖ–ç27W÷'FVBrÂ‚’Óâ°¢6öç7B6÷W&6RÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2öÖöGVÆW2öW‡÷'Bæ§2r’ÂwWFc‚r“°¢76W'BæÖF6‚‡6÷W&6RÂö†VÇF„†—7F÷'“¢F†—5Âåö6ÆVä†VÇF„†—7F÷'•Â…7F÷&vU6W'f–6UÂævWEÂ‚v†VÇF„†—7F÷'’rÂÅµÅÕÂ•Â’ò“°¢76W'BæÖF6‚‡6÷W&6RÂô'&•Âæ—4'&•Â†FFÂæ†VÇF„†—7F÷'•Â’ò“°¢76W'BæÖF6‚‡6÷W&6RÂöFFÂæ†VÇF„†—7F÷'’ÓÒVæFVf–æVBò“°¢76W'BæÖF6‚‡6÷W&6RÂõ7F÷&vU6W'f–6UÂç6WEÂ‚v†VÇF„†—7F÷'’rÂÖW&vVD†—7F÷'•Â’ò“°§Ò“° §FW7B‚v†VÇF‚æÇ—F–727&VFW26fR&÷VæFVBG&VæG2æBW‡Æ–ç266÷&RVæÇF–W2rÂ‚’Óâ°¢6öç7B&VæFW&W"ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r’å&VæFW&W$ÖöGVÆS°¢6öç7B6W&–W2Ò&VæFW&W"åö†VÇF…6W&–W2…·²FFS¢s##bÓÓBrÂ66÷&W3¢²¢c"ÒÒÂ²FFS¢s##bÓÓRrÂ66÷&W3¢²¢ƒÒÕÒÂvr“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡6W&–W2Â—FVÒÓâ—FVÒç66÷&R’Â³c"ÂƒÒ“°¢6öç7B7frÒ&VæFW&W"åö†VÇF„6†'E7fr‡6W&–W2“°¢76W'BæÖF6‚‡7frÂóÇ7frò“°¢76W'BæÖF6‚‡7frÂóƒÂóò“°¢6öç7B6ö×&VBÒ&VæFW&W"åö†VÇF„6†'E7fr‡6W&–W2Â·²FFS¢s##bÓÓRrÂ66÷&S¢CRÕÒ“°¢76W'BæÖF6‚†6ö×&VBÂö†VÇF‚Ö6ö×&—6öâò“°¢76W'BæÖF6‚†6ö×&VBÂý
+-Ý]ÝS¢CUÂóò“°¢76W'BæÖF6‚‡&VæFW&W"åö†VÇF„6†'E7fr…µÒ’Âý	-íòýíý--òò“°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF…&ö¦V7Df–ÇFW""ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF…66÷&TFWF–Ç2"ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF„6ö×&Tf–ÇFW""ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF…W&–öDf–ÇFW""ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&†VÇF…&V6öÖÖVæFF–öç2"ò“°§Ò“° §FW7B‚v†VÇF‚&V6öÖÖVæFF–öç2&–÷&—F—¦R÷fW&GVRÂ7FÆRæBVæFFVBv÷&²rÂ‚’Óâ°¢6öç7B&VæFW&W"ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r’å&VæFW&W$ÖöGVÆS°¢6öç7BF—2Ò&VæFW&W"åö†VÇF…&V6öÖÖVæFF–öç2‡²66÷&S¢3RÂ÷fW&GVS¢"Â–æ7F—fTF—3¢3Â6ö×ÆWFVC¢ÂF÷FÃ¢2ÂVæFFVC¢Ò“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡F—2ÂF—ÓâF—æ¶–æB’Â²v÷fW&GVRrÂw7FÆRrÂw&öw&W72uÒ“°¢76W'BæÖF6‚‡F—5³ÒæFWF–ÂÂó#½½í"ò“°¢76W'BæWVÂ‡&VæFW&W"åö†VÇF…&V6öÖÖVæFF–öç2‡²66÷&S¢çVÆÂÒ•³Òæ¶–æBÂwÆâr“°¢76W'BæWVÂ‡&VæFW&W"åö†VÇF…&V6öÖÖVæFF–öç2‡²66÷&S¢Â÷fW&GVS¢Â–æ7F—fTF—3¢Â6ö×ÆWFVC¢ÂF÷FÃ¢ÂVæFFVC¢Ò•³Òæ¶–æBÂw7F&ÆRr“°§Ò“° §FW7B‚w&ö¦V7B†VÇF‚ÆW'G2–FVçF–g’6–væ–f–6çB66÷&RG&÷2æB7&—F–6Â&—6²rÂ‚’Óâ°¢6öç7B&VæFW&W"ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r’å&VæFW&W$ÖöGVÆS°¢6öç7B†—7F÷'’Ò·²FFS¢s##bÓÓBrÂ66÷&W3¢²¢“Â#¢CÒÒÂ²FFS¢s##bÓÓRrÂ66÷&W3¢²¢SRÂ#¢CRÒÕÓ°¢6öç7BÆW'G2Ò&VæFW&W"åö6öÆÆV7D†VÇF„ÆW'G2…·²–C¢vrÂæÖS¢trÂ66÷&S¢SRÒÂ²–C¢v"rÂæÖS¢t"rÂ66÷&S¢CRÒÂ²–C¢v2rÂæÖS¢t2rÂ66÷&S¢çVÆÂÕÒÂ†—7F÷'’“°¢76W'BæFVWWVÂ„'&’æg&öÒ†ÆW'G2ÂÆW'BÓâÆW'Bæ¶–æB’Â²vFV6Æ–æRrÂw&—6²rÂw&—6²uÒ“°¢76W'BæWVÂ†ÆW'G5³Òæ–BÂvr“°¢76W'BæWVÂ‡&VæFW&W"åö6öÆÆV7D†VÇF„ÆW'G2…·²–C¢vrÂæÖS¢trÂ66÷&S¢“RÕÒÂ†—7F÷'’’æÆVæwF‚Â“°¢76W'BæÖF6‚†g2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r’Âö–CÒ&†VÇF„ÆW'G2"ò“°§Ò“° §FW7B‚vFVFÆ–æR÷WFÆöö²'V6¶WG2&VÂVæf–æ—6†VBv÷&²æB–væ÷&W26Æ÷6VB&ö¦V7G2rÂ‚’Óâ°¢6öç7B&VæFW&W"ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r’å&VæFW&W$ÖöGVÆS°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢t7F—fRrÂ7FGW3¢v7F—fRrÂ6†V6¶Æ—7C¢°¢²FW‡C¢tÆFRrÂFVFÆ–æS¢s##bÓÓBrÒÂ²FW‡C¢u6ööârÂFVFÆ–æS¢s##bÓÓRrÒÀ¢²FW‡C¢uF†—2vVV²rÂFVFÆ–æS¢s##bÓÓ#rÒÂ²FW‡C¢tæW‡BvVV²rÂFVFÆ–æS¢s##bÓÓ#"rÒÀ¢²FW‡C¢tgWGW&RrÂFVFÆ–æS¢s##bÓÓ#’rÒÂ²FW‡C¢uVç66†VGVÆVBrÒÀ¢²FW‡C¢t&BFFRrÂFVFÆ–æS¢s##bÓ"Ó3rÒÂ²FW‡C¢tf–æ—6†VBrÂFVFÆ–æS¢s##bÓÓrÂ6ö×ÆWFVC¢G'VRÐ¢ÒÒÀ¢²–C¢v"rÂ7FGW3¢v6ö×ÆWFVBrÂ6†V6¶Æ—7C¢·²FW‡C¢t&6†—fVBFVFÆ–æRrÂFVFÆ–æS¢s##bÓÓrÕÒÐ¢Ó°¢6öç7B&W7VÇBÒ&VæFW&W"åö6öÆÆV7DFVFÆ–æT÷WFÆöö²‡&ö¦V7G2ÂæWrFFRƒ##bÂÂR’“°¢76W'BæFVWWVÂ…·&W7VÇBæ÷fW&GVRÂ&W7VÇBçvVV²Â&W7VÇBæf÷'Fæ–v‡BÂ&W7VÇBæÆFW"Â&W7VÇBçVç66†VGVÆVEÒÂ³Â"ÂÂÂ%Ò“°¢76W'BæWVÂ‡&W7VÇBç&ö¦V7G2æÆVæwF‚Â“°¢76W'BæÖF6‚†g2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r’Âö–CÒ&FVFÆ–æT÷WFÆöö²"ò“°§Ò“° §FW7B‚v†VÇF‚†—7F÷'’&V6÷&G2&VÂF–Ç’66÷&W2Â÷fW'w&—FW26ÖRÖF’&VF–æw2æB62&WFVçF–öârÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢6öç7BöæRÒ&VæFW&W"å÷WFFT†VÇF„†—7F÷'’…µÒÂ·²–C¢wrÂ66÷&S¢sÒÂ²–C¢wrÂ66÷&S¢çVÆÂÕÒÂæWrFFRƒ##bÂÂB’“°¢6öç7B6ÖTF’Ò&VæFW&W"å÷WFFT†VÇF„†—7F÷'’†öæRÂ·²–C¢wrÂ66÷&S¢sRÕÒÂæWrFFRƒ##bÂÂB’“°¢76W'BæWVÂ‡6ÖTF’æÆVæwF‚Â“°¢76W'BæWVÂ‡6ÖTF•³Òç66÷&W2çÂsR“°¢76W'BæWVÂ‡6ÖTF•³Òç66÷&W2çÂVæFVf–æVB“°¢6öç7B6V6öæBÒ&VæFW&W"å÷WFFT†VÇF„†—7F÷'’‡6ÖTF’Â·²–C¢wrÂ66÷&S¢ƒRÕÒÂæWrFFRƒ##bÂÂR’“°¢76W'BæFVWWVÂ„¥4ôâç'6R„¥4ôâç7G&–æv–g’‡&VæFW&W"åö†VÇF…G&VæB‡6V6öæBÂwrÂƒR’’’Â²Æ&VÃ¢~(i³ýí½í=â}Í]rÂF—&V7F–öã¢wWrÒ“°¢76W'BæWVÂ‡&VæFW&W"åö†VÇF…G&VæB‡6V6öæBÂvÖ—76–ærrÂçVÆÂ’æF—&V7F–öâÂvæWWG&Âr“°¢76W'BæWVÂ†öæU³Òç66÷&W2çÂs“°¢ÆWB&öÆÆ–ærÒ6V6öæC°¢f÷"†ÆWB’Ò²’ÂCS²’²²’&öÆÆ–ærÒ&VæFW&W"å÷WFFT†VÇF„†—7F÷'’‡&öÆÆ–ærÂ·²–C¢wrÂ66÷&S¢ƒÕÒÂæWrFFRƒ##bÂÂb²’’“°¢76W'BæWVÂ‡&öÆÆ–æræÆVæwF‚Â3“°¢76W'BæWVÂ‡&öÆÆ–æræB‚Ó’ç66÷&W2çÂƒ“°§Ò“° §FW7B‚w&ö¦V7B†VÇF‚F—7F–æwV—6†W2&—6²Â–æ7F—f—G’æBÖ—76–ærÆç2v—F†÷WB×WFF–ær&ö¦V7G2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&ö¦V7G2Ò°¢²–C¢w"rÂæÖS¢}
+¢rÂ7FGW3¢v7F—fRrÂWFFVDC¢s##bÓÓrÂ6†V6¶Æ—7C¢·²FW‡C¢}	ýíí}]ÝârÂFVFÆ–æS¢s##bÓÓrÒÂ²FW‡C¢}	--íòrÂFVFÆ–æS¢s##bÓÓ’rÕÒÒÀ¢²–C¢vrrÂæÖS¢}
+]ííârÂ7FGW3¢v7F—fRrÂWFFVDC¢s##bÓÓBrÂ6†V6¶Æ—7C¢·²FW‡C¢}
+í-rÂFVFÆ–æS¢s##bÓÓ#2rÕÒÒÀ¢²–C¢wRrÂæÖS¢}	]r}MrrÂ7FGW3¢wÆææ–ærrÂ6†V6¶Æ—7C¢µÒÒÀ¢²–C¢v2rÂæÖS¢}	}­½"rÂ7FGW3¢v6ö×ÆWFVBrÂ6†V6¶Æ—7C¢·²FW‡C¢}
+-íRrÕÒÐ¢Ó°¢6öç7B6æ6†÷BÒ¥4ôâç7G&–æv–g’‡&ö¦V7G2“°¢6öç7B&W7VÇG2Ò7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7E&ö¦V7D†VÇF‚‡&ö¦V7G2ÂæWrFFRƒ##bÂÂR’“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡&W7VÇG2Â—FVÒÓâ—FVÒæ–B’Â²w"rÂvrrÂwRuÒ“°¢76W'BæWVÂ‡&W7VÇG5³Òç66÷&RÂ3R“°¢76W'BæWVÂ‡&W7VÇG5³Òç66÷&RÂ““°¢76W'BæWVÂ‡&W7VÇG5³%Òç66÷&RÂçVÆÂ“°¢76W'BæWVÂ‡&W7VÇG5³%ÒæGf–6RÂ}	Mí-Âý]-½R}M}‚r“°¢76W'BæWVÂ„¥4ôâç7G&–æv–g’‡&ö¦V7G2’Â6æ6†÷B“°§Ò“° §FW7B‚w6Ö'B&ö¦V7B÷fW'f–WrFWFV7G27FÆR7F—fR&ö¦V7G2æB÷fW&GVRF6·2öæÇ’rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&ö¦V7G2Ò°¢²–C¢vöÆBrÂæÖS¢}	M-ÝâÝRíÝí-½ý½‚rÂ7FGW3¢v7F—fRrÂWFFVDC¢s##bÓÓ#C#££¢rÂ6†V6¶Æ—7C¢·²FW‡C¢}	í-­½-òrÂFVFÆ–æS¢s##bÓÓrÒÂ²FW‡C¢}	=í-í-òrÂ6ö×ÆWFVC¢G'VRÂFVFÆ–æS¢s##bÓÓrÕÒÒÀ¢²–C¢vFöæRrÂ7FGW3¢v6ö×ÆWFVBrÂWFFVDC¢s##bÓÓC#££¢rÂ6†V6¶Æ—7C¢·²FW‡C¢}	ýí}MÝârÂFVFÆ–æS¢s##bÓÓrÕÒÒÀ¢²–C¢væWrrÂ7FGW3¢wÆææ–ærrÂWFFVDC¢s##bÓÓEC#££¢rÂ6†V6¶Æ—7C¢·²FW‡C¢}
+­íârÂFVFÆ–æS¢s##bÓÓ#rÕÒÐ¢Ó°¢6öç7B6æ6†÷BÒ¥4ôâç7G&–æv–g’‡&ö¦V7G2“°¢6öç7B–ç6–v‡G2Ò7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7D–ç6–v‡G2‡&ö¦V7G2ÂæWrFFRƒ##bÂÂR’“°¢76W'BæFVWWVÂ„'&’æg&öÒ†–ç6–v‡G2Â—FVÒÓâ—FVÒæ¶–æB’Â²v÷fW&GVRrÂw7FÆRuÒ“°¢76W'Bæö²†–ç6–v‡G2æWfW'’†—FVÒÓâ—FVÒç&ö¦V7D–BÓÓÒvöÆBr’“°¢76W'BæWVÂ„¥4ôâç7G&–æv–g’‡&ö¦V7G2’Â6æ6†÷B“°§Ò“° §FW7B‚w6Ö'B÷fW'f–Wr†26fR&ö¦V7Bæf–vF–öâVÆVÖVçG2rÂ‚’Óâ°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢6öç7B§2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷V’÷&VæFW&W"æ§2r’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ&–ç6–v‡G5æVÂ"ò“°¢76W'BæÖF6‚†§2ÂöFFÖ–ç6–v‡B×&ö¦V7Bò“°¢76W'BæÖF6‚†§2Âô†VÇW'5ÂæW66T‡FÖÅÂ†—FVÕÂææÖUÂ’ò“°§Ò“° §FW7B‚v6öÆÆ6–&ÆRG&6¶W"æVÇ2W‡÷6R66W76–&ÆR6öçG&öÇ2æB&W6W'fR6V7F–öâ7G'V7GW&RrÂ‚’Óâ°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢6öç7B772Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv772ö6ö×öæVçG2ö6&G2æ772r’ÂwWFc‚r“°¢f÷"†6öç7B–Böb²wFöF•æVÂrÂw&öGV7F—f—G•æVÂrÂw&öFÖ÷fW'f–WrrÂw66†VGVÆT6ÆVæF"rÂvfö7W5æVÂuÒ’°¢76W'Bæö²†‡FÖÂæ–æ6ÇVFW2†FFÖ6öÆÆ6R×æVÃÒ"G¶–GÒ&’“°¢Ð¢76W'BæÖF6‚†772ÂõÂç66†VGVÆRÖ6ÆVæF%Âæ—2Ö6öÆÆ6VBò“°¢76W'BæÖF6‚†772ÂõÂçFöF’×æVÅÂæ—2Ö6öÆÆ6VBò“°§Ò“° §FW7B‚v6öÆÆ6VBæVÂ7FFRWFFW2'WGFöâÆ&VÂæB&–ÖW‡æFVB6öç6—7FVçFÇ’rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B6Æ76W2ÒæWr6WB‚“°¢6öç7BæVÂÒ²6Æ74Æ—7C¢²FövvÆR†6Ç2ÂVæ&ÆVB’²–b†Væ&ÆVB’6Æ76W2æFB†6Ç2“²VÇ6R6Æ76W2æFVÆWFR†6Ç2“²ÒÒÓ°¢6öç7B'WGFöâÒ²FW‡D6öçFVçC¢rrÂ6WDGG&–'WFR†¶W’ÂfÇVR’²F†—5¶¶W•ÒÒfÇVS²ÒÓ°¢7G‚å&VæFW&W$ÖöGVÆRå÷6WEæVÄ6öÆÆ6VB‡æVÂÂ'WGFöâÂG'VR“°¢76W'Bæö²†6Æ76W2æ†2‚v—2Ö6öÆÆ6VBr’“°¢76W'BæWVÂ†'WGFöå²v&–ÖW‡æFVBuÒÂvfÇ6Rr“°¢76W'BæWVÂ†'WGFöâçFW‡D6öçFVçBÂ}
+}-]Ý=-Âr“°¢7G‚å&VæFW&W$ÖöGVÆRå÷6WEæVÄ6öÆÆ6VB‡æVÂÂ'WGFöâÂfÇ6R“°¢76W'BæWVÂ†6Æ76W2æ†2‚v—2Ö6öÆÆ6VBr’ÂfÇ6R“°¢76W'BæWVÂ†'WGFöå²v&–ÖW‡æFVBuÒÂwG'VRr“°§Ò“° §FW7B‚wFöF’F6†&ö&B&–÷&—F—¦W2÷fW&GVRæB†–v‚×&–÷&—G’F6·2g&öÒWfW'’&ö¦V7BrÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7Bæ÷rÒæWrFFRƒ##bÂÂR“°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢}	ý]-½’rÂ6†V6¶Æ—7C¢·²–C¢srÂFW‡C¢}	-mÝârÂ&–÷&—G“¢v†–v‚rÒÂ²–C¢s"rÂFW‡C¢}	M-ÝâýírÂFVFÆ–æS¢s##bÓÓBrÂ&–÷&—G“¢vÆ÷rrÕÒÒÀ¢²–C¢v"rÂæÖS¢}	--íí’rÂ6†V6¶Æ—7C¢·²–C¢s2rÂFW‡C¢}	}­½-ârÂ6ö×ÆWFVC¢G'VRÂ&–÷&—G“¢v†–v‚rÒÂ²–C¢sBrÂFW‡C¢}	í½}Ýò]rí­rÒÂ²–C¢sRrÂFW‡C¢}
+í¢]=íMÝòrÂFVFÆ–æS¢s##bÓÓRrÕÒÐ¢Ó°¢6öç7BW&vVçBÒ7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7EFöF•F6·2‡&ö¦V7G2Âæ÷rÂvÆÂrÂwW&vVçBr“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡W&vVçBÂF6²ÓâF6²çFW‡B’Â²}	M-ÝâýírÂ}	-mÝârÂ}
+í¢]=íMÝòuÒ“°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7EFöF•F6·2‡&ö¦V7G2Âæ÷rÂv†–v‚rÂvÆÂr’æÆVæwF‚Â“°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7EFöF•F6·2‡&ö¦V7G2Âæ÷rÂvÆÂrÂvÆÂr’æÆVæwF‚ÂB“°§Ò“° §FW7B‚wFöF’F6†&ö&Bf–ÇFW'2vVV¶Ç’GVRF6·2æB–væ÷&W26ö×ÆWFVBVçG&–W2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7BF6·2Ò·²–C¢srÂFW‡C¢}
+=ý]-ÂrÂFVFÆ–æS¢s##bÓÓ#rÒÂ²–C¢s"rÂFW‡C¢}	ýí}mRrÂFVFÆ–æS¢s##bÓÓ#"rÒÂ²–C¢s2rÂFW‡C¢}	=í-í-ârÂ6ö×ÆWFVC¢G'VRÂFVFÆ–æS¢s##bÓÓRrÕÓ°¢6öç7B&W7VÇBÒ7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7EFöF•F6·2…·²–C¢wrÂ6†V6¶Æ—7C¢F6·2ÕÒÂæWrFFRƒ##bÂÂR’ÂvÆÂrÂwvVV²r“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡&W7VÇBÂF6²ÓâF6²çFW‡B’Â²}
+=ý]-ÂuÒ“°¢76W'BæWVÂ‡F6·2æÆVæwF‚Â2“°§Ò“° §FW7B‚v6ÆVæF"f–ÇFW'2'’&ö¦V7BæBWfVçBG—Rv—F†÷WB×WFF–ærWfVçG2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7BWfVçG2Ò·²&ö¦V7D–C¢vrÂG—S¢wF6²rÒÂ²&ö¦V7D–C¢vrÂG—S¢w7FvRrÒÂ²&ö¦V7D–C¢v"rÂG—S¢wF6²rÕÓ°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåöf–ÇFW%66†VGVÆT—FV×2†WfVçG2ÂvrÂwF6²r’æÆVæwF‚Â“°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåöf–ÇFW%66†VGVÆT—FV×2†WfVçG2ÂvrÂvÆÂr’æÆVæwF‚Â"“°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåöf–ÇFW%66†VGVÆT—FV×2†WfVçG2ÂvÆÂrÂw7FvRr’æÆVæwF‚Â“°¢76W'BæWVÂ†7G‚å&VæFW&W$ÖöGVÆRåöf–ÇFW%66†VGVÆT—FV×2†WfVçG2ÂvÖ—76–ærrÂvÆÂr’æÆVæwF‚Â“°¢76W'BæWVÂ†WfVçG2æÆVæwF‚Â2“°§Ò“° §FW7B‚v6ÆVæF"W‡÷6W266W76–&ÆR&ö¦V7BæBG—R6VÆV7F÷'2æBæV&W7B×v÷&²Æ—7BrÂ‚’Óâ°¢6öç7B‡FÖÂÒg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv–æFW‚æ‡FÖÂr’ÂwWFc‚r“°¢6öç7B772Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv772ö6ö×öæVçG2ö6&G2æ772r’ÂwWFc‚r“°¢6öç7B§2Òg2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂv§2÷V’÷&VæFW&W"æ§2r’ÂwWFc‚r“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ'66†VGVÆU&ö¦V7Df–ÇFW""ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ'66†VGVÆUG—Tf–ÇFW""ò“°¢76W'BæÖF6‚†‡FÖÂÂö–CÒ'66†VGVÆUW6öÖ–ær"ò“°¢76W'BæÖF6‚†772ÂõÂç66†VGVÆRÖF•Âæ—2Ö÷fW&GVRò“°¢76W'BæÖF6‚†§2Â÷66†VGVÆR×W6öÖ–ærÖ—FVÒò“°§Ò“° §FW7B‚vÖöçF†Ç’FWfVÆ÷ÖVçB6ÆVæF"6öÖ&–æW2Væf–æ—6†VB6†V6¶Æ—7BæB&öFÖFFW2v—F†÷WB6†æv–ær6÷W&6RFFrÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&ö¦V7G2Ò·²–C¢vöæRrÂæÖS¢}	ýí]­"rÂÖ–ÆW7FöæW3¢²}	ýí-í-òrÂ}	=í-í-âuÒÂÖ–ÆW7FöæTFVFÆ–æW3¢²	ýí-í-ó¢s##bÓÓ‚rÂ	=í-í-ã¢s##bÓÓ"rÒÂ6ö×ÆWFVDÖ–ÆW7FöæW3¢²}	=í-í-âuÒÂ6†V6¶Æ—7C¢·²FW‡C¢}	ýí-]­rÂFVFÆ–æS¢s##bÓÓ‚rÂ6ö×ÆWFVC¢fÇ6RÒÂ²FW‡C¢}	}­½-ârÂFVFÆ–æS¢s##bÓÓrÂ6ö×ÆWFVC¢G'VRÕÒÕÓ°¢6öç7B&Vf÷&RÒ¥4ôâç7G&–æv–g’‡&ö¦V7G2“°¢6öç7BWfVçG2Ò7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7E66†VGVÆT—FV×2‡&ö¦V7G2“°¢76W'BæWVÂ†WfVçG2æÆVæwF‚Â"“°¢76W'BæFVWWVÂ„'&’æg&öÒ†WfVçG2Â—FVÒÓâ—FVÒçG—R’ç6÷'B‚’Â²w7FvRrÂwF6²uÒ“°¢76W'Bæö²†WfVçG2æWfW'’†—FVÒÓâ—FVÒæFFRÓÓÒs##bÓÓ‚r’“°¢76W'BæWVÂ„¥4ôâç7G&–æv–g’‡&ö¦V7G2’Â&Vf÷&R“°§Ò“° §FW7B‚vÖöçF†Ç’FWfVÆ÷ÖVçB6ÆVæF"&V¦V7G2–çfÆ–BFFW2æB6ö×ÆWFVBÆ–æ¶VB7FvW2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7BWfVçG2Ò7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7E66†VGVÆT—FV×2…·²–C¢vrÂÖ–ÆW7FöæW3¢²}	=í-í-ârÂ}	í-­½-âuÒÂÖ–ÆW7FöæTFVFÆ–æW3¢²	=í-í-ã¢s##bÓÓ#rÂ	í-­½-ã¢s##bÓ"Ó3rÒÂ6†V6¶Æ—7C¢·²Ö–ÆW7FöæS¢}	=í-í-ârÂ6ö×ÆWFVC¢G'VRÒÂ²FW‡C¢}	í­rÂFVFÆ–æS¢s##bÓÓ3rÒÂ²FW‡C¢}	ÝíÍrÂFVFÆ–æS¢s##bÓ"ÓrÕÒÕÒ“°¢76W'BæWVÂ†WfVçG2æÆVæwF‚Â“°¢76W'BæWVÂ†WfVçG5³ÒææÖRÂ}	ÝíÍr“°§Ò“° §FW7B‚v7&÷72×&ö¦V7B&öFÖ÷fW'f–Wr6W&FW2ÆFRæBW6öÖ–ær7FvW2v†–ÆRW†6ÇVF–ær6ö×ÆWFVB7FvW2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&ö¦V7G2Ò·°¢–C¢vrÂæÖS¢}	í-í-rÀ¢Ö–ÆW7FöæW3¢²}	íýí}M²rÂ}	ÝÝ]M]½RrÂ}	ýí}mRrÂ}	=í-í-ârÂ}	]rí­uÒÀ¢Ö–ÆW7FöæTFVFÆ–æW3¢²}	íýí}M²s¢s##bÓÓ2rÂ}	ÝÝ]M]½Rs¢s##bÓÓ‚rÂ}	ýí}mRs¢s##bÓÓ#"rÂ}	=í-í-âs¢s##bÓÓrÒÀ¢6†V6¶Æ—7C¢·²Ö–ÆW7FöæS¢}	=í-í-ârÂ6ö×ÆWFVC¢G'VRÕÐ¢ÕÓ°¢6öç7B&W7VÇBÒ7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7E&öFÖFVFÆ–æW2‡&ö¦V7G2ÂæWrFFRƒ##bÂÂB’“°¢76W'BæWVÂ‡&W7VÇBçF÷FÂÂR“°¢76W'BæWVÂ‡&W7VÇBæ6ö×ÆWFVBÂ“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡&W7VÇBæ÷fW&GVRÂ—FVÒÓâ—FVÒç7FvR’Â²}	íýí}M²uÒ“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡&W7VÇBçvVV²Â—FVÒÓâ—FVÒç7FvR’Â²}	ÝÝ]M]½RuÒ“°§Ò“° §FW7B‚v7&÷72×&ö¦V7B&öFÖ÷fW'f–Wr6÷VçG2ÖçVÆÇ’f–æ—6†VBÖ–ÆW7FöæW2æB6÷'G2W6öÖ–ærFFW2rÂ‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2r“°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢}	rÂÖ–ÆW7FöæW3¢²}
+M]½ÝârÂ}	--íí’uÒÂ6ö×ÆWFVDÖ–ÆW7FöæW3¢²}
+M]½ÝâuÒÂÖ–ÆW7FöæTFVFÆ–æW3¢²}
+M]½Ýâs¢s##bÓÓrÂ}	--íí’s¢s##bÓÓ#rÒÒÀ¢²–C¢v"rÂæÖS¢}	rÂÖ–ÆW7FöæW3¢²}	ý]-½’uÒÂÖ–ÆW7FöæTFVFÆ–æW3¢²}	ý]-½’s¢s##bÓÓBrÒÐ¢Ó°¢6öç7B&W7VÇBÒ7G‚å&VæFW&W$ÖöGVÆRåö6öÆÆV7E&öFÖFVFÆ–æW2‡&ö¦V7G2ÂæWrFFRƒ##bÂÂB’“°¢76W'BæWVÂ‡&W7VÇBæ6ö×ÆWFVBÂ“°¢76W'BæWVÂ‡&W7VÇBæ÷fW&GVRæÆVæwF‚Â“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡&W7VÇBçvVV²Â—FVÒÓâ—FVÒç7FvR’Â²}	ý]-½’rÂ}	--íí’uÒ“°§Ò“°¦gVæ7F–öâW†V7WFR†f–ÆRÂ6öçFW‡BÒ·Ò’°¢6öç7B6æF&÷‚Ò²6öç6öÆRÂ&öÖ—6RÂââæ6öçFW‡BÓ°¢6æF&÷‚çv–æF÷rÒ6æF&÷ƒ°¢fÒç'Vä–äæWt6öçFW‡B†g2ç&VDf–ÆU7–æ2‡F‚æ¦ö–â‡&ö÷BÂf–ÆR’ÂwWFc‚r’Â6æF&÷‚Â²f–ÆVæÖS¢f–ÆRÒ“°¢&WGW&â6æF&÷ƒ°§Ð §FW7B‚wV&Æ–2f—&V&6R6Æ–VçB&V¦V7G2w&—FW2&Vf÷&RF÷V6†–ærFF&6RrÂ7–æ2‚’Óâ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷6W'f–6W2öf—&V&6Ræ§2r“°¢6öç7Bf—&V&6RÒ7G‚äf—&V&6U6W'f–6S°¢ÆWBw&—FW2Ò°¢f—&V&6RåöF"Ò²6öÆÆV7F–öâ‚’²w&—FW2²³²F‡&÷ræWrW'&÷"‚uVæW‡V7FVB&VÖ÷FRw&—FRr“²ÒÓ° ¢76W'BæWVÂ†v—Bf—&V&6RæFVÆWFU&ö¦V7B‚wr’ÂfÇ6R“°¢76W'BæWVÂ†v—Bf—&V&6Rç6fTÆÅ&ö¦V7G2…·²–C¢wrÕÒ’ÂfÇ6R“°¢76W'BæWVÂ†v—Bf—&V&6Rç6fU6WGF–æw2‡²ff÷&—FW3¢µÒÒ’ÂfÇ6R“°¢76W'BæWVÂ†v—Bf—&V&6Ræ6ÆV$ÆÅ&ö¦V7G2‚’ÂfÇ6R“°¢76W'BæWVÂ†v—Bf—&V&6Ræ6ÆV$ÆÄFF‚’ÂfÇ6R“°¢76W'BæWVÂ‡w&—FW2Â“°§Ò“° §FW7B‚wG&6¶W"&VæFW'2Æ&vR&ö¦V7BÆ—7G2–â&F6†W2æB&W6WG2v–æF–öâöâf–ÇFW"6†ævRrÂ‚’Óâ°¢6öç7BÆÅ&ö¦V7G2Ò'&’æg&öÒ‡²ÆVæwFƒ¢cRÒÂ…òÂ’’Óâ‡²–C¢wr²’Ò’“°¢6öç7B6öçF–æW"Ò²–ææW$…DÔÃ¢rrÓ°¢6öç7B6÷VçBÒ²FW‡D6öçFVçC¢rrÓ°¢6öç7BÆöDÖ÷&RÒ²†–FFVã¢G'VRÂFW‡D6öçFVçC¢rrÂFDWfVçDÆ—7FVæW"†WfVçBÂfâ’²–b†WfVçBÓÓÒv6Æ–6²r’F†—2æ6Æ–6²Òfã²ÒÓ°¢6öç7BVÆVÖVçG2Ò²&ö¦V7G46öçF–æW#¢6öçF–æW"Âf–ÇFW&VD6÷VçC¢6÷VçBÂ&ö¦V7G4ÆöDÖ÷&S¢ÆöDÖ÷&RÓ°¢ÆWB7FGW2ÒvÆÂs°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&âVÆVÖVçG5¶–EÒÇÂçVÆÃ²ÒÒÀ¢7FFTÖævW#¢²vWB†¶W’’²&WGW&â¶W’ÓÓÒvf–ÇFW'2ç7FGW2rò7FGW2¢rs²ÒÒÀ¢&ö¦V7G4ÖöGVÆS¢²vWDf–ÇFW&VE&ö¦V7G2‚’²&WGW&âÆÅ&ö¦V7G3²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"åö66†T6öçF–æW'2‚“°¢&VæFW&W"å÷&VæFW%&ö¦V7D6&BÒ—FVÒÓâÆF—bFFÖ–CÒ"G¶—FVÒæ–GÒ#ãÂöF—cæ°¢&VæFW&W"åöGF6…&ö¦V7DWfVçG2Ò‚’Óâ·Ó°¢&VæFW&W"ç&VæFW%&ö¦V7G2‚“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚öFFÖ–CÒör’ÇÂµÒ’æÆVæwF‚Â#B“°¢76W'BæWVÂ†6÷VçBçFW‡D6öçFVçBÂcR“°¢76W'BæWVÂ†ÆöDÖ÷&Ræ†–FFVâÂfÇ6R“°¢76W'BæÖF6‚†ÆöDÖ÷&RçFW‡D6öçFVçBÂó#BrCò“°¢ÆöDÖ÷&Ræ6Æ–6²‚“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚öFFÖ–CÒör’ÇÂµÒ’æÆVæwF‚ÂC‚“°¢ÆöDÖ÷&Ræ6Æ–6²‚“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚öFFÖ–CÒör’ÇÂµÒ’æÆVæwF‚ÂcR“°¢76W'BæWVÂ†ÆöDÖ÷&Ræ†–FFVâÂG'VR“°¢7FGW2ÒvFWfVÆ÷ÖVçBs°¢&VæFW&W"ç&VæFW%&ö¦V7G2‚“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚öFFÖ–CÒör’ÇÂµÒ’æÆVæwF‚Â#B“°¢76W'BæWVÂ†ÆöDÖ÷&Ræ†–FFVâÂfÇ6R“°§Ò“° §FW7B‚wG&6¶W"6÷'F–ær6†ævW26&B÷&FW"Â&W6WG2v–æF–öâÂæB&VÖVÖ&W'26VÆV7F–öârÂ‚’Óâ°¢6öç7B&ö¦V7G2Ò'&’æg&öÒ‡²ÆVæwFƒ¢3ÒÂ…òÂ’’Óâ‡°¢–C¢7G&–ær†’’ÂæÖS¢}	ýí]­"r²7G&–ær†’²’çE7F'Bƒ"Âsr’À¢7FGW3¢’R"òwÆææ–ærr¢v6ö×ÆWFVBrÀ¢WFFVDC¢æWrFFR„FFRåUD2ƒ##bÂÂ’²’’çFô•4õ7G&–ær‚¢Ò’“°¢6öç7B6öçF–æW"Ò²–ææW$…DÔÃ¢rrÓ°¢6öç7B6÷'BÒ²fÇVS¢wWFFVBrÂFDWfVçDÆ—7FVæW"‡G—RÂfâ’²–b‡G—RÓÓÒv6†ævRr’F†—2æ6†ævRÒfã²ÒÓ°¢6öç7BÆöDÖ÷&RÒ²†–FFVã¢G'VRÂFDWfVçDÆ—7FVæW"‡G—RÂfâ’²–b‡G—RÓÓÒv6Æ–6²r’F†—2æ6Æ–6²Òfã²ÒÓ°¢6öç7BVÆVÖVçG2Ò²&ö¦V7G46öçF–æW#¢6öçF–æW"Â&ö¦V7G56÷'C¢6÷'BÂ&ö¦V7G4ÆöDÖ÷&S¢ÆöDÖ÷&RÓ°¢6öç7B6fVBÒ·Ó°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&âVÆVÖVçG5¶–EÒÇÂçVÆÃ²ÒÒÀ¢6W76–öå7F÷&vS¢²vWD—FVÒ†¶W’’²&WGW&â6fVE¶¶W•Ó²ÒÂ6WD—FVÒ†¶W’ÂfÇVR’²6fVE¶¶W•ÒÒfÇVS²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&ârs²ÒÒÀ¢&ö¦V7G4ÖöGVÆS¢²vWDf–ÇFW&VE&ö¦V7G2‚’²&WGW&â&ö¦V7G3²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"å÷&VæFW%&ö¦V7D6&BÒÓâ²G·æ–GÕÖ°¢&VæFW&W"åöGF6…&ö¦V7DWfVçG2Ò‚’Óâ·Ó°¢&VæFW&W"åö66†T6öçF–æW'2‚“°¢&VæFW&W"ç&VæFW%&ö¦V7G2‚“°¢76W'Bæö²†6öçF–æW"æ–ææW$…DÔÂç7F'G5v—F‚‚u³#•Òr’ÂvFVfVÇBæWvW7Bf—'7Br“°¢ÆöDÖ÷&Ræ6Æ–6²‚“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚õÅµÆBµÅÒör’ÇÂµÒ’æÆVæwF‚Â3“°¢6÷'BçfÇVRÒvæÖRs°¢6÷'Bæ6†ævR‚“°¢76W'BæWVÂ‡6fVBæFWg76U÷6÷'BÂvæÖRr“°¢76W'Bæö²†6öçF–æW"æ–ææW$…DÔÂç7F'G5v—F‚‚u³Òr’ÂvÇ†&WF–6Âf—'7Br“°¢76W'BæWVÂ‚†6öçF–æW"æ–ææW$…DÔÂæÖF6‚‚õÅµÆBµÅÒör’ÇÂµÒ’æÆVæwF‚Â#B“°¢6÷'BçfÇVRÒw7FGW2s°¢6÷'Bæ6†ævR‚“°¢76W'Bæö²†6öçF–æW"æ–ææW$…DÔÂç7F'G5v—F‚‚u³#…Òr’Âv6ö×ÆWFVB&Vf÷&RÆææ–ærr“°§Ò“° §FW7B‚wG&6¶W"7v—F6†W2&WGvVVâw&–BæBÆ—7Bv—F†÷WB&R×&VæFW&–ær&ö¦V7G2rÂ‚’Óâ°¢6öç7B6fVBÒ·Ó°¢6öç7B6Æ76W2ÒæWr6WB‚“°¢6öç7B6öçF–æW"Ò²6Æ74Æ—7C¢²FövvÆR†æÖRÂVæ&ÆVB’²–b†Væ&ÆVB’6Æ76W2æFB†æÖR“²VÇ6R6Æ76W2æFVÆWFR†æÖR“²ÒÒÓ°¢6öç7BÖ¶T'WGFöâÒÖöFRÓâ‡²FF6WC¢²&ö¦V7G5f–Ws¢ÖöFRÒÂGG'3¢·ÒÀ¢6Æ74Æ—7C¢²FövvÆR†æÖRÂVæ&ÆVB’²F†—2æ7F—fRÒVæ&ÆVC²ÒÒÀ¢FDWfVçDÆ—7FVæW"†WfVçBÂ6ÆÆ&6²’²–b†WfVçBÓÓÒv6Æ–6²r’F†—2æ6Æ–6²Ò6ÆÆ&6³²ÒÀ¢6WDGG&–'WFR†æÖRÂfÇVR’²F†—2æGG'5¶æÖUÒÒfÇVS²Ð¢Ò“°¢6öç7Bw&–BÒÖ¶T'WGFöâ‚vw&–Br“°¢6öç7BÆ—7BÒÖ¶T'WGFöâ‚vÆ—7Br“°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&â–BÓÓÒw&ö¦V7G46öçF–æW"rò6öçF–æW"¢çVÆÃ²ÒÂVW'•6VÆV7F÷$ÆÂ‚’²&WGW&â¶w&–BÂÆ—7EÓ²ÒÒÀ¢6W76–öå7F÷&vS¢²vWD—FVÒ†¶W’’²&WGW&â6fVE¶¶W•Ó²ÒÂ6WD—FVÒ†¶W’ÂfÇVR’²6fVE¶¶W•ÒÒfÇVS²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"ç&VæFW%&ö¦V7G2Ò‚’Óâ²F‡&÷ræWrW'&÷"‚uf–WrFövvÆR×W7Bæ÷B&R×&VæFW"F†R&ö¦V7B6&G2r“²Ó°¢&VæFW&W"åö66†T6öçF–æW'2‚“°¢76W'BæWVÂ†w&–BæGG'5²v&–×&W76VBuÒÂwG'VRr“°¢Æ—7Bæ6Æ–6²‚“°¢76W'BæWVÂ‡6fVBæFWg76U÷f–WrÂvÆ—7Br“°¢76W'BæWVÂ†6Æ76W2æ†2‚vÆ—7B×f–Wrr’ÂG'VR“°¢76W'BæWVÂ†Æ—7BæGG'5²v&–×&W76VBuÒÂwG'VRr“°¢76W'BæWVÂ†w&–BæGG'5²v&–×&W76VBuÒÂvfÇ6Rr“°¢w&–Bæ6Æ–6²‚“°¢76W'BæWVÂ†6Æ76W2æ†2‚vÆ—7B×f–Wrr’ÂfÇ6R“°¢76W'BæWVÂ‡6fVBæFWg76U÷f–WrÂvw&–Br“°§Ò“° §FW7B‚w–ææVB&ö¦V7G27F’f—'7B7&÷726÷'BÖöFW2æBW'6—7BÆö6ÆÇ’rÂ‚’Óâ°¢6öç7B6fVBÒ·Ó°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢tÇ†rÂ7FGW3¢vFWfVÆ÷ÖVçBrÂWFFVDC¢s##bÓÓrÒÀ¢²–C¢v"rÂæÖS¢t'&fòrÂ7FGW3¢v6ö×ÆWFVBrÂWFFVDC¢s##bÓÓ"rÒÀ¢²–C¢v2rÂæÖS¢t6†&Æ–RrÂ7FGW3¢vFWfVÆ÷ÖVçBrÂWFFVDC¢s##bÓÓ2rÐ¢Ó°¢6öç7B6öçF–æW"Ò²–ææW$…DÔÃ¢rrÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&â–BÓÓÒw&ö¦V7G46öçF–æW"rò6öçF–æW"¢çVÆÃ²ÒÒÀ¢7F÷&vU6W'f–6S¢²vWB†¶W’ÂfÆÆ&6²’²&WGW&â6fVE¶¶W•ÒÇÂfÆÆ&6³²ÒÂ6WB†¶W’ÂfÇVR’²6fVE¶¶W•ÒÒfÇVS²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&ârs²ÒÒÀ¢&ö¦V7G4ÖöGVÆS¢²vWDf–ÇFW&VE&ö¦V7G2‚’²&WGW&â&ö¦V7G3²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"å÷&VæFW%&ö¦V7D6&BÒÓâ²G·æ–GÕÖ°¢&VæFW&W"åöGF6…&ö¦V7DWfVçG2Ò‚’Óâ·Ó°¢&VæFW&W"å÷WFFUV–6´66W72Ò‚’Óâ·Ó°¢&VæFW&W"æ6öçF–æW'2Ò²&ö¦V7G3¢6öçF–æW"Ó°¢&VæFW&W"ç&VæFW%&ö¦V7G2‚“°¢76W'BæWVÂ†6öçF–æW"æ–ææW$…DÔÂÂu¶5Õ¶%Õ¶Òr“°¢&VæFW&W"çFövvÆU–ææVB‚vr“°¢76W'BæWVÂ†6öçF–æW"æ–ææW$…DÔÂÂu¶Õ¶5Õ¶%Òr“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡6fVBç–ææVE&ö¦V7G2’Â²vuÒ“°¢&VæFW&W"å÷6÷'DÖöFRÒw7FGW2s°¢&VæFW&W"ç&VæFW%&ö¦V7G2‚“°¢76W'Bæö²†6öçF–æW"æ–ææW$…DÔÂç7F'G5v—F‚‚u¶Òr’“°¢&VæFW&W"çFövvÆU–ææVB‚vr“°¢76W'BæWVÂ‡&VæFW&W"æ—5–ææVB‚vr’ÂfÇ6R“°¢76W'BæFVWWVÂ„'&’æg&öÒ‡6fVBç–ææVE&ö¦V7G2’ÂµÒ“°§Ò“° §FW7B‚vfö7W2æVÂ7VÖÖ&—¦W2–ææVB&ö¦V7G2æBF†V—"æW‡B–æ6ö×ÆWFR6†V6¶Æ—7B—FVÒrÂ‚’Óâ°¢6öç7BæVÂÒ²†–FFVã¢G'VRÓ°¢6öç7Bfö7W2Ò²–ææW$…DÔÃ¢rrÓ°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢u6·—v&BFÆW2rÂ7FGW3¢vFWfVÆ÷ÖVçBrÂ6†V6¶Æ—7C¢°¢²FW‡C¢}	=í-í-ârÂ6ö×ÆWFVC¢G'VRÒÂ²FW‡C¢}	MíM]½-Âí-í"rÂ6ö×ÆWFVC¢fÇ6RÐ¢ÒÒÀ¢²–C¢v"rÂæÖS¢tÆ7B&—GVÂrÂ7FGW3¢wÆææ–ærrÂ6†V6¶Æ—7C¢µÒÐ¢Ó°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&â²fö7W5æVÃ¢æVÂÂfö7W5&ö¦V7G3¢fö7W2Õ¶–EÒÇÂçVÆÃ²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&â&ö¦V7G3²ÒÒÀ¢†VÇW'3¢²W66T‡FÖÂ‡2’²&WGW&â7G&–ær‡2’ç&WÆ6R‚òbörÂrf×²r’ç&WÆ6R‚óÂörÂrfÇC²r“²ÒÀ¢vWE7FGW5FW‡B‡2’²&WGW&â3²ÒÂG'Væ6FUFW‡B‡2’²&WGW&â3²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"å÷&VæFW$fö7W2‚“°¢76W'BæWVÂ‡æVÂæ†–FFVâÂG'VR“°¢&VæFW&W"å÷–ææVD–G2Ò²vuÓ°¢&VæFW&W"å÷&VæFW$fö7W2‚“°¢76W'BæWVÂ‡æVÂæ†–FFVâÂfÇ6R“°¢76W'BæÖF6‚†fö7W2æ–ææW$…DÔÂÂõ6·—v&BFÆW2ò“°¢76W'BæÖF6‚†fö7W2æ–ææW$…DÔÂÂý	MíM]½-Âí-í"ò“°¢76W'BæÖF6‚†fö7W2æ–ææW$…DÔÂÂ÷v–GFƒ£SRò“°¢76W'BæFöW4æ÷DÖF6‚†fö7W2æ–ææW$…DÔÂÂôÆ7B&—GVÂò“°¢&VæFW&W"å÷–ææVD–G2ÒµÓ°¢&VæFW&W"å÷&VæFW$fö7W2‚“°¢76W'BæWVÂ‡æVÂæ†–FFVâÂG'VR“°¢76W'BæWVÂ†fö7W2æ–ææW$…DÔÂÂrr“°§Ò“° §FW7B‚vfö7W2F6²Æ—7B–æ6ÇVFW2öæÇ’Væf–æ—6†VBF6·2g&öÒ–ææVB&ö¦V7G2æB6ÆV'2v†VâVç–ææVBrÂ‚’Óâ°¢6öç7BæVÂÒ²†–FFVã¢G'VRÒÂfö7W2Ò²–ææW$…DÔÃ¢rrÒÂF6´&VÒ²†–FFVã¢G'VRÓ°¢6öç7BÆ—7BÒ²–ææW$…DÔÃ¢rrÒÂ6÷VçBÒ²FW‡D6öçFVçC¢rrÓ°¢6öç7B&ö¦V7G2Ò°¢²–C¢vrÂæÖS¢}	ý]-½’rÂ7FGW3¢vFWfVÆ÷ÖVçBrÂ6†V6¶Æ—7C¢°¢²FW‡C¢}
+=mR=í-í-ârÂ6ö×ÆWFVC¢G'VRÒÂ²FW‡C¢}	ÝÍm‚rÂ6ö×ÆWFVC¢fÇ6RÒÂ²FW‡C¢}	}-=­‚rÂ6ö×ÆWFVC¢fÇ6RÐ¢ÒÒÀ¢²–C¢v"rÂæÖS¢}	--íí’rÂ7FGW3¢wÆææ–ærrÂ6†V6¶Æ—7C¢·²FW‡C¢}	ÝRMí½m]Òýíý--ÍòrÂ6ö×ÆWFVC¢fÇ6RÕÒÐ¢Ó°¢6öç7BæöFW2Ò²fö7W5æVÃ¢æVÂÂfö7W5&ö¦V7G3¢fö7W2Âfö7W5F6´&V¢F6´&VÂfö7W5F6´Æ—7C¢Æ—7BÂfö7W5F6´6÷VçC¢6÷VçBÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&âæöFW5¶–EÒÇÂçVÆÃ²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&â&ö¦V7G3²ÒÒÀ¢†VÇW'3¢²W66T‡FÖÂ‡2’²&WGW&â7G&–ær‡2“²ÒÂvWE7FGW5FW‡B‡2’²&WGW&â3²ÒÂG'Væ6FUFW‡B‡2’²&WGW&â3²ÒÐ¢Ò“°¢6öç7B&VæFW&W"Ò7G‚å&VæFW&W$ÖöGVÆS°¢&VæFW&W"å÷–ææVD–G2Ò²vuÓ°¢&VæFW&W"å÷&VæFW$fö7W2‚“°¢76W'BæWVÂ‡F6´&Væ†–FFVâÂfÇ6R“°¢76W'BæWVÂ†6÷VçBçFW‡D6öçFVçBÂrƒ"’r“°¢76W'BæÖF6‚†Æ—7Bæ–ææW$…DÔÂÂý	ÝÍm‚ò“°¢76W'BæÖF6‚†Æ—7Bæ–ææW$…DÔÂÂý	}-=­‚ò“°¢76W'BæFöW4æ÷DÖF6‚†Æ—7Bæ–ææW$…DÔÂÂý
+=mR=í-í-çÍ	ÝRMí½m]Òýíý--Íòò“°¢&VæFW&W"å÷–ææVD–G2ÒµÓ°¢&VæFW&W"å÷&VæFW$fö7W2‚“°¢76W'BæWVÂ‡F6´&Væ†–FFVâÂG'VR“°¢76W'BæWVÂ†Æ—7Bæ–ææW$…DÔÂÂrr“°§Ò“° §FW7B‚vfö7W2F6²6ö×ÆWF–öâW6W26†V6¶Æ—7B†æFÆW"v—F†÷WB÷Væ–ær&ö¦V7BFWF–Ç2rÂ‚’Óâ°¢ÆWB†æFÆW#°¢6öç7BFövvÆVBÒµÒÂ÷VæVBÒµÓ°¢6öç7Bfö7W5æVÂÒ²FDWfVçDÆ—7FVæW"‡G—RÂ6ÆÆ&6²’²–b‡G—RÓÓÒv6Æ–6²r’†æFÆW"Ò6ÆÆ&6³²ÒÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&â–BÓÓÒvfö7W5æVÂròfö7W5æVÂ¢çVÆÃ²ÒÂVW'•6VÆV7F÷$ÆÂ‚’²&WGW&âµÓ²ÒÒÀ¢6†V6¶Æ—7DÖöGVÆS¢²FövvÆT—FVÒ‡&ö¦V7BÂF6²’²FövvÆVBçW6‚…·&ö¦V7BÂF6µÒ“²ÒÒÀ¢&ö¦V7DFWF–ÄÖöGVÆS¢²6†÷r‡&ö¦V7B’²÷VæVBçW6‚‡&ö¦V7B“²ÒÐ¢Ò“°¢7G‚å&VæFW&W$ÖöGVÆRåö66†T6öçF–æW'2‚“°¢76W'BæWVÂ‡G—Vöb†æFÆW"ÂvgVæ7F–öâr“°¢6öç7BF6´'WGFöâÒ²FF6WC¢²fö7W5&ö¦V7D–C¢w&ö¦V7BÖrÂfö7W46ö×ÆWFS¢wF6²ÓrÒÓ°¢†æFÆW"‡²F&vWC¢²6Æ÷6W7B‡6VÆV7F÷"’²&WGW&â6VÆV7F÷"ÓÓÒu¶FFÖfö7W2Ö6ö×ÆWFUÒròF6´'WGFöâ¢²FF6WC¢²fö7W5&ö¦V7C¢w&ö¦V7BÖrÒÓ²ÒÒÒ“°¢76W'BæFVWWVÂ‡FövvÆVBÂµ²w&ö¦V7BÖrÂwF6²ÓuÕÒ“°¢76W'BæFVWWVÂ†÷VæVBÂµÒ“°¢†æFÆW"‡²F&vWC¢²6Æ÷6W7B‡6VÆV7F÷"’²&WGW&â6VÆV7F÷"ÓÓÒu¶FFÖfö7W2×&ö¦V7EÒrò²FF6WC¢²fö7W5&ö¦V7C¢w&ö¦V7BÖrÒÒ¢çVÆÃ²ÒÒÒ“°¢76W'BæFVWWVÂ†÷VæVBÂ²w&ö¦V7BÖuÒ“°§Ò“° §FW7B‚vfö7W2F6²Æ—7B6†÷w26W&FR6öçG&öÇ2öæÇ’f÷"F6·2v—F‚–FVçF–f–W'2rÂ‚’Óâ°¢6öç7BæöFW2Ò²fö7W5æVÃ¢²†–FFVã¢G'VRÒÂfö7W5&ö¦V7G3¢²–ææW$…DÔÃ¢rrÒÂfö7W5F6´&V¢²†–FFVã¢G'VRÒÂfö7W5F6´Æ—7C¢²–ææW$…DÔÃ¢rrÒÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&âæöFW5¶–EÒÇÂçVÆÃ²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&â·²–C¢vrÂæÖS¢}	ýí]­"rÂ6†V6¶Æ—7C¢·²–C¢wF6²ÓrÂFW‡C¢}
+M]½-ÂrÂ6ö×ÆWFVC¢fÇ6RÒÂ²FW‡C¢}	]r”BrÂ6ö×ÆWFVC¢fÇ6RÕÒÕÓ²ÒÒÀ¢†VÇW'3¢²W66T‡FÖÂ‡2’²&WGW&â7G&–ær‡2“²ÒÂvWE7FGW5FW‡B‡2’²&WGW&â3²ÒÂG'Væ6FUFW‡B‡2’²&WGW&â3²ÒÐ¢Ò“°¢7G‚å&VæFW&W$ÖöGVÆRå÷–ææVD–G2Ò²vuÓ°¢7G‚å&VæFW&W$ÖöGVÆRå÷&VæFW$fö7W2‚“°¢76W'BæÖF6‚†æöFW2æfö7W5F6´Æ—7Bæ–ææW$…DÔÂÂöFFÖfö7W2Ö6ö×ÆWFSÒ'F6²Ó"ò“°¢76W'BæÖF6‚†æöFW2æfö7W5F6´Æ—7Bæ–ææW$…DÔÂÂö&–ÖÆ&VÃÒ-	í-Í]--Â-½ýí½Ý]ÝÝí“¢
+M]½-Â"ò“°¢76W'BæWVÂ‚†æöFW2æfö7W5F6´Æ—7Bæ–ææW$…DÔÂæÖF6‚‚öFFÖfö7W2Ö6ö×ÆWFSÒör’ÇÂµÒ’æÆVæwF‚Â“°¢76W'BæWVÂ‚†æöFW2æfö7W5F6´Æ—7Bæ–ææW$…DÔÂæÖF6‚‚öFFÖfö7W2×&ö¦V7CÒ&"ör’ÇÂµÒ’æÆVæwF‚Â"“°§Ò“° §FW7B‚w&–÷&—G’6†ævW2W'6—7B–â6†V6¶Æ—7Bv—F†÷WB6†æv–ær6ö×ÆWF–öârÂ‚’Óâ°¢6öç7BF6²Ò²–C¢wCrÂFW‡C¢}	=½-Ýò}M}rÂ6ö×ÆWFVC¢fÇ6RÓ°¢6öç7B&ö¦V7BÒ²–C¢wrÂ6†V6¶Æ—7C¢·F6µÒÓ°¢6öç7BWFFW2ÒµÒÂWfVçG2ÒµÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2öÖöGVÆW2ö6†V6¶Æ—7Bæ§2rÂ°¢7FFTÖævW#¢²vWE&ö¦V7B†–B’²&WGW&â–BÓÓÒwrò&ö¦V7B¢çVÆÃ²ÒÂWFFU&ö¦V7B†–BÂ6†ævW2’²WFFW2çW6‚…¶–BÂ6†ævW5Ò“²ÒÒÀ¢WfVçD'W3¢²VÖ—B†æÖRÂFF’²WfVçG2çW6‚…¶æÖRÂFFÒ“²ÒÐ¢Ò“°¢76W'BæWVÂ†7G‚ä6†V6¶Æ—7DÖöGVÆRç6WE&–÷&—G’‚wrÂwCrÂv†–v‚r’ÂG'VR“°¢76W'BæWVÂ‡F6²ç&–÷&—G’Âv†–v‚r“°¢76W'BæWVÂ‡F6²æ6ö×ÆWFVBÂfÇ6R“°¢76W'BæWVÂ‡WFFW2æÆVæwF‚Â“°¢76W'BæWVÂ†WfVçG5³Õ³ÒÂv6†V6¶Æ—7C¦6†ævVBr“°¢76W'BæWVÂ†7G‚ä6†V6¶Æ—7DÖöGVÆRç6WE&–÷&—G’‚wrÂwCrÂwVæ¶æ÷vâr’ÂfÇ6R“°¢76W'BæWVÂ‡WFFW2æÆVæwF‚Â“°¢76W'BæWVÂ†7G‚ä6†V6¶Æ—7DÖöGVÆRç6WE&–÷&—G’‚wrÂwCrÂvæ÷&ÖÂr’ÂG'VR“°¢76W'BæWVÂ„ö&¦V7Bæ†4÷vâ‡F6²Âw&–÷&—G’r’ÂfÇ6R“°¢76W'BæWVÂ‡WFFW2æÆVæwF‚Â"“°¢76W'BæWVÂ†7G‚ä6†V6¶Æ—7DÖöGVÆRç6WE&–÷&—G’‚wrÂvÖ—76–ærrÂv†–v‚r’ÂfÇ6R“°§Ò“° §FW7B‚vfö7W2F6·2&R6÷'FVBvÆö&ÆÇ’'’&–÷&—G’æB¶VWÆVv7’FVfVÇBæ÷&ÖÂrÂ‚’Óâ°¢6öç7BæöFW2Ò²fö7W5æVÃ¢²†–FFVã¢G'VRÒÂfö7W5&ö¦V7G3¢²–ææW$…DÔÃ¢rrÒÂfö7W5F6´&V¢²†–FFVã¢G'VRÒÂfö7W5F6´Æ—7C¢²–ææW$…DÔÃ¢rrÒÂfö7W5F6´6÷VçC¢²FW‡D6öçFVçC¢rrÒÓ°¢6öç7B&ö¦V7G2Ò·²–C¢vrÂæÖS¢}	rÂ6†V6¶Æ—7C¢°¢²–C¢srÂFW‡C¢}	Ý}­òrÂ&–÷&—G“¢vÆ÷rrÒÀ¢²–C¢s"rÂFW‡C¢}	]rýí-]-rÒÀ¢²–C¢s2rÂFW‡C¢}
+Íò-mÝòrÂ&–÷&—G“¢v†–v‚rÐ¢ÒÕÓ°¢6öç7B7G‚ÒW†V7WFR‚v§2÷V’÷&VæFW&W"æ§2rÂ°¢Fö7VÖVçC¢²vWDVÆVÖVçD'”–B†–B’²&WGW&âæöFW5¶–EÒÇÂçVÆÃ²ÒÒÀ¢7FFTÖævW#¢²vWB‚’²&WGW&â&ö®{ë‹h‘éì¶»§q«^u¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸™…±Í”ìôô(€ô¤ì(€½¹ÍÐ¡Ñµ°€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”¹}É•¹‘•ÉI½…‘µ…À¡ÁÉ½©•Ð¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€¿B{BÇF'BãBäƒBÿFBûBÏFB×FF¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½…É¥„µÙ…±Õ•¹½ÜôˆÔÀˆ¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€¼ÔÀ”ƒ
+Ü€ÌƒF7FBÃBÿBûBÈ¼¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹½µÁ±•Ñ•°ÑÉÕ”¤ì)ô¤ì()Ñ•ÍÐ É•µ½Ù¥¹œÉ½…‘µ…ÀÍÑ…”­••ÁÌÑ…Í­Ì…¹Ñ¡•¥È½µÁ±•Ñ¥½¸‰ÕÐ±•…ÉÌÍÑ…”…ÍÍ¥¹µ•¹Ðœ°€ ¤€ôøì(€½¹ÍÐÁÉ½©•Ð€ôì¥è€Àœ°µ¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôœ°€ŸBƒB×BïBãBÜt°½µÁ±•Ñ•‘5¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôt°¡•­±¥ÍÐèmì¥è€Ä°µ¥±•ÍÑ½¹”è€ŸBSBãBßBÃBçBôœ°Ñ•áÐè€ŸBsBÃBëB×Fœ°½µÁ±•Ñ•èÑÉÕ”°ÁÉ¥½É¥Ñäè€¡¥ œô°ì¥è€È°µ¥±•ÍÑ½¹”è€ŸBƒB×BïBãBÜœ°½µÁ±•Ñ•è™…±Í”õtôì(€½¹ÍÐÁ…Ñ¡•Ì€ômtì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½µ½‘Õ±•Ì½ÁÉ½©•Ðµ‘•Ñ…¥°¹©Ìœ°ì(€€€MÑ…Ñ•5…¹…•Èèì•ÑAÉ½©•Ð ¤ìÉ•ÑÕÉ¸ÁÉ½©•Ðìô°ÕÁ‘…Ñ•AÉ½©•Ð¡¥°Á…Ñ ¤ìÁ…Ñ¡•Ì¹ÁÕÍ ¡Á…Ñ ¤ì=‰©•Ð¹…ÍÍ¥¸¡ÁÉ½©•Ð°Á…Ñ ¤ìôô°(€€€ÕÑ¡M•ÉÙ¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸ÑÉÕ”ìôô°‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô(€ô¤ì(€½¹ÍÐÉ½…‘µ…À€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€ŸBwBÔƒFFF'B×FFBËFB×Fœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€ŸBSBãBßBÃBçBôœ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ít°lŸBƒB×BïBãBÜt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÐ¹±•¹Ñ °€È¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡=‰©•Ð¹¡…Í=Ý¸¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt°€µ¥±•ÍÑ½¹”œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹Ñ•áÐ°€ŸBsBÃBëB×Fœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹½µÁ±•Ñ•°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹ÁÉ¥½É¥Ñä°€¡¥ œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÅt¹µ¥±•ÍÑ½¹”°€ŸBƒB×BïBãBÜœ¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹½µÁ±•Ñ•‘5¥±•ÍÑ½¹•Ít°mt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Á…Ñ¡•Ì¹±•¹Ñ °€Ä¤ì)ô¤ì()Ñ•ÍÐ É½…‘µ…ÀÉ•¹…µ”ÕÁ‘…Ñ•Ì±¥¹­•¡•­±¥ÍÐ…¹µ…¹Õ…°½µÁ±•Ñ¥½¸¥¸½¹”Á…Ñ œ°€ ¤€ôøì(€½¹ÍÐÁÉ½©•Ð€ôì¥è€Àœ°µ¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôœ°€ŸBƒB×BïBãBÜt°½µÁ±•Ñ•‘5¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôt°¡•­±¥ÍÐèmì¥è€Ðœ°Ñ•áÐè€ŸBsBÃBëB×Fœ°µ¥±•ÍÑ½¹”è€ŸBSBãBßBÃBçBôœ°½µÁ±•Ñ•èÑÉÕ”õtôì(€½¹ÍÐÝÉ¥Ñ•Ì€ômtì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½µ½‘Õ±•Ì½ÁÉ½©•Ðµ‘•Ñ…¥°¹©Ìœ°ì(€€€MÑ…Ñ•5…¹…•Èèì•ÑAÉ½©•Ð ¤ìÉ•ÑÕÉ¸ÁÉ½©•Ðìô°ÕÁ‘…Ñ•AÉ½©•Ð¡¥°Á…Ñ ¤ìÝÉ¥Ñ•Ì¹ÁÕÍ ¡Á…Ñ ¤ì=‰©•Ð¹…ÍÍ¥¸¡ÁÉ½©•Ð°Á…Ñ ¤ìôô°(€€€ÕÑ¡M•ÉÙ¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸ÑÉÕ”ìôô°‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô(€ô¤ì(€½¹ÍÐÉ½…‘µ…À€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•¹…µ•I½…‘µ…ÁMÑ…” Àœ°€ŸBSBãBßBÃBçBôœ°€œƒBƒB×BïBãBÜ€œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•¹…µ•I½…‘µ…ÁMÑ…” Àœ°€ŸBSBãBßBÃBçBôœ°€œœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•¹…µ•I½…‘µ…ÁMÑ…” Àœ°€ŸBwB×Fœ°€U$œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹É•¹…µ•I½…‘µ…ÁMÑ…” Àœ°€ŸBSBãBßBÃBçBôœ°€œƒBcB÷FB×FFB×BçF€œ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ít°lŸBcB÷FB×FFB×BçFœ°€ŸBƒB×BïBãBÜt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹µ¥±•ÍÑ½¹”°€ŸBcB÷FB×FFB×BçFœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹½µÁ±•Ñ•°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹½µÁ±•Ñ•‘5¥±•ÍÑ½¹•Ít°lŸBcB÷FB×FFB×BçFt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÝÉ¥Ñ•Ì¹±•¹Ñ °€Ä¤ì)ô¤ì()Ñ•ÍÐ É½…‘µ…ÀÉ•…Ñ•Ì¡•­±¥ÍÐÑ…Í­Ì½¹±ä™½È„Ù…±¥ÍÑ…”…¹±¥¹­ÌÉ•ÑÕÉ¹•¥œ°€ ¤€ôøì(€½¹ÍÐÁÉ½©•Ð€ôì¥è€Àœ°µ¥±•ÍÑ½¹•ÌèlŸB“FB÷BÓBÃBóB×B÷Ft°¡•­±¥ÍÐèmtôì(€½¹ÍÐ…±±Ì€ômtì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½µ½‘Õ±•Ì½ÁÉ½©•Ðµ‘•Ñ…¥°¹©Ìœ°ì(€€€MÑ…Ñ•5…¹…•Èèì•ÑAÉ½©•Ð ¤ìÉ•ÑÕÉ¸ÁÉ½©•Ðìô°ÕÁ‘…Ñ•AÉ½©•Ð¡¥°Á…Ñ ¤ì…±±Ì¹ÁÕÍ ¡Á…Ñ ¤ìôô°(€€€¡•­±¥ÍÑ5½‘Õ±”èì…‘‘%Ñ•´¡¥°¹…µ”¤ì…±±Ì¹ÁÕÍ ¡ì¹…µ”ô¤ì½¹ÍÐ¥Ñ•´€ôì¥è€ÄÐ°Ñ•áÐè¹…µ”°½µÁ±•Ñ•è™…±Í”ôìÁÉ½©•Ð¹¡•­±¥ÍÐ¹ÁÕÍ ¡¥Ñ•´¤ìÉ•ÑÕÉ¸¥Ñ•´ìôô°(€€€ÕÑ¡M•ÉÙ¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸ÑÉÕ”ìôô°‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô(€ô¤ì(€½¹ÍÐÉ½…‘µ…À€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁQ…Í¬ Àœ°€ŸBŸFBÛBûBäƒF7FBÃBüœ°€ŸB‹B×FFœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁQ…Í¬ Àœ°€ŸB“FB÷BÓBÃBóB×B÷Fœ°€œ€œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁQ…Í¬ Àœ°€ŸB“FB÷BÓBÃBóB×B÷Fœ°€àœ¹É•Á•…Ð ÈÐÄ¤¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±Ì¹±•¹Ñ °€À¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁQ…Í¬ Àœ°€ŸB“FB÷BÓBÃBóB×B÷Fœ°€œ€ƒBFBûBËB×FBãFF0ƒFBÇBûFBëF€œ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹Ñ•áÐ°€ŸBFBûBËB×FBãFF0ƒFBÇBûFBëFœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹µ¥±•ÍÑ½¹”°€ŸB“FB÷BÓBÃBóB×B÷Fœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…±±Ì¹±•¹Ñ °€È¤ì)ô¤ì()Ñ•ÍÐ É½…‘µ…À…¸…‘‘¥ÍÑ¥¹ÐÍÑ…•ÌÝ¥Ñ¡½ÕÐ¡…¹¥¹œ¡•­±¥ÍÐ½È½µÁ±•Ñ•ÍÑ…•Ìœ°€ ¤€ôøì(€½¹ÍÐÁÉ½©•Ð€ôì¥è€Àœ°µ¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôt°½µÁ±•Ñ•‘5¥±•ÍÑ½¹•ÌèlŸBSBãBßBÃBçBôt°¡•­±¥ÍÐèmì¥è€Ä°Ñ•áÐè€ŸBsB×B÷F8œõtôì(€½¹ÍÐÍ…Ù•€ômtì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½µ½‘Õ±•Ì½ÁÉ½©•Ðµ‘•Ñ…¥°¹©Ìœ°ì(€€€MÑ…Ñ•5…¹…•Èèì•ÑAÉ½©•Ð ¤ìÉ•ÑÕÉ¸ÁÉ½©•Ðìô°ÕÁ‘…Ñ•AÉ½©•Ð¡¥°Á…Ñ ¤ìÍ…Ù•¹ÁÕÍ ¡Á…Ñ ¤ìÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ì€ôÁ…Ñ ¹µ¥±•ÍÑ½¹•Ììôô°(€€€ÕÑ¡M•ÉÙ¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸ÑÉÕ”ìôô°‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô°(€€€!•±Á•ÉÌèì•Í…Á•!Ñµ°¡Ì¤ìÉ•ÑÕÉ¸MÑÉ¥¹œ¡Ì¤ìôô(€ô¤ì(€½¹ÍÐÉ½…‘µ…À€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁMÑ…” Àœ°€œ€ƒBƒBÃBßFBÃBÇBûFBëBÀ€€œ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁMÑ…” Àœ°€ŸFBÃBßFBÃBÇBûFBëBÀœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁMÑ…” Àœ°€œ€€œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹…‘‘I½…‘µ…ÁMÑ…” Àœ°€àœ¹É•Á•…Ð ÄÀÄ¤¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ít°lŸBSBãBßBÃBçBôœ°€ŸBƒBÃBßFBÃBÇBûFBëBÀt¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡ÁÉ½©•Ð¹½µÁ±•Ñ•‘5¥±•ÍÑ½¹•Ì°lŸBSBãBßBÃBçBôt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹Ñ•áÐ°€ŸBsB×B÷F8œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Í…Ù•¹±•¹Ñ °€Ä¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡É½…‘µ…À¹}É•¹‘•ÉI½…‘µ…À¡ÁÉ½©•Ð¤°€½‘…Ñ„µÉ½…‘µ…ÀµÉ•…Ñ”¼¤ì)ô¤ì()Ñ•ÍÐ É½…‘µ…ÀÍÑ…”É•½É‘•É¥¹œÁÉ•Í•ÉÙ•ÌÑ…Í¬±¥¹­Ì‰ä¹…µ”…¹É•©•ÑÌ¥¹Ù…±¥µ½Ù•Ìœ°€ ¤€ôøì(€½¹ÍÐÁÉ½©•Ð€ôì¥è€Àœ°µ¥±•ÍÑ½¹•ÌèlŸB@œ°€ŸBDœ°€ŸBHt°¡•­±¥ÍÐèmì¥è€Ä°µ¥±•ÍÑ½¹”è€ŸBDœ°½µÁ±•Ñ•èÑÉÕ”õtôì(€½¹ÍÐÍ…Ù•€ômtì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½µ½‘Õ±•Ì½ÁÉ½©•Ðµ‘•Ñ…¥°¹©Ìœ°ì(€€€MÑ…Ñ•5…¹…•Èèì•ÑAÉ½©•Ð ¤ìÉ•ÑÕÉ¸ÁÉ½©•Ðìô°ÕÁ‘…Ñ•AÉ½©•Ð¡¥°Á…Ñ ¤ìÍ…Ù•¹ÁÕÍ ¡Á…Ñ ¤ìÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ì€ôÁ…Ñ ¹µ¥±•ÍÑ½¹•Ììôô°(€€€ÕÑ¡M•ÉÙ¥”èì¥Í=Ý¹•È ¤ìÉ•ÑÕÉ¸ÑÉÕ”ìôô°‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô(€ô¤ì(€½¹ÍÐÉ½…‘µ…À€ôÑà¹AÉ½©•Ñ•Ñ…¥±5½‘Õ±”ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€Ä°€ÕÀœ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡l¸¸¹ÁÉ½©•Ð¹µ¥±•ÍÑ½¹•Ít°lŸBDœ°€ŸB@œ°€ŸBHt¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÁÉ½©•Ð¹¡•­±¥ÍÑlÁt¹µ¥±•ÍÑ½¹”°€ŸBDœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€À°€ÕÀœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€È°€‘½Ý¸œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€Ä¸Ô°€‘½Ý¸œ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡É½…‘µ…À¹µ½Ù•I½…‘µ…ÁMÑ…” Àœ°€À°€Í¥‘•Ý…åÌœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Í…Ù•¹±•¹Ñ °€Ä¤ì)ô¤ì()Ñ•ÍÐ ÁÕ‰±¥ŒÁ…”±½…‘Ì½¹±äÙ•¹‘½ÈM-ÌÑ¡…Ð¥Ð…ÑÕ…±±äÕÍ•Ìœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍå¹Œ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½½É”½Íå¹Œ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐÕ¹ÕÍ•½˜lÑåÁ•¹©Í œ°€™¥É•‰…Í”µ…ÕÑ µ½µÁ…Ð¹©Ìœ°€ÍÕÁ…‰…Í”½ÍÕÁ…‰…Í”µ©Í t¤ì(€€€…ÍÍ•ÉÐ¹½¬ …¡Ñµ°¹¥¹±Õ‘•Ì¡Õ¹ÕÍ•¤°€‘íÕ¹ÕÍ•‘ôÍ¡½Õ±¹½Ð±½…½¸„ÁÕ‰±¥ŒÁ…•€¤ì(€ô(€…ÍÍ•ÉÐ¹½¬ …¡Ñµ°¹¥¹±Õ‘•Ì ™¥É•‰…Í”µ…ÁÀµ½µÁ…Ð¹©Ìœ¤°€¥É•‰…Í”µÕÍÐ¹½Ð‘•±…äÑ¡”™¥ÉÍÐÁ…¥¹Ðœ¤ì(€…ÍÍ•ÉÐ¹½¬ …¡Ñµ°¹¥¹±Õ‘•Ì ™¥É•‰…Í”µ™¥É•ÍÑ½É”µ½µÁ…Ð¹©Ìœ¤°€¥É•ÍÑ½É”µÕÍÐ¹½Ð‘•±…äÑ¡”™¥ÉÍÐÁ…¥¹Ðœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Íå¹Œ¹¥¹±Õ‘•Ì ™¥É•‰…Í”µ…ÁÀµ½µÁ…Ð¹©Ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Íå¹Œ¹¥¹±Õ‘•Ì ™¥É•‰…Í”µ™¥É•ÍÑ½É”µ½µÁ…Ð¹©Ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …½Ì¹©Ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬ ……ÁÀ¹¥¹±Õ‘•Ì ¹•ÜQåÁ• œ¤¤ì)ô¤ì()Ñ•ÍÐ …±°•áÑ•É¹…°ÍÉ¥ÁÑÌ±½…¥¸Á…É…±±•°Ý¡¥±”ÁÉ•Í•ÉÙ¥¹œ•á•ÕÑ¥½¸½É‘•Èœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÉ¥ÁÑÌ€ôl¸¸¹¡Ñµ°¹µ…Ñ¡±° ¼ñÍÉ¥ÁÑq‰mxùt©q‰ÍÉŒôˆ¡mx‰t¬¤‰mxùt¨øñp½ÍÉ¥ÁÐø½œ¥tì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÑÌ¹±•¹Ñ €øô€ÌÔ¤ì(€™½È€¡½¹ÍÐmÑ…œ°ÍÉt½˜ÍÉ¥ÁÑÌ¤ì(€€€…ÍÍ•ÉÐ¹µ…Ñ ¡Ñ…œ°€½qÍ‘•™•È üéqÍðø¤¼°€‘íÍÉôÍ¡½Õ±¹½Ð‰±½¬!Q50Á…ÉÍ¥¹€¤ì(€€€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Ñ…œ°€½qÍ…Íå¹Œ üéqÍðø¤¼°€‘íÍÉôµÕÍÐÉ•Ñ…¥¸‘•Á•¹‘•¹ä½É‘•É€¤ì(€ô(€½¹ÍÐÍ½ÕÉ•Ì€ôÍÉ¥ÁÑÌ¹µ…À¡µ…Ñ €ôøµ…Ñ¡lÅt¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ•Ì¹¥¹‘•á=˜ ©Ì½½É”½ÍÑ…Ñ”¹©ÌýØôÌ¸ØÈ¸Ôœ¤€ðÍ½ÕÉ•Ì¹¥¹‘•á=˜ ©Ì½…ÁÀ¹©ÌýØôÌ¸ØÈ¸Ôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ•Ì¹¥¹‘•á=˜ ©Ì½½É”½Íå¹Œ¹©ÌýØôÌ¸ØÈ¸Ôœ¤€ðÍ½ÕÉ•Ì¹¥¹‘•á=˜ ©Ì½…ÁÀ¹©ÌýØôÌ¸ØÈ¸Ôœ¤¤ì)ô¤ì()Ñ•ÍÐ ¥É•‰…Í”±½ÕÉ•…ÍÑ…ÉÑÌ…™Ñ•È¥‘±”°±½…‘ÌM-Ì¥¸½É‘•È°…¹¹•Ù•ÈÉÕ¹Ì¥¸±½…°µ½‘”œ°…Íå¹Œ€ ¤€ôøì(€½¹ÍÐ¥¹©•Ñ•€ômtì(€½¹ÍÐ¥‘±”€ômtì(€½¹ÍÐÍå¹Œ€ô•á•ÕÑ” ©Ì½½É”½Íå¹Œ¹©Ìœ°ì(€€€‘½Õµ•¹Ðèì(€€€€€•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸ìÑ•áÑ½¹Ñ•¹Ðè€œœôìô°(€€€€€É•…Ñ•±•µ•¹Ð ¤ìÉ•ÑÕÉ¸íôìô°(€€€€€¡•…èì…ÁÁ•¹‘¡¥±¡ÍÉ¥ÁÐ¤ì¥¹©•Ñ•¹ÁÕÍ ¡ÍÉ¥ÁÐ¤ìôô(€€€ô°(€€€É•ÅÕ•ÍÑ%‘±•…±±‰…¬¡…±±‰…¬¤ì¥‘±”¹ÁÕÍ ¡…±±‰…¬¤ìô°(€€€1½…±MÑ½É…•M•ÉÙ¥”èì•Ð¡­•ä¤ìÉ•ÑÕÉ¸­•ä€ôôô€Í•ÑÑ¥¹Ìœ€üìÍå¹5½‘”è€É•…µ½¹±äœô€è¹Õ±°ìôô°(€€€¥É•‰…Í•M•ÉÙ¥”èì}¥¹¥Ñ¥…±¥é•è™…±Í”°¥¹¥Ð ¤ìÑ¡¥Ì¹}¥¹¥Ñ¥…±¥é•€ôÑÉÕ”ìÉ•ÑÕÉ¸AÉ½µ¥Í”¹É•Í½±Ù” ¤ìôô(€ô¤ì(€±•Ð±½Õ‘I•…‘Ì€ô€Àì(€Íå¹Œ¹Må¹5½‘Õ±”¹}Íå¹É½µ±½Õ€ô€ ¤€ôøì±½Õ‘I•…‘Ì¬¬ìÉ•ÑÕÉ¸AÉ½µ¥Í”¹É•Í½±Ù” ¤ìôì(€½¹ÍÐÁ•¹‘¥¹œ€ôÍå¹Œ¹Må¹5½‘Õ±”¹¥¹¥Ð ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥¹©•Ñ•¹±•¹Ñ °€À¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±½Õ‘I•…‘Ì°€À¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥‘±”¹±•¹Ñ °€Ä¤ì(€¥‘±•lÁt ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¥¹©•Ñ•‘lÁt¹ÍÉŒ°€½™¥É•‰…Í”µ…ÁÀµ½µÁ…Ñp¹©Ì¼¤ì(€¥¹©•Ñ•‘lÁt¹½¹±½… ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¥¹©•Ñ•‘lÅt¹ÍÉŒ°€½™¥É•‰…Í”µ™¥É•ÍÑ½É”µ½µÁ…Ñp¹©Ì¼¤ì(€¥¹©•Ñ•‘lÅt¹½¹±½… ¤ì(€…Ý…¥ÐÁ•¹‘¥¹œì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±½Õ‘I•…‘Ì°€Ä¤ì((€½¹ÍÐ±½…°€ô•á•ÕÑ” ©Ì½½É”½Íå¹Œ¹©Ìœ°ì(€€€‘½Õµ•¹Ðèì•Ñ±•µ•¹Ñ	å% ¤ìÉ•ÑÕÉ¸¹Õ±°ìôô°(€€€1½…±MÑ½É…•M•ÉÙ¥”èì•Ð¡­•ä¤ìÉ•ÑÕÉ¸­•ä€ôôô€Í•ÑÑ¥¹Ìœ€üìÍå¹5½‘”è€±½…°œô€è¹Õ±°ìôô°(€€€¥É•‰…Í•M•ÉÙ¥”èì¥¹¥Ð ¤ìÑ¡É½ÜÉÉ½È 1½…°µ½‘”Í¡½Õ±¹•Ù•È™•Ñ M,œ¤ìôô(€ô¤ì(€…Ý…¥Ð±½…°¹Må¹5½‘Õ±”¹¥¹¥Ð ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡±½…°¹Må¹5½‘Õ±”¹}Í‘­AÉ½µ¥Í”°¹Õ±°¤ì)ô¤ì()Ñ•ÍÐ ‘•½É…Ñ¥Ù”Á…ÉÑ¥±•Ì…É”™•Ñ¡•½¹±ä…™Ñ•È¥‘±”½¸…Á…‰±”ÍÉ••¹Ìœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬ …¡Ñµ°¹¥¹±Õ‘•Ì Á…ÉÑ¥±•Ì¹µ¥¸¹©Ìœ¤°€Á…ÉÑ¥±”ÍÉ¥ÁÐµÕÍÐ¹½Ð‰±½¬Á…”Á…ÉÍ¥¹œœ¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰Ý¥¹‘½Ü¹É•ÅÕ•ÍÑ%‘±•…±±‰…¬¡±½…‘A…ÉÑ¥±•Ìˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì œ…ÁÉ•™•ÉÍI•‘Õ•‘5½Ñ¥½¸€˜˜€…½µÁ…ÑY¥•ÝÁ½ÉÐœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ¥˜€¡‘½Õµ•¹Ð¹¡¥‘‘•¸¤É•ÑÕÉ¸ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰ÍÉ¥ÁÐ¹½¹±½…€ôÍÑ…ÉÑA…ÉÑ¥±•Ìˆ¤¤ì)ô¤ì()Ñ•ÍÐ ÑÉ…­•È¹•Ù•È¥¹Ñ•É•ÁÑÌ¹…Ñ¥Ù”‰É½ÝÍ•È¹•ÜµÝ¥¹‘½Ü½ÈÑ•áÐµÕ¹‘¼Í¡½ÉÑÕÑÌœ°€ ¤€ôøì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÁÉ½©•ÑÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½µ½‘Õ±•Ì½ÁÉ½©•ÑÌ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬ ……ÁÀ¹¥¹±Õ‘•Ì ‰”¹ÑÉ±-•ä€˜˜”¹­•ä€ôôô€¸œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬ …ÁÉ½©•ÑÌ¹¥¹±Õ‘•Ì ‰”¹ÑÉ±-•ä€˜˜”¹­•ä€ôôô€¸œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬ …ÁÉ½©•ÑÌ¹¥¹±Õ‘•Ì ‰”¹ÑÉ±-•ä€˜˜”¹­•ä€ôôô€èœˆ¤¤ì)ô¤ì()Ñ•ÍÐ ÍÉ½±°½¹ÑÉ½±Ì¡½¹½ÕÈÉ•‘Õ•µ½Ñ¥½¸…¹•áÁ½Í”…¸…•ÍÍ¥‰±”¹…µ”œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½¥ô‰ÍÉ½±±Q½Á	Ñ¸‰mxùt­…É¥„µ±…‰•°ô‹BwBÃBËB×FFˆ¼¤ì(€…ÍÍ•ÉÐ¹½¬ ¡…ÁÀ¹µ…Ñ  ½É•‘Õ•5½Ñ¥½¸pü€¥¹ÍÑ…¹Ðœ€è€Íµ½½Ñ œ½œ¤ñðmt¤¹±•¹Ñ €øô€È¤ì)ô¤ì()Ñ•ÍÐ µ½‰¥±”µ•¹Ô…¹¹½Õ¹•Ì¥ÑÌÍÑ…Ñ”°ÍÕÁÁ½ÉÑÌÍ…Á”…¹™¥ÑÌÑ¡”Ù¥•ÝÁ½ÉÐœ°€ ¤€ôøì(€½¹ÍÐ¹…Ù¥…Ñ¥½¸€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ¹…Ø¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½½µÁ½¹•¹ÑÌ½¹…Ù‰…È¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¹…Ù¥…Ñ¥½¸¹¥¹±Õ‘•Ì Í¡½Ý¸¹‰Ì¹½±±…ÁÍ”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¹…Ù¥…Ñ¥½¸¹¥¹±Õ‘•Ì ¡¥‘‘•¸¹‰Ì¹½±±…ÁÍ”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¹…Ù¥…Ñ¥½¸¹¥¹±Õ‘•Ì ŸB_BÃBëFF/FF0ƒBóB×B÷F8ƒB÷BÃBËBãBÏBÃFBãBàœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¹…Ù¥…Ñ¥½¸¹¥¹±Õ‘•Ì ‰•Ù•¹Ð¹­•ä€„ôô€Í…Á”œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¹…Ù¥…Ñ¥½¸¹¥¹±Õ‘•Ì Ñ½±•È¹™½ÕÌ ¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ…àµ¡•¥¡Ðè…±Œ ÄÀÁ‘Ù €´€äÉÁà¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì ½Ù•ÉÍÉ½±°µ‰•¡…Ù¥½Èè½¹Ñ…¥¸œ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÉ½©•ÐÍÑ½Éä­••ÁÌÑ¡”…Ñ¥Ù”Í•Ñ¥½¸Ñ…ˆÙ¥Í¥‰±”¥¸¹…ÉÉ½ÜÙ¥•ÝÁ½ÉÑÌœ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰‰ÕÑÑ½¸¹±½Í•ÍÐ œ¹Í¡½Ý…Í”µÍ•Ñ¥½¸µ¹…Øœ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ¹…Ø¹ÍÉ½±±]¥‘Ñ €ø¹…Ø¹±¥•¹Ñ]¥‘Ñ œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì …Ñ¥Ù”€˜˜€…Ý…ÍÑ¥Ù”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰ÕÑÑ½¹I•Ð¹±•™Ð€´¹…ÙI•Ð¹±•™Ðœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰‰•¡…Ù¥½Èè€…ÕÑ¼œˆ¤¤ì)ô¤ì()Ñ•ÍÐ µ½‰¥±”…±±•Éä½¹±äÍÝ¥Á•Ì™É½´Ñ¡”¥µ…”…¹•áÁ±…¥¹ÌÑ½Õ ½¹ÑÉ½±Ìœ°€ ¤€ôøì(€½¹ÍÐÍÉ¥ÁÐ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÐ¹¥¹±Õ‘•Ì ‰•Ù•¹Ð¹Ñ…É•Ð¹±½Í•ÍÐ œ¹Á½ÉÑ™½±¥¼µ…±±•ÉäµÍÑ…”™¥ÕÉ”œ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ŸBoBãFFBÃBçFBÔƒFBËBÃBçBÿBûBðœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …É¥„µ­•åÍ¡½ÉÑÕÑÌô‰ÉÉ½Ý1•™Ðˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …É¥„µ­•åÍ¡½ÉÑÕÑÌô‰ÉÉ½ÝI¥¡Ðˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì Ñ½Õ µ…Ñ¥½¸éÁ…¸µäÁ¥¹ µé½½´œ¤¤ì)ô¤ì()Ñ•ÍÐ ÍÉ••¹Í¡½ÐÙ¥•Ý•È‘¥ÍÑ¥¹Õ¥Í¡•Ì±½…‘¥¹œ°±½…‘•…¹™…¥±•¥µ…•Ìœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÉ¥ÁÐ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰Á½ÉÑ™½±¥½…±±•Éå1½…‘¥¹œˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ŸB_BÃBÏFFBÛBÃB×BðƒFBëFBãB÷F#BûFœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÐ¹¥¹±Õ‘•Ì Á•¹‘¥¹%µ…”¹½¹±½…€ô€ ¤€ôøœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÐ¹¥¹±Õ‘•Ì Á•¹‘¥¹%µ…”¹½¹•ÉÉ½È€ô€ ¤€ôøœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÐ¹¥¹±Õ‘•Ì ¥µ…•1½…‘¥¹œ¹¡¥‘‘•¸€ô™…±Í”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÉ¥ÁÐ¹¥¹±Õ‘•Ì ¥µ…•1½…‘¥¹œ¹¡¥‘‘•¸€ôÑÉÕ”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Á½ÉÑ™½±¥¼µ…±±•Éäµ±½…‘¥¹m¡¥‘‘•¹tœ¤¤ì)ô¤ì()Ñ•ÍÐ Íå¹Œ¹•Ù•ÈÕÁ±½…‘Ì„Ù¥Í¥Ñ½ËŠeÌ±½…°ÁÉ½©•ÑÌœ°…Íå¹Œ€ ¤€ôøì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½½É”½Íå¹Œ¹©Ìœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Ý…¥ÐÑà¹Må¹5½‘Õ±”¹ÕÁ±½…‘Q½±½Õ ¤°™…±Í”¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½½É”½Íå¹Œ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Í½ÕÉ”°€½¥É•‰…Í•M•ÉÙ¥•p¸¡Í…Ù•±±AÉ½©•ÑÍñÍ…Ù•M•ÑÑ¥¹Íñ±•…É±±AÉ½©•ÑÍñ‘•±•Ñ•AÉ½©•Ð¥qÌ©p ¼¤ì)ô¤ì()Ñ•ÍÐ ™•…ÑÕÉ•ÁÉ½©•ÑÌ…É”…•ÍÍ¥‰±”±¥¹­Ì…¹¥Ñ!ÕˆA…•Ì…¡”¥ÌÍ½Á•œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐÉ•Á¼½˜lM­åÝ…ÉµQ…±•Ìœ°€1…ÍÐµI¥ÑÕ…°œ°€¡½ÍÑM¥¹…°œ°€]½É­A¥±½Ðt¤ì(€€€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì¡É•Á½Í¥Ñ½Éäè€œ‘íÉ•Á½ô€¤¤ì(€ô(€™½È€¡½¹ÍÐÍ±Õœ½˜lÍ­åÝ…ÉµÑ…±•Ìœ°€±…ÍÐµÉ¥ÑÕ…°œ°€¡½ÍÐµÍ¥¹…°œ°€Ý½É­Á¥±½Ðt¤ì(€€€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì¡¡É•˜ôˆÁÉ½©•Ð¼‘íÍ±Õô‰€¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì œñÍÉ¥ÁÐÍÉŒô‰©Ì½Á½ÉÑ™½±¥¼¹©ÌýØôÌ¸ØÈ¸Ôˆ‘•™•Èøð½ÍÉ¥ÁÐøœ¤¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ©Ì½Á½ÉÑ™½±¥¼¹©Ìœˆ¤¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Ý½É­•È°€½yqÌ¨p½¥¹‘•áp¹¡Ñµ°œ½´¤ì)ô¤ì()Ñ•ÍÐ ÁÕ‰±¥ŒÝ•ˆµÁÉ½©•Ð…É‘Ì¡…Ù”­•å‰½…É™½ÕÌ°Ñ½Õ Ñ…É•ÑÌ…¹É•‘Õ•µ½Ñ¥½¸œ°€ ¤€ôøì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹Ý•ˆµÁÉ½©•Ðµ…Éé™½ÕÌµÝ¥Ñ¡¥¹qÌ©qì¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹Ý•ˆµÁÉ½©•Ðµ±¥¹­Ì„é™½ÕÌµÙ¥Í¥‰±•qÌ©qì¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹Ý•ˆµÁÉ½©•Ðµ±¥¹­Ì…qÌ©qímyõt©µ¥¸µ¡•¥¡ÐèÐÙÁà¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½µ•‘¥„p¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸éÉ•‘Õ•p¥qÌ©qímyõt©p¹Ý•ˆµÁÉ½©•Ðµ…É¼¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½p¹Ý•ˆµÁÉ½©•Ðµ±¥¹­Ì…qí™±•àèÄ€Ä€ÄØÁÁáqô¼¤ì)ô¤ì()Ñ•ÍÐ Y•É•°ÁÉ½©•ÑÌ…É”É•ÁÉ•Í•¹Ñ•Ý¥Ñ¡½ÕÐ±•…­¥¹œÁÉ¥Ù…Ñ”Í½ÕÉ”±¥¹­Ìœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐ¹…µ”½˜l‘´µÝ½É­ÍÁ…”œ°€Ý…¹‘•É•ÉÌµ½É‘•Èœ°€…•Ñ¡•°µÙÑÐµÝ•ˆœ°€…Í¡•Ìµ½˜µÑÉÕÑ t¤ì(€€€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì¡¡ÑÑÁÌè¼¼‘í¹…µ•ô¹Ù•É•°¹…ÁÁ€¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¡É•˜ôˆÝ•ˆµÁÉ½©•ÑÌˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ŸBSBûFFFBüƒBóBûBÛB×FƒFFB×BÇBûBËBÃFF0ƒBËFBûBÓBÀœ¤¤ì(€…ÍÍ•ÉÐ¹½¬ …¡Ñµ°¹¥¹±Õ‘•Ì ¥Ñ¡Õˆ¹½´½½Ñ½ÉMÑÉ…¹•M ½]…¹‘•É•ÉÍ=É‘•Èœ¤¤ì)ô¤ì()Ñ•ÍÐ ¥Ñ!Õˆ±¥Ù”µ•Ñ…‘…Ñ„¥Ì…±±½Ý±¥ÍÑ•°½ÁÑ¥½¹…°…¹Ñ½­•¸µ™É•”œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½¥Ñ¡Õˆµµ•Ñ…‘…Ñ„¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ÍÉŒô‰©Ì½¥Ñ¡Õˆµµ•Ñ…‘…Ñ„¹©ÌýØôÌ¸ØÈ¸Ôˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ©Ì½¥Ñ¡Õˆµµ•Ñ…‘…Ñ„¹©Ìœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì Ù…±Õ”¹ÁÉ¥Ù…Ñ”€„ôô™…±Í”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì Ù…±Õ”¹™Õ±±}¹…µ”€„ôôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì Í•ÍÍ¥½¹MÑ½É…”œ¤¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Í½ÕÉ”°€½]…¹‘•É•ÉÍ=É‘•ÉñMUA	M}MIY%}I=1}-eñÕÑ¡½É¥é…Ñ¥½¸éqÌ©lœ‰t¼¤ì)ô¤ì()Ñ•ÍÐ Ù¥ÍÕ…°…±±•É¥•ÌÕÍ”½¹™¥Éµ•ÁÕ‰±¥ŒÉ•Á½Í¥Ñ½ÉäÍÉ••¹Í¡½ÐÁ…Ñ¡Ìœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐ™¥±”½˜lœÀàµÙÑÐµÍ•¹”œ°€œÀÜµ¡…É…Ñ•ÈµÍ¡••Ðœ°€œÀÌµ‘…Í¡‰½…Ét¤ì(€€€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì¡€‘í™¥±•ôµ¡É½µ¥Õ´µÝ¥¸ÌÈ¹Á¹€¤¤ì(€ô(€™½È€¡½¹ÍÐ™¥±”½˜lÉ••¹É•…¡}Ù¥±±…”¹Á¹œœ°€É••¹É•…¡}Ý…Ñ•É™…±°¹Á¹œœ°€É••¹É•…¡}É½Ù”¹©Áœt¤ì(€€€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì¡™¥±”¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ŸBwBÃFFBûF?F'BãBÔƒFB×FFBûBËF/BÔƒFBëFBãB÷F#BûFF,œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ŸBsBCB‹BWBƒBcBCBoB¬ƒBcB\ƒBƒBWBB{B_BcB‹B{BƒBcB¼œ¤¤ì)ô¤ì()Ñ•ÍÐ Á½ÉÑ™½±¥¼¡…Ì„‘•‘¥…Ñ•…•ÍÍ¥‰±”ÍÉ••¹Í¡½ÐÙ¥•Ý•Èœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÜ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰Á½ÉÑ™½±¥½…±±•ÉåY¥•Ý•Èˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …É¥„µµ½‘…°ô‰ÑÉÕ”ˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ÍÉŒô‰©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©ÌýØôÌ¸ØÈ¸Ôˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÜ¹¥¹±Õ‘•Ì ˆ©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœˆ¤¤ì(€™½È€¡½¹ÍÐ­•ä½˜lÍ…Á”œ°€ÉÉ½Ý1•™Ðœ°€ÉÉ½ÝI¥¡Ðœ°€Q…ˆt¤…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì¡­•ä¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ÍÑ½Á%µµ•‘¥…Ñ•AÉ½Á……Ñ¥½¸œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì É•ÑÕÉ¹½ÕÌ¹™½ÕÌ ¤œ¤¤ì)ô¤ì()Ñ•ÍÐ ±•…äÁ…ÍÍÝ½É¥Ì‘¥Í…É‘•…¹•‘¥Ñ¥¹œ¥Ì•áÁ±¥¥Ñ±ä‰É½ÝÍ•Èµ±½…°œ°€ ¤€ôøì(€½¹ÍÐÍÑ½É…”€ô¹•Ü5…À¡ml‘•ÙÍÁ…•}…ÕÑ¡}­•äœ°€±•…äµÉ•‘•¹Ñ¥…°ut¤ì(€½¹ÍÐ±½…±MÑ½É…”€ôì(€€€•Ñ%Ñ•´è­•ä€ôøÍÑ½É…”¹•Ð¡­•ä¤€üü¹Õ±°°(€€€Í•Ñ%Ñ•´è€¡­•ä°Ù…°¤€ôøÍÑ½É…”¹Í•Ð¡­•ä°Ù…°¤°(€€€É•µ½Ù•%Ñ•´è­•ä€ôøÍÑ½É…”¹‘•±•Ñ”¡­•ä¤(€ôì(€½¹ÍÐ‰ÕÑÑ½¸€ôìÍÑå±”èíô°Í•ÑÑÑÉ¥‰ÕÑ” ¤íôôì(€½¹ÍÐ‘½Õµ•¹Ð€ôì(€€€•Ñ±•µ•¹Ñ	å%è¥€ôø¥€ôôô€…ÕÑ¡	Ñ¸œ€ü‰ÕÑÑ½¸€è¹Õ±°°(€€€ÅÕ•ÉåM•±•Ñ½É±°è€ ¤€ôømt(€ôì(€½¹ÍÐÑà€ô•á•ÕÑ” ©Ì½Í•ÉÙ¥•Ì½…ÕÑ ¹©Ìœ°ì±½…±MÑ½É…”°‘½Õµ•¹Ð°½¹™¥É´è€ ¤€ôøÑÉÕ”ô¤ì(€Ñà¹ÕÑ¡M•ÉÙ¥”¹¥¹¥Ð ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ½É…”¹¡…Ì ‘•ÙÍÁ…•}…ÕÑ¡}­•äœ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ñà¹ÕÑ¡M•ÉÙ¥”¹¥Í=Ý¹•È ¤°™…±Í”¤ì(€Ñà¹ÕÑ¡M•ÉÙ¥”¹}Í¡½Ý1½¥¹¥…±½œ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ñà¹ÕÑ¡M•ÉÙ¥”¹¥Í=Ý¹•È ¤°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ½É…”¹•Ð ‘•ÙÍÁ…•}±½…±}•‘¥Ñ}µ½‘”œ¤°€•¹…‰±•œ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡‰ÕÑÑ½¸¹Ñ¥Ñ±”°€¿BïBûBëBÃBïF3B÷BûBÔƒFB×BÓBÃBëFBãFBûBËBÃB÷BãBÔ¼¤ì(€Ñà¹ÕÑ¡M•ÉÙ¥”¹±½½ÕÐ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ñà¹ÕÑ¡M•ÉÙ¥”¹¥Í=Ý¹•È ¤°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡ÍÑ½É…”¹¡…Ì ‘•ÙÍÁ…•}±½…±}•‘¥Ñ}µ½‘”œ¤°™…±Í”¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Í•ÉÙ¥•Ì½…ÕÑ ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Í½ÕÉ”°€½}Í•É•Ñ-•åqÌ¨è¼¤ì)ô¤ì()Ñ•ÍÐ µ½‰¥±”¹…Ù¥…Ñ¥½¸¥Ì±…‰•±±•…¹½±±…ÁÍ•Ì…™Ñ•È¥¸µÁ…”¹…Ù¥…Ñ¥½¸œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ¹…Ø¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …É¥„µ½¹ÑÉ½±Ìô‰¹…Ù‰…É½¹Ñ•¹Ðˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì …É¥„µ±…‰•°ô‹B{FBëFF/FF0ƒBóB×B÷F8ƒB÷BÃBËBãBÏBÃFBãBàˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ÍÉŒô‰©Ì½Á½ÉÑ™½±¥¼µ¹…Ø¹©ÌýØôÌ¸ØÈ¸Ôˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ©Ì½Á½ÉÑ™½±¥¼µ¹…Ø¹©Ìœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰¹…Ù¥…Ñ¥½¸¹±…ÍÍ1¥ÍÐ¹½¹Ñ…¥¹Ì Í¡½Üœ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì •Ñ=ÉÉ•…Ñ•%¹ÍÑ…¹”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì œ¹¡¥‘” ¤œ¤¤ì)ô¤ì()Ñ•ÍÐ µ½‰¥±”ÍÉ••¹Í¡½Ð•ÍÑÕÉ•Ì¥¹½É”Ù•ÉÑ¥…°ÍÝ¥Á•Ì…¹­••ÀÑ½Õ Ñ…É•ÑÌ…•ÍÍ¥‰±”œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì 5…Ñ ¹…‰Ì¡‘à¤€ø5…Ñ ¹…‰Ì¡‘ä¤€¨€Ä¸Ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ˆÑ½Õ¡…¹•°œˆ¤¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÌ°€½Á½ÉÑ™½±¥¼µ…±±•ÉäµÙ¥•Ý•È‰ÕÑÑ½¹qíÝ¥‘Ñ èÐÑÁàí¡•¥¡ÐèÐÑÁáqô¼¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì Í…™”µ…É•„µ¥¹Í•Ðµ‰½ÑÑ½´œ¤¤ì)ô¤ì()Ñ•ÍÐ •… ™•…ÑÕÉ•ÍÑ½Éä•áÁ±…¥¹Ì¥ÑÌ¥¹Ñ•¹Ð°ÕÉÉ•¹Ð™½ÕÌ…¹¹•áÐÍÑ•Àœ°€ ¤€ôøì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡ÍÑ½É¥•Ì¹µ…Ñ  ½©½ÕÉ¹•äéqÌ©ql½œ¤ñðmt¤¹±•¹Ñ °€Ð¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ÁÉ½©•Ð¹©½ÕÉ¹•ä¹™½É… œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ‰…É¥„µ±…‰•°œ°€ŸBFFF0ƒFBÃBßBËBãFBãF<ƒBÿFBûB×BëFBÀœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ©½ÕÉ¹•äµÉ¥œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì É¥µÑ•µÁ±…Ñ”µ½±Õµ¹ÌèÅ™Èœ¤¤ì)ô¤ì()Ñ•ÍÐ M­åÝ…ÉQ…±•ÌÕÍ•Ì„Ù•É¥™¥•ÍÉ••¹Í¡½Ð…ÌÑ¡”±•…‘¥¹œÙ¥ÍÕ…°œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì Í¡½Ý…Í”µ…±±•Éäµ¥Ñ•´Í¡½Ý…Í”µ…±±•Éäµ™•…ÑÕÉ•œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ŸBOBoBCBKBwB¯BdƒBkBCBSB€œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ…±±•Éäµ™•…ÑÕÉ•¥µœœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì É••¹É•…¡}Ù¥±±…”¹Á¹œœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ…±±•ÉäµÉ¥ìÉ¥µÑ•µÁ±…Ñ”µ½±Õµ¹ÌéÉ•Á•…Ð Èœ¤¤ì)ô¤ì()Ñ•ÍÐ ½™™±¥¹”Á…”™…±±‰…¬É•ÍÁ•ÑÌ¥Ñ!ÕˆA…•ÌÍÕ‰Á…Ñ œ°…Íå¹Œ€ ¤€ôøì(€½¹ÍÐµ…¹¥™•ÍÐ€ô)M=8¹Á…ÉÍ”¡™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€µ…¹¥™•ÍÐ¹©Í½¸œ¤°€ÕÑ˜àœ¤¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ…¹¥™•ÍÐ¹ÍÑ…ÉÑ}ÕÉ°°€œ¸¼œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ…¹¥™•ÍÐ¹Í½Á”°€œ¸¼œ¤ì(€½¹ÍÐ…±±‰…­Ì€ôíôì(€½¹ÍÐÍ••¸€ômtì(€½¹ÍÐ½™™±¥¹•A…”€ôì½¬èÑÉÕ”°Í½ÕÉ”è€…¡•µ¡½µ”œôì(€½¹ÍÐÍ½Á”€ô€¡ÑÑÁÌè¼½‘½Ñ½ÉÍÑÉ…¹•Í ¹¥Ñ¡Õˆ¹¥¼½•ÙMÁ…”¼œì(€½¹ÍÐÍ…¹‘‰½à€ôì(€€€½¹Í½±”°AÉ½µ¥Í”°UI0°I•ÍÁ½¹Í”°(€€€Í•±˜èìÉ•¥ÍÑÉ…Ñ¥½¸èìÍ½Á”ô°…‘‘Ù•¹Ñ1¥ÍÑ•¹•Èè€¡¹…µ”°…±±‰…¬¤€ôøì…±±‰…­Ím¹…µ•t€ô…±±‰…¬ìôô°(€€€…¡•Ìèìµ…Ñ è…Íå¹Œ­•ä€ôøìÍ••¸¹ÁÕÍ ¡­•ä¤ìÉ•ÑÕÉ¸­•ä€ôôôÍ½Á”€¬€¥¹‘•à¹¡Ñµ°œ€ü½™™±¥¹•A…”€èÕ¹‘•™¥¹•ìôô°(€€€™•Ñ è…Íå¹Œ€ ¤€ôøìÑ¡É½Ü¹•ÜÉÉ½È ½™™±¥¹”œ¤ìô(€ôì(€Ù´¹ÉÕ¹%¹9•Ý½¹Ñ•áÐ¡™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤°Í…¹‘‰½à¤ì(€±•ÐÉ•ÍÁ½¹Í”ì(€…±±‰…­Ì¹™•Ñ ¡ì(€€€É•ÅÕ•ÍÐèìÕÉ°èÍ½Á”€¬€Õ¹­¹½Ý¸œ°µ•Ñ¡½è€Pœ°µ½‘”è€¹…Ù¥…Ñ”œ°¡•…‘•ÉÌèì•Ðè€ ¤€ôø€Ñ•áÐ½¡Ñµ°œôô°(€€€É•ÍÁ½¹‘]¥Ñ èÙ…±Õ”€ôøìÉ•ÍÁ½¹Í”€ôÙ…±Õ”ìô(€ô¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡…Ý…¥ÐÉ•ÍÁ½¹Í”°½™™±¥¹•A…”¤ì(€…ÍÍ•ÉÐ¹½¬¡Í••¸¹¥¹±Õ‘•Ì¡Í½Á”€¬€¥¹‘•à¹¡Ñµ°œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í••¸¹•Ù•Éä¡­•ä€ôø€…MÑÉ¥¹œ¡­•ä¤¹ÍÑ…ÉÑÍ]¥Ñ  ¡ÑÑÁÌè¼½‘½Ñ½ÉÍÑÉ…¹•Í ¹¥Ñ¡Õˆ¹¥¼½¥¹‘•à¹¡Ñµ°œ¤¤¤ì)ô¤ì()Ñ•ÍÐ A]µ…¹¥™•ÍÐ¥½¸‘•±…É…Ñ¥½¹ÌÉ•Í½±Ù”Ñ¼É•…°A9Ìœ°€ ¤€ôøì(€½¹ÍÐµ…¹¥™•ÍÐ€ô)M=8¹Á…ÉÍ”¡™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€µ…¹¥™•ÍÐ¹©Í½¸œ¤°€ÕÑ˜àœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡µ…¹¥™•ÍÐ¹¥½¹Ì¹±•¹Ñ €øô€È¤ì(€™½È€¡½¹ÍÐ¥½¸½˜µ…¹¥™•ÍÐ¹¥½¹Ì¤ì(€€€½¹ÍÐ™¥±”€ôÁ…Ñ ¹©½¥¸¡É½½Ð°¥½¸¹ÍÉŒ¤ì(€€€…ÍÍ•ÉÐ¹½¬¡™Ì¹•á¥ÍÑÍMå¹Œ¡™¥±”¤°5¥ÍÍ¥¹œ…ÁÀ¥½¸è€‘í¥½¸¹ÍÉõ€¤ì(€€€½¹ÍÐ‘…Ñ„€ô™Ì¹É•…‘¥±•Må¹Œ¡™¥±”¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡‘…Ñ„¹ÍÕ‰…ÉÉ…ä À°€à¤¹Ñ½MÑÉ¥¹œ ¡•àœ¤°€œàäÔÀÑ”ÐÜÁÁ„Å„Á„œ¤ì(€€€½¹ÍÐmÝ¥‘Ñ °¡•¥¡Ñt€ôm‘…Ñ„¹É•…‘U%¹ÐÌÉ	 ÄØ¤°‘…Ñ„¹É•…‘U%¹ÐÌÉ	 ÈÀ¥tì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡€‘íÝ¥‘Ñ¡õà‘í¡•¥¡Ñõ€°¥½¸¹Í¥é•Ì¤ì(€ô(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì É•°ô‰¥½¸ˆœ¤¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ¥µ…•Ì½¥½¹Ì½¥½¸´ÄäÉàÄäÈ¹Á¹œœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ¥µ…•Ì½¥½¹Ì½¥½¸´ÔÄÉàÔÄÈ¹Á¹œœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ‰±¥•¹ÑÌ¹½Á•¹]¥¹‘½Ü¡Í•±˜¹É•¥ÍÑÉ…Ñ¥½¸¹Í½Á”¤ˆ¤¤ì)ô¤ì()Ñ•ÍÐ ¥¹ÍÑ…±±••ÙMÁ…”­••ÁÌ¥ÑÌÍ½Á”°ÍÕÁÁ½ÉÑÌÉ½Ñ…Ñ¥½¸…¹•áÁ½Í•ÌÅÕ¥¬±¥¹­Ìœ°€ ¤€ôøì(€½¹ÍÐµ…¹¥™•ÍÐ€ô)M=8¹Á…ÉÍ”¡™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€µ…¹¥™•ÍÐ¹©Í½¸œ¤°€ÕÑ˜àœ¤¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ…¹¥™•ÍÐ¹¥°€œ¸¼œ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡µ…¹¥™•ÍÐ¹½É¥•¹Ñ…Ñ¥½¸°€…¹äœ¤ì(€…ÍÍ•ÉÐ¹‘••ÁÅÕ…°¡µ…¹¥™•ÍÐ¹Í¡½ÉÑÕÑÌ¹µ…À¡¥Ñ•´€ôø¥Ñ•´¹ÕÉ°¤°lœ¸¼™•…ÑÕÉ•œ°€œ¸¼Ý•ˆµÁÉ½©•ÑÌt¤ì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐ…¹¡½È½˜l™•…ÑÕÉ•œ°€Ý•ˆµÁÉ½©•ÑÌt¤…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì¡¥ôˆ‘í…¹¡½Éô‰€¤¤ì)ô¤ì()Ñ•ÍÐ ½¹•ÁÑÕ…°ÁÉ½©•Ð…ÉÑÝ½É¬¥Ì‘¥ÍÑ¥¹Ð…¹¹•Ù•Èµ¥Í±…‰•±±•…Ì…µ•Á±…äœ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐÑ¡•µ”½˜lÝ½É¬œ°€¡½ÍÐœ°€É¥ÑÕ…°t¤ì(€€€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì¡€¹Í¡½Ý…Í”µ…ÉÐ¹…ÉÐ´‘íÑ¡•µ•ôèé‰•™½É•€¤¤ì(€€€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì¡€¹Í¡½Ý…Í”µ…ÉÐ¹…ÉÐ´‘íÑ¡•µ•ô€¹Í¡½Ý…Í”µÍåµ‰½±€¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ŸBSB×BëBûFBÃFBãBËB÷BÃF<ƒBëBûB÷FB×BÿFFBÃBïF3B÷BÃF<ƒBãBïBïF;FFFBÃFBãF<ƒBÿFBûB×BëFBÀœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ŸBkB{BwB›BWBB‹BBCBoB³BwBCB¼ƒB{BGBoB{B[BkB@œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ½Ù•ÉQ…±¥¹”œ¤¤ì)ô¤ì()Ñ•ÍÐ ™•…ÑÕÉ•…É‘ÌÕÍ”„•¹Õ¥¹”M­åÝ…É¥µ…”…¹­•å‰½…ÉµÙ¥Í¥‰±”™½ÕÌœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ±…ÍÌô‰™•…ÑÕÉ”µ…ÉÐ…ÉÐµÍ­ä™•…ÑÕÉ”µ…ÉÐµÍÉ••¹Í¡½Ðˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì M­åÝ…ÉµQ…±•Ì½µ…¥¸½‘½Ì½ÍÉ••¹Í¡½ÑÌ½É••¹É•…¡}Ù¥±±…”¹Á¹œœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ŸBƒBWBCBoB³BwB¯BdƒBkBCBSB€ƒ
+ÜM-e]IQ1Lœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…Éé™½ÕÌµÙ¥Í¥‰±”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…ÉÐ¹…ÉÐµ¡½ÍÐèé‰•™½É”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…ÉÐ¹…ÉÐµÉ¥ÑÕ…°èé‰•™½É”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…ÉÐ¹…ÉÐµÝ½É¬èé‰•™½É”œ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÉ½©•ÐÍÑ½É¥•Ì½™™•È…•ÍÍ¥‰±”±¥¹­ÌÑ¼Ñ¡”½Ñ¡•ÈÑ¡É•”ÁÉ½©•ÑÌœ°€ ¤€ôøì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ‰É•±…Ñ•¹Í•ÑÑÑÉ¥‰ÕÑ” …É¥„µ±…‰•°œ°€ŸBSFFBÏBãBÔƒBÿFBûB×BëFF,œ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ‰•¹ÑÉä€„ôôÁÉ½©•Ðˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì …É¹¡É•˜€ô€ÁÉ½©•Ð¼‘íÍ±Õõ€œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ©½ÕÉ¹•ä°É•±…Ñ•œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µÉ•±…Ñ•µ…Éé™½ÕÌµÙ¥Í¥‰±”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µÉ•±…Ñ•µÉ¥‘íÉ¥µÑ•µÁ±…Ñ”µ½±Õµ¹ÌèÅ™Éôœ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÕ‰±¥ŒÁ½ÉÑ™½±¥¼Í•…É ™¥±Ñ•ÉÌ™•…ÑÕÉ•…¹Ý•ˆ…É‘ÌÝ¥Ñ¡½ÕÐÑ½Õ¡¥¹œÑÉ…­•Èœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µÍ•…É ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰Á½ÉÑ™½±¥½M•…É ˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰Ý•‰AÉ½©•ÑÍÉ¥ˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰™•…ÑÕÉ•‘É¥ˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì É½±”ô‰ÍÑ…ÑÕÌˆ…É¥„µ±¥Ù”ô‰Á½±¥Ñ”ˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ˆ™•…ÑÕÉ•‘É¥€¹™•…ÑÕÉ”µ…Éˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ˆÝ•‰AÉ½©•ÑÍÉ¥€¹Ý•ˆµÁÉ½©•Ðµ…Éˆ¤¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡Í½ÕÉ”°€½MÑ…Ñ•5…¹…•ÉñMÑ½É…•M•ÉÙ¥•ñ±½…±MÑ½É…•ñÍ•…É¡AÉ½©•ÑÌ¼¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Ý•ˆµÁÉ½©•Ðµ…É‘m¡¥‘‘•¹tœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ˆ©Ì½Á½ÉÑ™½±¥¼µÍ•…É ¹©Ìœˆ¤¤ì)ô¤ì()Ñ•ÍÐ Á½ÉÑ™½±¥¼Í•…É µ…Ñ¡•ÌÝ½É‘Ì¥¸…¹ä½É‘•È…¹±¥¹­ÌÑ¼Ý•ˆµ½¹±äÉ•ÍÕ±ÑÌœ°€ ¤€ôøì(€½¹ÍÐ±¥ÍÑ•¹•ÉÌ€ôíôì(€½¹ÍÐ¥¹ÁÕÐ€ôìÙ…±Õ”è€œœ°…‘‘Ù•¹Ñ1¥ÍÑ•¹•Èè€¡¹…µ”°ˆ¤€ôøì±¥ÍÑ•¹•ÉÍm¹…µ•t€ôˆìô°™½ÕÌ ¤íôôì(€½¹ÍÐ±•…È€ôì¡¥‘‘•¸èÑÉÕ”°…‘‘Ù•¹Ñ1¥ÍÑ•¹•Èè€¡¹…µ”°ˆ¤€ôøì±¥ÍÑ•¹•ÉÍm±•…È´‘í¹…µ•õt€ôˆìôôì(€½¹ÍÐÍÑ…ÑÕÌ€ôìÑ•áÑ½¹Ñ•¹Ðè€œœôì(€½¹ÍÐ•µÁÑä€ôì¡¥‘‘•¸èÑÉÕ”°Ñ•áÑ½¹Ñ•¹Ðè€œœ°¡¥±‘É•¸èmt°…ÁÁ•¹‘¡¥±¡¹½‘”¤ìÑ¡¥Ì¹¡¥±‘É•¸¹ÁÕÍ ¡¹½‘”¤ìôôì(€½¹ÍÐ™•…ÑÕÉ•€ômìÑ•áÑ½¹Ñ•¹Ðè€M­åÝ…ÉQ…±•ÌIA½‘½Ðœ°¡¥‘‘•¸è™…±Í”õtì(€½¹ÍÐÝ•ˆ€ômìÑ•áÑ½¹Ñ•¹Ðè€4]½É­ÍÁ…”ƒBÿBïBÃFFBûFBóBÀ9•áÐ¹©ÌYQPœ°¡¥‘‘•¸è™…±Í”õtì(€½¹ÍÐ•±•µ•¹ÑÌ€ôìÁ½ÉÑ™½±¥½M•…É è¥¹ÁÕÐ°Á½ÉÑ™½±¥½M•…É¡±•…Èè±•…È°Á½ÉÑ™½±¥½M•…É¡MÑ…ÑÕÌèÍÑ…ÑÕÌ°Á½ÉÑ™½±¥½M•…É¡µÁÑäè•µÁÑäôì(€½¹ÍÐ‘½Õµ•¹Ð€ôì(€€€•Ñ±•µ•¹Ñ	å%è¥€ôø•±•µ•¹ÑÍm¥‘t°(€€€ÅÕ•ÉåM•±•Ñ½É±°èÍ•±•Ñ½È€ôøÍ•±•Ñ½È€ôôô€œ™•…ÑÕÉ•‘É¥€¹™•…ÑÕÉ”µ…Éœ€ü™•…ÑÕÉ•€èÝ•ˆ°(€€€É•…Ñ•±•µ•¹ÐèÑ…œ€ôø€¡ìÑ…9…µ”èÑ…œ°¡É•˜è€œœ°Ñ•áÑ½¹Ñ•¹Ðè€œœô¤(€ôì(€•á•ÕÑ” ©Ì½Á½ÉÑ™½±¥¼µÍ•…É ¹©Ìœ°ì‘½Õµ•¹Ðô¤ì(€¥¹ÁÕÐ¹Ù…±Õ”€ô€½‘½ÐÍ­åÝ…Éœì(€±¥ÍÑ•¹•ÉÌ¹¥¹ÁÕÐ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™•…ÑÕÉ•‘lÁt¹¡¥‘‘•¸°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ý•‰lÁt¹¡¥‘‘•¸°ÑÉÕ”¤ì(€¥¹ÁÕÐ¹Ù…±Õ”€ô€Ý½É­ÍÁ…”¹•áÐ¹©Ìœì(€±¥ÍÑ•¹•ÉÌ¹¥¹ÁÕÐ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™•…ÑÕÉ•‘lÁt¹¡¥‘‘•¸°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ý•‰lÁt¹¡¥‘‘•¸°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•µÁÑä¹¡¥‘‘•¸°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•µÁÑä¹¡¥±‘É•¸¹…Ð ´Ä¤¹¡É•˜°€œÝ•ˆµÁÉ½©•ÑÌœ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡ÍÑ…ÑÕÌ¹Ñ•áÑ½¹Ñ•¹Ð°€¿BKB×BÄ·BÿFBûB×BëFBûBÈè€Ä¼¤ì(€±¥ÍÑ•¹•ÉÍl±•…Èµ±¥¬t ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥¹ÁÕÐ¹Ù…±Õ”°€œœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡™•…ÑÕÉ•‘lÁt¹¡¥‘‘•¸°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ý•‰lÁt¹¡¥‘‘•¸°™…±Í”¤ì)ô¤ì(()Ñ•ÍÐ •… ÁÉ½©•Ð‘•Ñ…¥°•áÁ±…¥¹Ì¥ÑÌÉ•…°½É”…µ•Á±…ä½ÈÝ½É¬±½½Àœ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡Í½ÕÉ”¹µ…Ñ  ½±½½ÀéqÌ©ql½œ¤ñðmt¤¹±•¹Ñ °€Ð¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰…É¥„µ±…‰•°œ°€ŸB{FB÷BûBËB÷BûBäƒBãBÏFBûBËBûBäƒBãBïBàƒFBÃBÇBûFBãBäƒFBãBëBìœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰¹½‘”  Èœ°€œœ°€ŸBkBÃBèƒF7FBøƒFBÃBÇBûFBÃB×Fœ¤ˆ¤¤ì(€™½È€¡½¹ÍÐÍÑ•À½˜lŸBcB‡B‡BoBWBSB{BKBCB‹B°œ°€ŸBB{BSB‹BKBWBƒBSBcB‹B°ƒBƒBWB_BBoB³B‹BCBˆœ°€ŸBBƒB{BKBWBƒBcB‹B°ƒBKBWBƒB‡BcB`œ°€ŸBKB¯B[BcB‹B°ƒBwB{BŸB°t¤…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì¡ÍÑ•À¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ±½½ÀµÉ¥œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ•‘¥„¡µ…àµÝ¥‘Ñ èÜÀÁÁà¥ì¹Í¡½Ý…Í”µ±½½Áíµ…É¥¸µÑ½ÀèÔáÁáô¹Í¡½Ý…Í”µ±½½ÀµÉ¥‘íÉ¥µÑ•µÁ±…Ñ”µ½±Õµ¹ÌèÅ™Éôœ¤¤ì)ô¤ì()Ñ•ÍÐ M­åÝ…ÉQ…±•Ì…±±•Éä±¥¹­Ì™¥Ù”•¹Õ¥¹”É•Á½Í¥Ñ½ÉäÙ¥ÍÕ…±Ì°¥¹±Õ‘¥¹œÉ•Í½ÕÉ”…¹¥µ…Ñ¥½¸œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐ…ÍÍ•Ð½˜lÉ••¹É•…¡}Ù¥±±…”¹Á¹œœ°€É••¹É•…¡}Ý…Ñ•É™…±°¹Á¹œœ°€É••¹É•…¡}É½Ù”¹©Áœœ°€É••¹É•…¡}ÁÉ•Ù¥•Ü¹©Áœœ°€É•Í½ÕÉ•}É½ÝÑ ¹¥˜t¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì¡™¥±”è€œ‘í…ÍÍ•Ñô€¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰­¥¹è€…¹¥µ…Ñ¥½¸œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ÁÉ½©•Ð¹…±±•Éä€˜˜ÁÉ½©•Ð¹…±±•Éä¹±•¹Ñ œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì •¹½‘•UI%½µÁ½¹•¹Ð¡ÁÉ½©•Ð¹É•Á½Í¥Ñ½Éä¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ…±±•Éäµ¹½Ñ”œ¤¤ì)ô¤ì()Ñ•ÍÐ •Ù•ÉäÁÉ½©•ÐÍÑ½Éä¡…Ì¡½¹•ÍÐµ…Ñ•É¥…±Ì¹…Ù¥…Ñ¥½¸Ý¥Ñ¡½ÕÐ¥¹Ù•¹Ñ•ÍÉ••¹Í¡½ÑÌœ°€ ¤€ôøì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ‰lŸBsBÃFB×FBãBÃBïF,œ°€Í¡½Ý…Í”µµ•‘¥„tˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ‰Í•Ñ¥½¸¹¥€ô€Í¡½Ý…Í”µµ•‘¥„œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ŸBBûBëBÀƒBÇB×BÜƒBÿFBÇBïBãFB÷BûBäƒBÏBÃBïB×FB×Bàœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ŸBëBûB÷FB×BÿFFBÃBïF3B÷BÃF<ƒBãBïBïF;FFFBÃFBãF<°ƒBÀƒB÷BÔƒBëBÃBÓF ƒBãBÜƒBÿFBãBïBûBÛB×B÷BãF<œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ŸBBûFBóBûFFB×FF0ƒBãFFBûBÓB÷BãBëBàƒBàƒBÓBûBëFBóB×B÷FBÃFBãF8œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µµ•‘¥„µÁ•¹‘¥¹œœ¤¤ì(€™½È€¡½¹ÍÐÉ•Á¼½˜l]½É­A¥±½Ðœ°€¡½ÍÑM¥¹…°œ°€1…ÍÐµI¥ÑÕ…°t¤ì(€€€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì¡É•Á½Í¥Ñ½Éäè€œ‘íÉ•Á½ô€¤¤ì(€ô)ô¤ì()Ñ•ÍÐ ÁÉ½©•ÐÍÑ½É¥•ÌÕÁ‘…Ñ”‰É½ÝÍ•ÈÑ¥Ñ±”…¹½™™•È„Í…™”Í¡…É•…‰±”‘••À±¥¹¬œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ½¹ÍÐÁ½ÉÑ™½±¥½Q¥Ñ±”€ô‘½Õµ•¹Ð¹Ñ¥Ñ±”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‘½Õµ•¹Ð¹Ñ¥Ñ±”€ôÁ½ÉÑ™½±¥½Q¥Ñ±”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‘½Õµ•¹Ð¹Ñ¥Ñ±”€ô€‘íÁÉ½©•Ð¹Ñ¥Ñ±•ôð•ÙMÁ…•€œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ¹…Ù¥…Ñ½È¹±¥Á‰½…É¹ÝÉ¥Ñ•Q•áÐ¡Ý¥¹‘½Ü¹±½…Ñ¥½¸¹¡É•˜¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰Í¡…É•MÑ…ÑÕÌ¹Í•ÑÑÑÉ¥‰ÕÑ” É½±”œ°€ÍÑ…ÑÕÌœ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ŸBwBÔƒFBÓBÃBïBûFF0ƒFBëBûBÿBãFBûBËBÃFF0œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µÍ¡…É”é™½ÕÌµÙ¥Í¥‰±”œ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÉ½©•ÐÍ•Ñ¥½¸¹…Ù¥…Ñ¥½¸ÑÉ…­ÌÍÉ½±°Á½Í¥Ñ¥½¸…¹™½±±½ÝÌÙ¥ÍÕ…°½É‘•Èœ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰Í¡•±°¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ÍÉ½±°œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì É•ÅÕ•ÍÑ¹¥µ…Ñ¥½¹É…µ” œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰‰ÕÑÑ½¸¹Í•ÑÑÑÉ¥‰ÕÑ” …É¥„µÕÉÉ•¹Ðœ°€±½…Ñ¥½¸œ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰‰ÕÑÑ½¸¹É•µ½Ù•ÑÑÉ¥‰ÕÑ” …É¥„µÕÉÉ•¹Ðœ¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ½¹Ñ•¹Ð¹…ÁÁ•¹¡¡•…‘•È°Í•Ñ¥½¹9…Ø°µ…¥¸°Í•Ñ¥½¸°±½½À°©½ÕÉ¹•ä°É•±…Ñ•¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µÍ•Ñ¥½¸µ±¥¹¬¹¥Ìµ…Ñ¥Ù”œ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÉ½©•ÐÍÑ½É¥•Ì•áÁ½Í”­•å‰½…Éµ™É¥•¹‘±ä±½…°Í•Ñ¥½¸¹…Ù¥…Ñ¥½¸Ý¥Ñ É…•™Õ°¥µ…”™…¥±ÕÉ”œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰Í•Ñ¥½¹9…Ø¹Í•ÑÑÑÉ¥‰ÕÑ” …É¥„µ±…‰•°œ°€ŸBƒBÃBßBÓB×BïF,ƒBÿFBûB×BëFBÀœ¤ˆ¤¤ì(€™½È€¡½¹ÍÐ±…‰•°½˜lŸBxƒBÿFBûB×BëFBÔœ°€ŸBsBÃFB×FBãBÃBïF,œ°€ŸBkBÃBèƒFBÃBÇBûFBÃB×Fœ°€ŸBFFF0ƒBÿFBûB×BëFBÀœ°€ŸBSFFBÏBãBÔƒFBÃBÇBûFF,t¤…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì¡±…‰•°¤¤ì(€™½È€¡½¹ÍÐ¥½˜lÍ¡½Ý…Í”µ½Ù•ÉÙ¥•Üœ°€Í¡½Ý…Í”µµ•‘¥„œ°€Í¡½Ý…Í”µÁÉ½•ÍÌœ°€Í¡½Ý…Í”µÁÉ½É•ÍÌœ°€Í¡½Ý…Í”µµ½É”t¤…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì¡¥¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰‰ÕÑÑ½¸¹ÑåÁ”€ô€‰ÕÑÑ½¸œˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰¥µœ¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È •ÉÉ½Èœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ±¥¹¬¹É•Á±…•]¥Ñ ¡Õ¹…Ù…¥±…‰±”¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µÍ•Ñ¥½¸µ±¥¹¬é™½ÕÌµÙ¥Í¥‰±”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Í¡½Ý…Í”µ…±±•ÉäµÕ¹…Ù…¥±…‰±”œ¤¤ì)ô¤ì()Ñ•ÍÐ ¹•ÍÑ•ÁÉ½©•Ð…¹¥µ…”‘¥…±½Ì¥Í½±…Ñ”‰…­É½Õ¹½¹Ñ•¹Ð…¹É•ÍÑ½É”ÁÉ¥½È¥¹•ÉÐÍÑ…Ñ”œ°€ ¤€ôøì(€½¹ÍÐÍÑ½É¥•Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…±±•Éä€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€™½È€¡½¹ÍÐÍ½ÕÉ”½˜mÍÑ½É¥•Ì°…±±•Éåt¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰…­É½Õ¹‘%¹•ÉÐœ¤¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì •±•µ•¹Ð¹¥¹•ÉÐ€ôÑÉÕ”œ¤¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì •±•µ•¹Ð¹¥¹•ÉÐ€ô¥¹•ÉÐœ¤¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì É•ÍÑ½É•	…­É½Õ¹ ¤œ¤¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡ÍÑ½É¥•Ì¹¥¹±Õ‘•Ì ¥Í½±…Ñ•M¡½Ý…Í” ¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…±±•Éä¹¥¹±Õ‘•Ì ¥Í½±…Ñ•Y¥•Ý•È ¤œ¤¤ì)ô¤ì(()Ñ•ÍÐ µ½‰¥±”¹…Ù‰…È½¹ÑÉ½±Ì™¥±°Ñ¡”…Ù…¥±…‰±”Ý¥‘Ñ Ý¥Ñ¡½ÕÐ…™™•Ñ¥¹œÕ¹É•±…Ñ•™±•à±…å½ÕÑÌœ°€ ¤€ôøì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½½µÁ½¹•¹ÑÌ½¹…Ù‰…È¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¹…Ù‰…Èµ½±±…ÁÍ”€ø€¹µ™±•à¹…±¥¸µ¥Ñ•µÌµ•¹Ñ•Èœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¹…Ù‰…Èµ½±±…ÁÍ”€¹Í•…É µ‰½àœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¹…Ù‰…Èµ½±±…ÁÍ”€¹Í•…É µ¥¹ÁÕÐé™½ÕÌœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì ™±•àè€À€À€ÐÁÁàœ¤¤ì(€…ÍÍ•ÉÐ¹‘½•Í9½Ñ5…Ñ ¡ÍÌ°€½p¹µ™±•áp¹…±¥¸µ¥Ñ•µÌµ•¹Ñ•ÉqÌ©qíqÌ©™±•àµÝÉ…ÀéqÌ©ÝÉ…À¼¤ì)ô¤ì()Ñ•ÍÐ ÁÉ½©•Ð…É…Ñ¥½¹ÌÉ•µ…¥¸Ù¥Í¥‰±”½¸Ñ½Õ ‘•Ù¥•Ì…¹­•å‰½…É™½ÕÌœ°€ ¤€ôøì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½½µÁ½¹•¹ÑÌ½…É‘Ì¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹ÁÉ½©•Ðµ…Éé™½ÕÌµÝ¥Ñ¡¥¸€¹ÁÉ½©•Ðµ…Ñ¥½¹Ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ•‘¥„€¡¡½Ù•Èè¹½¹”¤°€¡Á½¥¹Ñ•Èè½…ÉÍ”¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì É¥µÑ•µÁ±…Ñ”µ½±Õµ¹ÌèÉ•Á•…Ð¡…ÕÑ¼µ™¥±°°µ¥¹µ…à¡µ¥¸ ÄÀÀ”°€ÌàÁÁà¤°€Å™È¤¤œ¤¤ì)ô¤ì(()Ñ•ÍÐ ÁÉ½©•Ð‘•Ñ…¥°‘¥…±½œÑÉ…ÁÌQ…ˆ…É½ÍÌ•Ù•Éä½¹ÑÉ½°°¹½Ð½¹±ä±¥¹­Ìœ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ‰ÕÑÑ½¸é¹½Ð¡m‘¥Í…‰±•‘t¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ™½ÕÍ%Í=ÕÑÍ¥‘”€ô€…Í¡•±°¹½¹Ñ…¥¹Ì¡‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ™½ÕÍ…‰±•m™½ÕÍ…‰±”¹±•¹Ñ €´€Åtœ¤¤ì)ô¤ì()Ñ•ÍÐ ÍÉ••¹Í¡½ÐÙ¥•Ý•È­••ÁÌ­•å‰½…É™½ÕÌ¥¹Í¥‘”Ý¡•¸™½ÕÌÍÑ…ÉÑÌ½ÕÑÍ¥‘”œ°€ ¤€ôøì(€½¹ÍÐÍ½ÕÉ”€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ™½ÕÍ%Í=ÕÑÍ¥‘”€ô€…Ù¥•Ý•È¹½¹Ñ…¥¹Ì¡‘½Õµ•¹Ð¹…Ñ¥Ù•±•µ•¹Ð¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Í½ÕÉ”¹¥¹±Õ‘•Ì ±½Í•	ÕÑÑ½¸¹™½ÕÌ ¤œ¤¤ì)ô¤ì()Ñ•ÍÐ œÌ¸ØÈ¸Ô…¡”°!Q50™…±±‰…¬…¹Ù¥Í¥‰±”…ÁÁ±¥…Ñ¥½¸Ù•ÉÍ¥½¸…É”…±¥¹•œ°€ ¤€ôøì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰Ù•ÉÍ¥½¸è€œÌ¸ØÈ¸Ôœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ‰½¹ÍÐ!}YIM%=8€ô€‘•ÙÍÁ…”µØÌ¸ØÈ¸Ôœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰…ÁÁY•ÉÍ¥½¸ˆùØÌ¸ØÈ¸Ôð½ÍÁ…¸øœ¤¤ì)ô¤ì()Ñ•ÍÐ •Ù•Éä±½…°ÍÉ¥ÁÐ…¹ÍÑå±•Í¡••Ð¥ÌÙ•ÉÍ¥½¹•…¹¥¹±Õ‘•¥¸½™™±¥¹”ÁÉ•…¡”œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÝ½É­•È€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÜ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÉ•Í½ÕÉ•Ì€ôl¸¸¹¡Ñµ°¹µ…Ñ¡±° ¼ üé¡É•™ñÍÉŒ¤ôˆ  üéÍÍñ©Ì¥p½mxˆýt¬¤¡pýØõmx‰t¬¤üˆ½œ¥tì(€…ÍÍ•ÉÐ¹½¬¡É•Í½ÕÉ•Ì¹±•¹Ñ €ø€ÐÀ¤ì(€™½È€¡½¹ÍÐl°™¥±”°Ù•ÉÍ¥½¹t½˜É•Í½ÕÉ•Ì¤ì(€€€…ÍÍ•ÉÐ¹•ÅÕ…°¡Ù•ÉÍ¥½¸°€œýØôÌ¸ØÈ¸Ôœ°€‘í™¥±•ô¥Ì¹½ÐÙ•ÉÍ¥½¹•‘€¤ì(€€€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì¡€œ‘í™¥±•ô€¤°€‘í™¥±•ô¥Ì¹½ÐÁÉ•…¡•‘€¤ì(€ô(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ‰½¹ÍÐMMQ}YIM%=8€ô€œÌ¸ØÈ¸Ôœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡Ý½É­•È¹¥¹±Õ‘•Ì ‰t¹µ…À¡ÕÉ°€ôø€½x¡ÍÍñ©Ì¥qp¼¼¹Ñ•ÍÐ¡ÕÉ°¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰¹…Ù¥…Ñ½È¹Í•ÉÙ¥•]½É­•È¹É•¥ÍÑ•È ÍÜ¹©ÌýØôœˆ¤¤ì)ô¤ì()Ñ•ÍÐ ÁÕ‰±¥Œ¡•…‘•È…¹¡•É¼É•µ…¥¸±•¥‰±”Ý¥Ñ „±¥¡ÐÑÉ…­•ÈÑ¡•µ”œ°€ ¤€ôøì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œµ…¥¹9…Ù‰…È€¹¹…Øµ±¥¹¬ì½±½ÈèÕÁ‘Œ…¥µÁ½ÉÑ…¹Ðìôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÍ•Ñ¥½¸€¹¡•É¼µÑ¥Ñ±”ì½±½Èè˜Í••˜Äìôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÍ•Ñ¥½¸€¹‰Ñ¸µ±…ÍÌì½±½Èè•”Ù˜Äìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œµ…¥¹9…Ù‰…È€¹¹…Ù‰…Èµ½±±…ÁÍ”¹Í¡½Üœ¤¤ì)ô¤ì()Ñ•ÍÐ ™•…ÑÕÉ•Á½ÉÑ™½±¥¼…É‘Ì•áÁ½Í”„½¹Í¥ÍÑ•¹ÐÙ¥Í¥‰±”…Ñ¥½¸…¹™±•á¥‰±”½¹Ñ•¹Ðœ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…° ¡¡Ñµ°¹µ…Ñ  ½±…ÍÌô‰™•…ÑÕÉ”µ½Á•¸ˆ…É¥„µ¡¥‘‘•¸ô‰ÑÉÕ”ˆ½œ¤ñðmt¤¹±•¹Ñ °€Ð¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…É€¹™•…ÑÕÉ”µ½Áäì‘¥ÍÁ±…äé™±•àí™±•àèÄí™±•àµ‘¥É•Ñ¥½¸é½±Õµ¸ìôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…É€¹™•…ÑÕÉ”µÑ…Ììµ…É¥¸µÑ½Àé…ÕÑ¼ìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹™•…ÑÕÉ”µ…Éé™½ÕÌµÙ¥Í¥‰±”€¹™•…ÑÕÉ”µ½Á•¸¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ•‘¥„€¡µ…àµÝ¥‘Ñ è€ØÜÁÁà¤œ¤¤ì)ô¤ì()Ñ•ÍÐ …±±•Éä™…¥±ÕÉ”ÁÉ½Ù¥‘•Ì„Ù¥Í¥‰±”…•ÍÍ¥‰±”™…±±‰…¬…¹µ½‰¥±”¥µ…”­••ÁÌ¥ÑÌÝ¥‘Ñ œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ©Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ¥ô‰Á½ÉÑ™½±¥½…±±•ÉåÉÉ½Èˆœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡¡Ñµ°¹¥¹±Õ‘•Ì ±…ÍÌô‰Á½ÉÑ™½±¥¼µ…±±•ÉäµÕ¹…Ù…¥±…‰±”ˆÉ½±”ô‰ÍÑ…ÑÕÌˆ¡¥‘‘•¸œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì Á•¹‘¥¹%µ…”¹½¹•ÉÉ½È€ô€ ¤€ôøœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ¥µ…•ÉÉ½È¹¡¥‘‘•¸€ô™…±Í”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ¥µ…•ÉÉ½È¹¡¥‘‘•¸€ôÑÉÕ”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Á½ÉÑ™½±¥¼µ…±±•ÉäµÕ¹…Ù…¥±…‰±•m¡¥‘‘•¹tœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Á½ÉÑ™½±¥¼µ…±±•ÉäµÍÑ…”ìÁ½Í¥Ñ¥½¸éÉ•±…Ñ¥Ù”í‘¥ÍÁ±…äé™±•àìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œÁ½ÉÑ™½±¥½…±±•ÉåAÉ•Øì±•™Ðé…±Œ ÔÀ”€´€ÔÕÁà¤ìôœ¤¤ì)ô¤ì()Ñ•ÍÐ …±±•Éä¥¹½É•Ì±…Ñ”±½…‘Ì…¹™…¥±ÕÉ•Ì…™Ñ•ÈÉ…Á¥¹…Ù¥…Ñ¥½¸½È±½Í”œ°€ ¤€ôøì(€½¹ÍÐ¡…¹‘±•ÉÌ€ô¹•Ü5…À ¤ì(€½¹ÍÐ¥µ…•Ì€ômtì(€½¹ÍÐ•±•µ•¹ÑÌ€ô=‰©•Ð¹™É½µ¹ÑÉ¥•Ì¡l(€€€€Á½ÉÑ™½±¥½…±±•ÉåY¥•Ý•Èœ°€Á½ÉÑ™½±¥½…±±•Éå%µ…”œ°€Á½ÉÑ™½±¥½…±±•Éå1½…‘¥¹œœ°(€€€€Á½ÉÑ™½±¥½…±±•ÉåÉÉ½Èœ°€Á½ÉÑ™½±¥½…±±•ÉåI•ÑÉäœ°€Á½ÉÑ™½±¥½…±±•Éå…ÁÑ¥½¸œ°€Á½ÉÑ™½±¥½…±±•Éå½Õ¹Ðœ°(€€€€Á½ÉÑ™½±¥½…±±•Éå=É¥¥¹…°œ°€Á½ÉÑ™½±¥½…±±•Éå±½Í”œ°€Á½ÉÑ™½±¥½…±±•ÉåAÉ•Øœ°(€€€€Á½ÉÑ™½±¥½…±±•Éå9•áÐœ(€t¹µ…À¡¥€ôøm¥°ì(€€€¡¥‘‘•¸è¥€ôôô€Á½ÉÑ™½±¥½…±±•ÉåY¥•Ý•Èœ°(€€€…‘‘Ù•¹Ñ1¥ÍÑ•¹•È¡ÑåÁ”°™¸¤ì¡…¹‘±•ÉÌ¹Í•Ð¡€‘í¥‘ôè‘íÑåÁ•õ€°™¸¤ìô°(€€€É•µ½Ù•ÑÑÉ¥‰ÕÑ”¡­•ä¤ì‘•±•Ñ”Ñ¡¥Ím­•åtìô°(€€€™½ÕÌ ¤íô°(€€€½¹Ñ…¥¹Ì ¤ìÉ•ÑÕÉ¸™…±Í”ìô(€õt¤¤ì(€½¹ÍÐ…¹¡½È€ô€¡ÍÉŒ¤€ôø€¡ì¡É•˜èÍÉŒ°ÅÕ•ÉåM•±•Ñ½È¡Í•±•Ñ½È¤ì(€€€É•ÑÕÉ¸Í•±•Ñ½È€ôôô€¥µœœ€üì…±ÐèÍÉŒô€èìÑ•áÑ½¹Ñ•¹ÐèÍÉŒôì(€ôô¤ì(€½¹ÍÐ±¥¹­Ì€ôm…¹¡½È œ½™¥ÉÍÐ¹Á¹œœ¤°…¹¡½È œ½Í•½¹¹Á¹œœ¥tì(€½¹ÍÐ…±±•Éä€ôìÅÕ•ÉåM•±•Ñ½É±° ¤ìÉ•ÑÕÉ¸±¥¹­Ììôôì(€±¥¹­Ì¹™½É… ¡±¥¹¬€ôøì(€€€±¥¹¬¹±½Í•ÍÐ€ôÍ•±•Ñ½È€ôøÍ•±•Ñ½È¹¥¹±Õ‘•Ì …±±•Éäµ¥Ñ•´œ¤€ü±¥¹¬€è…±±•Éäì(€ô¤ì(€½¹ÍÐ‘½Õµ•¹Ð€ôì(€€€‰½‘äèì¡¥±‘É•¸èm•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåY¥•Ý•Ét°±…ÍÍ1¥ÍÐèì…‘ ¤íô°É•µ½Ù” ¤íôôô°(€€€•Ñ±•µ•¹Ñ	å%¡¥¤ìÉ•ÑÕÉ¸•±•µ•¹ÑÍm¥‘tìô°(€€€…‘‘Ù•¹Ñ1¥ÍÑ•¹•È¡ÑåÁ”°™¸¤ì¡…¹‘±•ÉÌ¹Í•Ð¡‘½Õµ•¹Ðè‘íÑåÁ•õ€°™¸¤ìô(€ôì(€±…ÍÌA•¹‘¥¹%µ…”ì½¹ÍÑÉÕÑ½È ¤ì¥µ…•Ì¹ÁÕÍ ¡Ñ¡¥Ì¤ìôô(€•á•ÕÑ” ©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ°ì‘½Õµ•¹Ð°%µ…”èA•¹‘¥¹%µ…”ô¤ì((€¡…¹‘±•ÉÌ¹•Ð ‘½Õµ•¹Ðé±¥¬œ¤¡ì(€€€‘•™…Õ±ÑAÉ•Ù•¹Ñ•è™…±Í”°‰ÕÑÑ½¸è€À°Ñ…É•Ðèì±½Í•ÍÐ ¤ìÉ•ÑÕÉ¸±¥¹­ÍlÁtìôô°(€€€ÁÉ•Ù•¹Ñ•™…Õ±Ð ¤íô(€ô¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥µ…•Ì¹±•¹Ñ °€Ä¤ì(€¡…¹‘±•ÉÌ¹•Ð Á½ÉÑ™½±¥½…±±•Éå9•áÐé±¥¬œ¤ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥µ…•Ì¹±•¹Ñ °€È¤ì(€¥µ…•ÍlÁt¹½¹•ÉÉ½È ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåÉÉ½È¹¡¥‘‘•¸°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•Éå1½…‘¥¹œ¹¡¥‘‘•¸°™…±Í”¤ì(€¥µ…•ÍlÅt¹½¹±½… ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•Éå%µ…”¹ÍÉŒ°€œ½Í•½¹¹Á¹œœ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•Éå1½…‘¥¹œ¹¡¥‘‘•¸°ÑÉÕ”¤ì(€¥µ…•ÍlÁt¹½¹±½… ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•Éå%µ…”¹ÍÉŒ°€œ½Í•½¹¹Á¹œœ¤ì(€¡…¹‘±•ÉÌ¹•Ð Á½ÉÑ™½±¥½…±±•ÉåAÉ•Øé±¥¬œ¤ ¤ì(€¥µ…•ÍlÉt¹½¹•ÉÉ½È ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåÉÉ½È¹¡¥‘‘•¸°™…±Í”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåI•ÑÉä¹¡¥‘‘•¸°™…±Í”¤ì(€¡…¹‘±•ÉÌ¹•Ð Á½ÉÑ™½±¥½…±±•ÉåI•ÑÉäé±¥¬œ¤ ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡¥µ…•Ì¹±•¹Ñ °€Ð¤ì(€¥µ…•ÍlÍt¹½¹±½… ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåÉÉ½È¹¡¥‘‘•¸°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåI•ÑÉä¹¡¥‘‘•¸°ÑÉÕ”¤ì(€¡…¹‘±•ÉÌ¹•Ð Á½ÉÑ™½±¥½…±±•Éå±½Í”é±¥¬œ¤ ¤ì(€¥µ…•ÍlÍt¹½¹•ÉÉ½È ¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåÉÉ½È¹¡¥‘‘•¸°ÑÉÕ”¤ì(€…ÍÍ•ÉÐ¹•ÅÕ…°¡•±•µ•¹ÑÌ¹Á½ÉÑ™½±¥½…±±•ÉåY¥•Ý•È¹¡¥‘‘•¸°ÑÉÕ”¤ì)ô¤ì()Ñ•ÍÐ …±±•Éä½™™•ÉÌ…¸…•ÍÍ¥‰±”É•ÑÉä…™Ñ•È„™…¥±•¥µ…”‘½Ý¹±½…œ°€ ¤€ôøì(€½¹ÍÐ¡Ñµ°€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€¥¹‘•à¹¡Ñµ°œ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐ©Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹µ…Ñ ¡¡Ñµ°°€½¥ô‰Á½ÉÑ™½±¥½…±±•ÉåI•ÑÉä‰mxùt­¡¥‘‘•¸ûBBûBËFBûFBãFF0ƒBßBÃBÏFFBßBëF¼¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ‰É•ÑÉå	ÕÑÑ½¸¹…‘‘Ù•¹Ñ1¥ÍÑ•¹•È ±¥¬œ°‘¥ÍÁ±…ä¤ˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì É•ÑÉå	ÕÑÑ½¸¹¡¥‘‘•¸€ô™…±Í”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì É•ÑÉå	ÕÑÑ½¸¹¡¥‘‘•¸€ôÑÉÕ”œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ÁÉ•Ø°¹•áÐ°É•ÑÉå	ÕÑÑ½¸°½É¥¥¹…°œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹Á½ÉÑ™½±¥¼µ…±±•ÉäµÉ•ÑÉåm¡¥‘‘•¹tœ¤¤ì)ô¤ì()Ñ•ÍÐ …‘©…•¹ÐÁÉ•±½…‘¥¹œÉ•ÍÁ•ÑÌµ•Ñ•É•½¹¹•Ñ¥½¹Ì…¹ÍÑ…åÌ‰½Õ¹‘•œ°€ ¤€ôøì(€½¹ÍÐ©Ì€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½Á½ÉÑ™½±¥¼µ…±±•Éä¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ‰½¹¹•Ñ¥½¸¹•™™•Ñ¥Ù•QåÁ”€„ôô€œÑœœˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ½¹¹•Ñ¥½¸¹Í…Ù•…Ñ„œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ‰Ý¥¹‘½Ü¹µ…Ñ¡5•‘¥„ œ¡µ¥¸µÝ¥‘Ñ è€äÀÁÁà¤œ¤¹µ…Ñ¡•Ìˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì É•ÅÕ•ÍÐ€„ôô¥µ…•I•ÅÕ•ÍÐœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì ÁÉ•™•Ñ¡•‘%µ…”€ô¹Õ±°œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡©Ì¹¥¹±Õ‘•Ì Á•¹‘¥¹%µ…”¹½µÁ±•Ñ”€˜˜Á•¹‘¥¹%µ…”¹¹…ÑÕÉ…±]¥‘Ñ €ø€Àœ¤¤ì)ô¤ì()Ñ•ÍÐ É•‘Õ•µ½Ñ¥½¸…¹½µÁ…Ð‘¥ÍÁ±…åÌÍ­¥À½ÍÑ±ä‰…­É½Õ¹…¹¥µ…Ñ¥½¸œ°€ ¤€ôøì(€½¹ÍÐ…ÁÀ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€©Ì½…ÁÀ¹©Ìœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰Ý¥¹‘½Ü¹µ…Ñ¡5•‘¥„ œ¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸èÉ•‘Õ”¤œ¤¹µ…Ñ¡•Ìˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‰Ý¥¹‘½Ü¹µ…Ñ¡5•‘¥„ œ¡µ…àµÝ¥‘Ñ è€ØÜÁÁà¤œ¤¹µ…Ñ¡•Ìˆ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì ‘¥Í…‰±”è€„…ÁÉ•™•ÉÍI•‘Õ•‘5½Ñ¥½¸œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡…ÁÀ¹¥¹±Õ‘•Ì œ…ÁÉ•™•ÉÍI•‘Õ•‘5½Ñ¥½¸€˜˜€…½µÁ…ÑY¥•ÝÁ½ÉÐœ¤¤ì)ô¤ì()Ñ•ÍÐ µ½‰¥±”™¥ÉÍÐÍÉ••¸™¥ÑÌ½¹Ñ•¹Ð…¹É•‘Õ•µ½Ñ¥½¸±•…Ù•Ì¡•É¼Ñ•áÐÙ¥Í¥‰±”œ°€ ¤€ôøì(€½¹ÍÐÍÌ€ô™Ì¹É•…‘¥±•Må¹Œ¡Á…Ñ ¹©½¥¸¡É½½Ð°€ÍÌ½Á½ÉÑ™½±¥¼¹ÍÌœ¤°€ÕÑ˜àœ¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ•‘¥„€¡µ…àµÝ¥‘Ñ è€ØÜÁÁà¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÍ•Ñ¥½¸€¹µ¥¸µÙ ´ÄÀÀìµ¥¸µ¡•¥¡Ðè€À€…¥µÁ½ÉÑ…¹Ðìœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÍ•Ñ¥½¸€¹½°µ±œ´Ø¹Ñ•áÐµ•¹Ñ•Èì‘¥ÍÁ±…äè¹½¹”ìôœ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÍ•Ñ¥½¸€¹¡•É¼µ…Ñ¥½¹Ì€ø„œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì µ•‘¥„€¡ÁÉ•™•ÉÌµÉ•‘Õ•µµ½Ñ¥½¸èÉ•‘Õ”¤œ¤¤ì(€…ÍÍ•ÉÐ¹½¬¡ÍÌ¹¥¹±Õ‘•Ì œ¹¡•É¼µÑ¥Ñ±”°€¹¡•É¼µ‘•ÍÉ¥ÁÑ¥½¸°€¹¡•É¼µ…Ñ¥½¹Ì°€¹¡•É¼µÍÑ…ÑÌ°€¹¡•É¼µ‰…‘”ì…¹¥µ…Ñ¥½¸è¹½¹”ì½Á…¥Ñäè€Äìôœ¤¤ì)ô¤ì(
