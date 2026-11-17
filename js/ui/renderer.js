@@ -12,6 +12,7 @@ var RendererModule = {
     _pinnedIds: [],
     _scheduleMonth: null,
     _scheduleSelected: null,
+    _todaySelectedDay: null,
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
@@ -119,14 +120,23 @@ var RendererModule = {
             document.getElementById('quickTaskText').focus();
         });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            var day = event.target.closest('[data-weekly-day]');
+            if (day) {
+                self._todaySelectedDay = day.dataset.weeklyDay;
+                self._todayView = 'all';
+                self._renderToday();
+                return;
+            }
+            if (event.target.closest('#weeklyLoadClear')) {
+                self._todaySelectedDay = null;
+                self._todayView = 'today';
+                self._renderToday();
+                return;
+            }
             var tab = event.target.closest('[data-today-view]');
             if (tab) {
+                self._todaySelectedDay = null;
                 self._todayView = tab.dataset.todayView;
-                todayPanel.querySelectorAll('[data-today-view]').forEach(function(button) {
-                    var active = button === tab;
-                    button.classList.toggle('is-active', active);
-                    button.setAttribute('aria-pressed', String(active));
-                });
                 self._renderToday();
                 return;
             }
@@ -445,23 +455,67 @@ var RendererModule = {
         });
     },
 
+    _collectWeeklyLoad: function(projects, now) {
+        var all = this._collectTodayTasks((projects || []).filter(function(project) {
+            return project && project.status !== 'completed' && project.status !== 'archived';
+        }), now, 'all', 'all');
+        var days = [];
+        var names = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        for (var i = 0; i < 7; i++) {
+            var date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+            var key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+            days.push({ key: key, label: names[date.getDay()], date: date.getDate(), count: all.filter(function(task) { return task.deadline === key; }).length });
+        }
+        return days;
+    },
+
+    _renderWeeklyLoad: function(projects, now) {
+        var container = document.getElementById('weeklyLoadDays');
+        if (!container) return;
+        var days = this._collectWeeklyLoad(projects, now);
+        var max = Math.max(1, ...days.map(function(day) { return day.count; }));
+        var total = days.reduce(function(sum, day) { return sum + day.count; }, 0);
+        var summary = document.getElementById('weeklyLoadSummary');
+        if (summary) summary.textContent = total ? total + ' задач со сроком · красным отмечены дни с 4+ задачами' : 'На ближайшие 7 дней задачи пока не назначены';
+        var clear = document.getElementById('weeklyLoadClear');
+        if (clear) clear.hidden = !this._todaySelectedDay;
+        var selected = this._todaySelectedDay;
+        container.innerHTML = days.map(function(day, index) {
+            var active = selected === day.key;
+            var height = Math.round(100 * day.count / max);
+            var label = day.label + ', ' + day.date + ' · задач: ' + day.count;
+            return '<button type="button" class="weekly-load-day' + (index === 0 ? ' is-today' : '') + (day.count >= 4 ? ' is-busy' : '') + (active ? ' is-selected' : '') + '" data-weekly-day="' + day.key + '" aria-label="' + label + '" aria-pressed="' + active + '" title="' + label + '"><span class="weekly-load-label">' + day.label + '</span><span class="weekly-load-bar-track"><span class="weekly-load-bar" style="height:' + height + '%"></span></span><strong>' + day.count + '</strong><small>' + day.date + '</small></button>';
+        }).join('');
+    },
+
     _renderToday: function() {
         var list = document.getElementById('todayList');
         if (!list) return;
         var priority = document.getElementById('todayPriority');
         var scope = document.getElementById('todayScope');
-        var tasks = this._collectTodayTasks(StateManager.get('projects') || [], new Date(), priority ? priority.value : 'all', scope ? scope.value : 'all');
+        var projects = StateManager.get('projects') || [];
+        var now = new Date();
+        this._renderWeeklyLoad(projects, now);
+        var activeProjects = projects.filter(function(project) { return project && project.status !== 'completed' && project.status !== 'archived'; });
+        var tasks = this._collectTodayTasks(this._todaySelectedDay ? activeProjects : projects, now, priority ? priority.value : 'all', scope ? scope.value : 'all');
         var view = this._todayView || 'today';
         var todayKey = new Date();
         var dateKey = todayKey.getFullYear() + '-' + String(todayKey.getMonth() + 1).padStart(2, '0') + '-' + String(todayKey.getDate()).padStart(2, '0');
+        var selectedDay = this._todaySelectedDay;
         tasks = tasks.filter(function(task) {
+            if (selectedDay) return task.deadline === selectedDay;
             if (view === 'all') return true;
             if (view === 'overdue') return !!task.deadline && task.deadline < dateKey;
             if (view === 'upcoming') return !!task.deadline && task.deadline > dateKey;
             return task.deadline === dateKey || (!task.deadline && task.priority === 'high');
         });
+        document.querySelectorAll('#todayPanel [data-today-view]').forEach(function(button) {
+            var active = !selectedDay && button.dataset.todayView === view;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', String(active));
+        });
         var summary = document.getElementById('todaySummary');
-        if (summary) summary.textContent = tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет';
+        if (summary) summary.textContent = (selectedDay ? 'На ' + selectedDay.slice(8, 10) + '.' + selectedDay.slice(5, 7) + ' · ' : '') + (tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет');
         var today = new Date();
         var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
         var canEdit = typeof AuthService !== 'undefined' && AuthService.isOwner();
