@@ -97,3 +97,29 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 @media(max-width:1250px) and (min-width:992px) { #mainNavbar .navbar-brand .brand-text { display:none; } #mainNavbar .nav-link { padding:8px 7px!important; font-size:.75rem; } #mainNavbar .search-input { width:135px; } #mainNavbar .search-input:focus { width:160px; } }
 @media(max-width:991px) { #mainNavbar .navbar-nav { align-items:stretch; } #mainNavbar .navbar-brand .brand-text { display:inline; } #mainNavbar .search-input,#mainNavbar .search-input:focus { width:100%; } .workspace-switcher { top:69px; } }
 @media(max-width:767px) { #mainNavbar { min-height:63px; } .workspace-switcher { top:63px; border-radius:12px; } }
+
+/* Account menu: one intentional entry point instead of scattered cloud controls. */
+.profile-trigger { display:inline-flex; align-items:center; gap:9px; min-height:40px; padding:4px 11px 4px 5px; border:1px solid rgba(160,146,226,.3); border-radius:13px; background:rgba(116,102,217,.11); color:#eee9ff; font-size:.81rem; font-weight:700; cursor:pointer; white-space:nowrap; }
+.profile-trigger::after { margin-left:2px; opacity:.6; }
+.profile-trigger:hover,.profile-trigger:focus-visible,.profile-trigger.show { border-color:#9281ff; background:rgba(116,102,217,.24); }
+.profile-avatar { display:grid; place-items:center; width:30px; height:30px; border-radius:10px; background:linear-gradient(130deg,#625bed,#8a6add); font-size:1rem; }
+.profile-trigger.is-connected .profile-avatar { background:linear-gradient(130deg,#178a76,#35b29a); }
+.profile-menu { width:min(340px,calc(100vw - 28px)); padding:14px; margin-top:11px!important; border:1px solid rgba(170,154,247,.25)!important; border-radius:19px!important; color:#f6f3ff; background:#1b1a2b!important; box-shadow:0 22px 70px rgba(0,0,0,.42); }
+.profile-menu-heading { display:flex; align-items:center; gap:11px; }
+.profile-menu-avatar { display:grid; place-items:center; width:45px; height:45px; flex-shrink:0; border-radius:13px; background:rgba(121,102,245,.19); color:#c5baff; font-size:1.3rem; }
+.profile-menu-heading strong { display:block; font-size:.98rem; }
+.profile-menu-heading #cloudProfileStatus { display:block; margin-top:3px; font-size:.76rem; color:#a7a4b8; }
+.profile-menu-description { padding:11px 0 5px; margin:0; font-size:.77rem; line-height:1.55; color:#bdb9d0; overflow-wrap:anywhere; }
+#cloudIdentityBtn.profile-signin { display:flex; align-items:center; justify-content:center; width:100%; min-height:42px; margin:11px 0 2px; gap:9px; border-radius:12px!important; background:linear-gradient(115deg,#655af0,#7866eb)!important; border-color:rgba(168,155,255,.5)!important; color:#fff!important; }
+#cloudIdentityBtn.profile-signin:hover { background:linear-gradient(115deg,#7368f9,#8874f4)!important; }
+#cloudIdentityBtn.profile-signin:disabled { opacity:.55; }
+.profile-menu-divider { height:1px; margin:13px 0 7px; background:rgba(161,150,213,.18); }
+.profile-menu-link { display:flex; align-items:center; gap:11px; min-height:41px; padding:8px 9px; border-radius:10px; color:#e2ddf4; font-size:.8rem; text-decoration:none; }
+.profile-menu-link > span { flex:1; }
+.profile-menu-link:hover,.profile-menu-link:focus-visible { background:rgba(121,104,223,.17); color:#fff; }
+.profile-menu-link > i:first-child { color:#a99aff; }
+.profile-menu-link > i:last-child { color:#7e7895; }
+.profile-menu-footnote { display:flex; gap:8px; align-items:flex-start; margin:12px 5px 1px; color:#9f9bb3; font-size:.7rem; line-height:1.45; }
+.profile-menu-footnote i { color:#6ec1ab; }
+@media(max-width:1250px) and (min-width:992px) { .profile-trigger-label { display:none; } .profile-trigger { padding-right:7px; } }
+@media(max-width:991px) { .profile-dropdown { position:static; } .profile-menu { width:100%; } }

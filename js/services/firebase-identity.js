@@ -387,6 +387,14 @@ var FirebaseIdentityModule = {
             : '<i class="bi bi-cloud" aria-hidden="true"></i> <span>Войти</span>';
         button.title = user ? 'Аккаунт: ' + (user.email || 'Google') + '. Автоматическая облачная запись отключена.' : 'Войти через Google. Облачная запись пока отключена.';
         button.setAttribute('aria-label', button.title);
+        var profileStatus = document.getElementById('cloudProfileStatus');
+        if (profileStatus) profileStatus.textContent = user ? 'Google подключён' : 'Аккаунт не подключён';
+        var profileEmail = document.getElementById('cloudProfileEmail');
+        if (profileEmail) profileEmail.textContent = user
+            ? (user.email || 'Аккаунт Google') + ' · перенос данных выполняется вручную'
+            : 'Проекты хранятся в этом браузере. Вход Google открывает ручной перенос.';
+        var profileButton = document.getElementById('cloudProfileButton');
+        if (profileButton) profileButton.classList.toggle('is-connected', !!user);
         var status = document.getElementById('cloudIdentityStatus');
         if (status) status.textContent = user ? 'Вход выполнен · доступен ручной перенос одного проекта' : (this._lastError || 'Для загрузки одного проекта войди через Google');
         var previewButton = document.getElementById('cloudMigrationPreviewBtn');
