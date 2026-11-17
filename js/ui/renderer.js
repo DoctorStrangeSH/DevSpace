@@ -15,6 +15,7 @@ var RendererModule = {
     _todaySelectedDay: null,
     _todayVisibleCount: 8,
     _todaySelectedTasks: new Map(),
+    _todayBulkUndo: null,
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
@@ -135,6 +136,7 @@ var RendererModule = {
             if (!targets.length) { self._todaySelectedTasks.clear(); self._renderToday(); return; }
             var detail = [priority ? 'приоритет' : '', deadline ? 'срок' : ''].filter(Boolean).join(' и ');
             if (!window.confirm('Изменить ' + detail + ' для ' + targets.length + ' задач?')) return;
+            self._todayBulkUndo = self._prepareBulkUndo(targets, priority, deadline);
             targets.forEach(function(target) {
                 if (priority) ChecklistModule.setPriority(target.projectId, target.itemId, priority);
                 if (deadline) ChecklistModule.setDeadline(target.projectId, target.itemId, deadline);
@@ -194,6 +196,24 @@ var RendererModule = {
             }
             if (event.target.closest('#todayBulkClear')) {
                 self._todaySelectedTasks.clear();
+                self._renderToday();
+                return;
+            }
+            if (event.target.closest('#todayUndoBulk')) {
+                if (typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
+                if (!self._todayBulkUndo) return;
+                if (!self._canUndoBulk(self._todayBulkUndo)) {
+                    self._todayBulkUndo = null;
+                    self._renderBulkControls();
+                    window.alert('Отмена недоступна: одна из задач уже изменилась или была удалена. Текущие данные сохранены.');
+                    return;
+                }
+                var changes = self._todayBulkUndo;
+                self._todayBulkUndo = null;
+                changes.entries.forEach(function(entry) {
+                    if (entry.priorityChanged) ChecklistModule.setPriority(entry.projectId, entry.itemId, entry.beforePriority);
+                    if (entry.deadlineChanged) ChecklistModule.setDeadline(entry.projectId, entry.itemId, entry.beforeDeadline);
+                });
                 self._renderToday();
                 return;
             }
@@ -570,6 +590,35 @@ var RendererModule = {
         });
     },
 
+    _prepareBulkUndo: function(targets, priority, deadline) {
+        var entries = (targets || []).map(function(target) {
+            var project = StateManager.getProject(target.projectId);
+            var task = project && project.checklist.find(function(item) { return String(item.id) === String(target.itemId); });
+            if (!task) return null;
+            var beforePriority = task.priority || 'normal';
+            var beforeDeadline = task.deadline || '';
+            return {
+                projectId: target.projectId, itemId: target.itemId,
+                beforePriority: beforePriority, beforeDeadline: beforeDeadline,
+                afterPriority: priority || beforePriority, afterDeadline: deadline || beforeDeadline,
+                priorityChanged: !!priority && priority !== beforePriority,
+                deadlineChanged: !!deadline && deadline !== beforeDeadline
+            };
+        }).filter(function(entry) { return entry && (entry.priorityChanged || entry.deadlineChanged); });
+        return entries.length ? { entries: entries } : null;
+    },
+
+    _canUndoBulk: function(record) {
+        return !!record && Array.isArray(record.entries) && record.entries.length > 0 && record.entries.every(function(entry) {
+            var project = StateManager.getProject(entry.projectId);
+            if (!project || project.status === 'completed' || project.status === 'archived') return false;
+            var task = (project.checklist || []).find(function(item) { return String(item.id) === String(entry.itemId); });
+            if (!task || task.completed) return false;
+            return (!entry.priorityChanged || (task.priority || 'normal') === entry.afterPriority) &&
+                (!entry.deadlineChanged || (task.deadline || '') === entry.afterDeadline);
+        });
+    },
+
     _renderBulkControls: function() {
         var form = document.getElementById('todayBulkForm');
         if (!form) return;
@@ -577,6 +626,10 @@ var RendererModule = {
         form.hidden = count === 0;
         var label = document.getElementById('todayBulkCount');
         if (label) label.textContent = 'Выбрано: ' + count;
+        var undo = document.getElementById('todayUndoBulk');
+        if (undo) undo.hidden = !(typeof AuthService !== 'undefined' && AuthService.isOwner() && this._todayBulkUndo);
+        var undoCount = document.getElementById('todayUndoCount');
+        if (undoCount) undoCount.textContent = this._todayBulkUndo ? '(' + this._todayBulkUndo.entries.length + ')' : '';
     },
 
     _renderWeeklyLoad: function(projects, now) {

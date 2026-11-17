@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.64.1';
-const ASSET_VERSION = '3.64.1';
+const CACHE_VERSION = 'devspace-v3.64.2';
+const ASSET_VERSION = '3.64.2';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
