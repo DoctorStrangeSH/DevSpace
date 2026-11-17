@@ -163,3 +163,11 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .quick-task-submit:hover,.quick-task-submit:focus-visible { filter:brightness(1.12); }
 @media(max-width:1200px) { .quick-task-form { grid-template-columns:repeat(2,minmax(0,1fr)); } .quick-task-main { grid-column:2; } .quick-task-submit { grid-column:1/-1; } }
 @media(max-width:560px) { .quick-task-form { grid-template-columns:1fr; } .quick-task-main,.quick-task-submit { grid-column:auto; } }
+
+/* Quick edits stay inline and use the same checklist validation as project detail. */
+#todayPanel .today-task { flex-wrap:wrap; }
+#todayPanel .today-inline-edit { display:flex; flex-wrap:wrap; gap:7px; align-items:flex-end; flex:1 0 calc(100% - 38px); width:100%; margin:7px 0 0 38px; }
+#todayPanel .today-inline-edit label { display:flex; flex-direction:column; gap:4px; color:var(--text-secondary); font-size:.68rem; font-weight:650; }
+#todayPanel .today-inline-edit select,#todayPanel .today-inline-edit input { min-height:35px; padding:6px 9px; border:1px solid var(--border-color); border-radius:9px; color:var(--text-primary); background:var(--bg-primary); font-size:.73rem; }
+#todayPanel .today-inline-edit select:focus-visible,#todayPanel .today-inline-edit input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:600px) { #todayPanel .today-inline-edit { margin-left:0; } #todayPanel .today-inline-edit label { flex:1 1 125px; } }

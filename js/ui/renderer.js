@@ -93,7 +93,14 @@ var RendererModule = {
             if (project && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.insightProject);
         });
         if (todayPanel) todayPanel.addEventListener('change', function(event) {
-            if (event.target.matches('#todayPriority, #todayScope')) self._renderToday();
+            if (event.target.matches('#todayPriority, #todayScope')) { self._renderToday(); return; }
+            var editor = event.target.closest('[data-today-edit-project]');
+            if (!editor || typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
+            if (event.target.matches('[data-today-edit-priority]')) {
+                ChecklistModule.setPriority(editor.dataset.todayEditProject, editor.dataset.todayEditItem, event.target.value);
+            } else if (event.target.matches('[data-today-edit-deadline]')) {
+                ChecklistModule.setDeadline(editor.dataset.todayEditProject, editor.dataset.todayEditItem, event.target.value);
+            }
         });
         var quickTaskForm = document.getElementById('quickTaskForm');
         if (quickTaskForm) quickTaskForm.addEventListener('submit', function(event) {
@@ -457,12 +464,14 @@ var RendererModule = {
         if (summary) summary.textContent = tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет';
         var today = new Date();
         var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+        var canEdit = typeof AuthService !== 'undefined' && AuthService.isOwner();
         list.innerHTML = tasks.length ? tasks.slice(0, 8).map(function(task) {
             var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
             var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
             var late = task.deadline && task.deadline < key;
             var due = task.deadline ? (late ? 'Просрочено · ' : '') + task.deadline.slice(8, 10) + '.' + task.deadline.slice(5, 7) : 'Без срока';
-            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span></div>';
+            var editor = canEdit && id !== null ? '<span class="today-inline-edit" data-today-edit-project="' + projectId + '" data-today-edit-item="' + id + '"><label>Приоритет<select data-today-edit-priority aria-label="Приоритет задачи"><option value="normal"' + (task.priority === 'normal' ? ' selected' : '') + '>Обычный</option><option value="high"' + (task.priority === 'high' ? ' selected' : '') + '>Высокий</option><option value="low"' + (task.priority === 'low' ? ' selected' : '') + '>Низкий</option></select></label><label>Срок<input type="date" data-today-edit-deadline aria-label="Срок задачи" value="' + task.deadline + '"></label></span>' : '';
+            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + '</div>';
         }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
     },
 
