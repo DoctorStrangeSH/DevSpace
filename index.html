@@ -236,6 +236,9 @@
                         <div class="cloud-migration-preview">
                             <button type="button" id="cloudMigrationPreviewBtn" disabled>Проверить перенос в облако</button>
                             <button type="button" id="cloudMigrationBackupBtn">Скачать резервную копию</button>
+                            <label for="cloudMigrationProjectSelect" class="health-history-note">Проект для первого переноса</label>
+                            <select id="cloudMigrationProjectSelect" disabled aria-label="Выбрать один проект для загрузки"><option value="">Сначала проверь перенос</option></select>
+                            <button type="button" id="cloudMigrationUploadBtn" disabled>Загрузить один проект в облако</button>
                             <p class="health-history-note" id="cloudMigrationPreviewStatus" role="status" aria-live="polite">Войди через Google, чтобы проверить возможные конфликты. Данные не будут отправлены.</p>
                         </div>
                         <div class="health-transfer"><button type="button" id="healthExportBtn">↓ Скачать историю</button><button type="button" id="healthImportBtn">↑ Перенести с другого устройства</button></div>

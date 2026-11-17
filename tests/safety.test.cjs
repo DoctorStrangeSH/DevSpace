@@ -1833,3 +1833,88 @@ test('mobile first screen fits content and reduced motion leaves hero text visib
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
   assert.ok(css.includes('.hero-title, .hero-description, .hero-actions, .hero-stats, .hero-badge { animation: none; opacity: 1; }'));
 });
+
+test('manual cloud upload is gated by backup, a selected project and fresh remote read', async () => {
+  const elements = {
+    cloudMigrationProjectSelect: {
+      value: 'one', disabled: false, replaceChildren() {},
+      appendChild() {}, addEventListener() {}
+    },
+    cloudMigrationPreviewStatus: { textContent: '' },
+    cloudIdentityBtn: { textContent: '', title: '', setAttribute() {} },
+    cloudMigrationPreviewBtn: { disabled: false },
+    cloudMigrationUploadBtn: { disabled: true }
+  };
+  let reads = 0;
+  let writes = 0;
+  const user = { uid: 'uid1', email: 'owner@example.com' };
+  const local = [{ id: 'one', name: 'Первый' }, { id: 'two', name: 'Второй' }];
+  const ctx = execute('js/services/firebase-identity.js', {
+    confirm: () => true,
+    document: {
+      getElementById: (id) => elements[id] || null,
+      createElement: () => ({ value: '', textContent: '' })
+    },
+    FirebaseService: {
+      getPrivateProjectPreview: () => { reads++; return Promise.resolve([]); },
+      createPrivateProjectIfAbsent: (project, uid) => {
+        writes++;
+        assert.equal(project.id, 'one');
+        assert.equal(uid, 'uid1');
+        return Promise.resolve(true);
+      }
+    },
+    StateManager: { get: () => local },
+    SyncModule: {
+      _prepareSinglePrivateMigration: (id, localProjects, remoteProjects) =>
+        remoteProjects.some(p => p.id === id) ? null : localProjects.find(p => p.id === id)
+    }
+  });
+  const identity = ctx.FirebaseIdentityModule;
+  identity._auth = { currentUser: user };
+  identity._user = user;
+  identity._ready = true;
+  identity._eligibleUploads = [{ id: 'one', name: 'Первый' }];
+  assert.equal(await identity.uploadOneProject(), false);
+  assert.equal(reads, 0);
+  assert.equal(writes, 0);
+  identity._backupReady = true;
+  assert.equal(await identity.uploadOneProject(), true);
+  assert.equal(reads, 1);
+  assert.equal(writes, 1);
+  assert.match(elements.cloudMigrationPreviewStatus.textContent, /Один проект/);
+  assert.equal(local.length, 2);
+});
+
+test('manual upload refuses a new remote conflict without writing', async () => {
+  const elements = {
+    cloudMigrationProjectSelect: { value: 'one', replaceChildren() {}, appendChild() {}, addEventListener() {} },
+    cloudMigrationPreviewStatus: { textContent: '' },
+    cloudIdentityBtn: { setAttribute() {} },
+    cloudMigrationPreviewBtn: {},
+    cloudMigrationUploadBtn: {}
+  };
+  let writes = 0;
+  const ctx = execute('js/services/firebase-identity.js', {
+    confirm: () => true,
+    document: {
+      getElementById: id => elements[id] || null,
+      createElement: () => ({})
+    },
+    FirebaseService: {
+      getPrivateProjectPreview: () => Promise.resolve([{ id: 'one' }]),
+      createPrivateProjectIfAbsent: () => { writes++; return Promise.resolve(true); }
+    },
+    StateManager: { get: () => [{ id: 'one', name: 'Локальный' }] },
+    SyncModule: { _prepareSinglePrivateMigration: () => null }
+  });
+  const identity = ctx.FirebaseIdentityModule;
+  identity._auth = { currentUser: { uid: 'uid1' } };
+  identity._user = identity._auth.currentUser;
+  identity._ready = true;
+  identity._backupReady = true;
+  identity._eligibleUploads = [{ id: 'one', name: 'Локальный' }];
+  assert.equal(await identity.uploadOneProject(), false);
+  assert.equal(writes, 0);
+  assert.match(elements.cloudMigrationPreviewStatus.textContent, /отменена/);
+});

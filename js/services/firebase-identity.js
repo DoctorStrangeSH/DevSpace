@@ -6,6 +6,9 @@ var FirebaseIdentityModule = {
     _ready: false,
     _sdkPromise: null,
     _previewBusy: false,
+    _uploadBusy: false,
+    _backupReady: false,
+    _eligibleUploads: [],
     _previewRequestId: 0,
     _activeUid: null,
     init: function() {
@@ -15,9 +18,15 @@ var FirebaseIdentityModule = {
         button.addEventListener('click', function() { self.toggleSignIn(); });
         var previewButton = document.getElementById('cloudMigrationPreviewBtn');
         if (previewButton) previewButton.addEventListener('click', function() { self.previewMigration(); });
+        var uploadButton = document.getElementById('cloudMigrationUploadBtn');
+        if (uploadButton) uploadButton.addEventListener('click', function() { self.uploadOneProject(); });
         var backupButton = document.getElementById('cloudMigrationBackupBtn');
         if (backupButton) backupButton.addEventListener('click', function() {
-            if (typeof ExportModule !== 'undefined') ExportModule.createBackup();
+            if (typeof ExportModule !== 'undefined') {
+                ExportModule.createBackup();
+                self._backupReady = true;
+                self._render();
+            }
         });
         button.disabled = true;
         this._render();
@@ -69,6 +78,9 @@ var FirebaseIdentityModule = {
                         self._activeUid = nextUid;
                         self._previewRequestId++;
                         self._previewBusy = false;
+                        self._uploadBusy = false;
+                        self._backupReady = false;
+                        self._eligibleUploads = [];
                         var previewStatus = document.getElementById('cloudMigrationPreviewStatus');
                         if (previewStatus) previewStatus.textContent = nextUid
                             ? 'Аккаунт подключён. Нажми «Проверить перенос в облако».'
@@ -106,6 +118,7 @@ var FirebaseIdentityModule = {
         var uid = user.uid;
         var requestId = ++this._previewRequestId;
         this._previewBusy = true;
+        this._eligibleUploads = [];
         this._render();
         if (status) status.textContent = 'Проверяем облачные проекты… Никакой записи не выполняется.';
         return FirebaseService.getPrivateProjectPreview().then(function(remote) {
@@ -120,10 +133,11 @@ var FirebaseIdentityModule = {
             }
             var local = StateManager.get('projects') || [];
             var plan = SyncModule._planPrivateMigration(local, remote);
+            self._eligibleUploads = plan.upload;
             if (status) status.textContent = 'Предпросмотр: новых — ' + plan.upload.length +
                 ', совпадающих ID — ' + plan.conflicts.length + ', пропущено — ' + plan.skipped +
                 ', в облаке — ' + remote.length + '. Перенос не выполнялся. ' +
-                (plan.upload.length ? 'Следующий шаг: скачай резервную копию. Загрузка станет доступна после проверки правил безопасности.' :
+                (plan.upload.length ? 'Скачай резервную копию, выбери один проект и подтверди загрузку.' :
                     'Новых проектов для загрузки нет. Локальные данные сохранены.');
             return true;
         }).catch(function() {
@@ -137,17 +151,100 @@ var FirebaseIdentityModule = {
             self._render();
         });
     },
+    // First migration: one explicit create, after a fresh remote check. Never merge,
+    // overwrite, delete or automatically upload the remaining projects.
+    uploadOneProject: function() {
+        var self = this;
+        var select = document.getElementById('cloudMigrationProjectSelect');
+        var status = document.getElementById('cloudMigrationPreviewStatus');
+        var user = this._auth && this._auth.currentUser;
+        var projectId = select && select.value;
+        if (this._uploadBusy || this._previewBusy || !this._ready || !this._backupReady ||
+            !user || !user.uid || !projectId ||
+            !this._eligibleUploads.some(function(project) { return project.id === projectId; })) {
+            return Promise.resolve(false);
+        }
+        var uid = user.uid;
+        var selected = this._eligibleUploads.find(function(project) { return project.id === projectId; });
+        var expected = JSON.stringify(selected);
+        if (!window.confirm('Загрузить только «' + (selected.name || selected.title || projectId) +
+            '» в личное облако?\n\nУбедись, что резервная копия скачана. Остальные проекты останутся на устройстве.')) {
+            return Promise.resolve(false);
+        }
+        var requestId = ++this._previewRequestId;
+        this._uploadBusy = true;
+        this._eligibleUploads = [];
+        this._render();
+        if (status) status.textContent = 'Повторно сверяем облако перед загрузкой одного проекта…';
+        return FirebaseService.getPrivateProjectPreview().then(function(remote) {
+            if (requestId !== self._previewRequestId || !self._auth ||
+                !self._auth.currentUser || self._auth.currentUser.uid !== uid) return false;
+            if (!Array.isArray(remote)) {
+                if (status) status.textContent = FirebaseService._describePrivatePreviewError(
+                    FirebaseService._lastPrivatePreviewError) + ' Ничего не отправлено.';
+                return false;
+            }
+            var local = StateManager.get('projects') || [];
+            var candidate = SyncModule._prepareSinglePrivateMigration(projectId, local, remote);
+            if (!candidate || JSON.stringify(candidate) !== expected) {
+                if (status) status.textContent = 'Проект или облако изменились. Загрузка отменена. Запусти проверку заново.';
+                return false;
+            }
+            if (status) status.textContent = 'Отправляем один проект…';
+            return FirebaseService.createPrivateProjectIfAbsent(candidate, uid).then(function(created) {
+                if (requestId !== self._previewRequestId || !self._auth ||
+                    !self._auth.currentUser || self._auth.currentUser.uid !== uid) return false;
+                if (status) status.textContent = created
+                    ? 'Готово! Один проект проверен и сохранён в личном облаке. Локальная копия не изменена. Для следующего проекта повтори проверку.'
+                    : 'Не удалось подтвердить создание. Ничего не перезаписано. Повтори проверку: возможно, проект уже существует или правила не совпадают.';
+                return created;
+            });
+        }).catch(function() {
+            if (requestId === self._previewRequestId && status) {
+                status.textContent = 'Загрузка не подтверждена. Проверь облако повторной проверкой; локальная копия сохранена.';
+            }
+            return false;
+        }).finally(function() {
+            if (requestId !== self._previewRequestId) return;
+            self._uploadBusy = false;
+            self._render();
+        });
+    },
     _render: function() {
         var button = document.getElementById('cloudIdentityBtn');
         if (!button) return;
         var user = this._user;
         button.textContent = user ? 'Google: выйти' : 'Google: войти';
-        button.title = user ? 'Аккаунт: ' + (user.email || 'Google') + '. Облачная запись пока отключена.' : 'Войти через Google. Облачная запись пока отключена.';
+        button.title = user ? 'Аккаунт: ' + (user.email || 'Google') + '. Автоматическая облачная запись отключена.' : 'Войти через Google. Облачная запись пока отключена.';
         button.setAttribute('aria-label', button.title);
         var status = document.getElementById('cloudIdentityStatus');
-        if (status) status.textContent = user ? 'Вход выполнен · синхронизация записи ещё не включена' : (this._lastError || 'Облачная запись недоступна до настройки правил доступа');
+        if (status) status.textContent = user ? 'Вход выполнен · доступен ручной перенос одного проекта' : (this._lastError || 'Для загрузки одного проекта войди через Google');
         var previewButton = document.getElementById('cloudMigrationPreviewBtn');
-        if (previewButton) previewButton.disabled = !user || !this._ready || this._previewBusy;
+        if (previewButton) previewButton.disabled = !user || !this._ready || this._previewBusy || this._uploadBusy;
+        var select = document.getElementById('cloudMigrationProjectSelect');
+        if (select) {
+            var previous = select.value;
+            select.replaceChildren();
+            var empty = document.createElement('option');
+            empty.value = '';
+            empty.textContent = this._eligibleUploads.length ? 'Выбери проект' : 'Сначала проверь перенос';
+            select.appendChild(empty);
+            this._eligibleUploads.forEach(function(project) {
+                var option = document.createElement('option');
+                option.value = project.id;
+                option.textContent = project.name || project.title || project.id;
+                select.appendChild(option);
+            });
+            if (this._eligibleUploads.some(function(project) { return project.id === previous; })) select.value = previous;
+            select.disabled = !user || this._previewBusy || this._uploadBusy || !this._eligibleUploads.length;
+        }
+        var uploadButton = document.getElementById('cloudMigrationUploadBtn');
+        if (uploadButton) uploadButton.disabled = !user || !this._ready || this._previewBusy ||
+            this._uploadBusy || !this._backupReady || !select || !select.value;
+        if (select && !select._cloudUploadListenerBound) {
+            select.addEventListener('change', this._render.bind(this));
+            select._cloudUploadListenerBound = true;
+        }
         if (!user) {
             var previewStatus = document.getElementById('cloudMigrationPreviewStatus');
             if (previewStatus) previewStatus.textContent = 'Войди через Google, чтобы проверить возможные конфликты. Данные не будут отправлены.';

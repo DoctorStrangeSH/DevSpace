@@ -22,10 +22,10 @@ var FirebaseService = {
     // Anonymous static pages must never be able to mutate shared data.
     // A real server-verified owner session is required before enabling writes.
     _writesEnabled: false,
-    // Separate, deliberately closed gate for future owner-only migration.
-    // Do not enable until create-only security rules pass emulator tests and
-    // the owner explicitly publishes them.
-    _privateProjectCreatesEnabled: false,
+    // Owner confirmed publishing create-only Firestore rules on 2026-11-17.
+    // This gate is used ONLY by an explicit, single-project upload.
+    // Automatic sync, updates and deletions remain disabled.
+    _privateProjectCreatesEnabled: true,
     _lastPrivatePreviewError: null,
 
     _describePrivatePreviewError: function(code) {
