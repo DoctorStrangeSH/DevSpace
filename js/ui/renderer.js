@@ -203,6 +203,16 @@ var RendererModule = {
                 groupButton.setAttribute('aria-expanded', String(!collapsed));
                 return;
             }
+            var editToggle = event.target.closest('[data-today-edit-toggle]');
+            if (editToggle) {
+                if (typeof AuthService === 'undefined' || !AuthService.isOwner()) return;
+                var taskRow = editToggle.closest('.today-task');
+                if (!taskRow) return;
+                var expanded = taskRow.classList.toggle('is-editing');
+                editToggle.setAttribute('aria-expanded', String(expanded));
+                editToggle.innerHTML = expanded ? 'Скрыть <i class="bi bi-chevron-up" aria-hidden="true"></i>' : 'Изменить <i class="bi bi-sliders" aria-hidden="true"></i>';
+                return;
+            }
             if (event.target.closest('#todayMore')) {
                 self._todayVisibleCount += 8;
                 self._renderToday();
@@ -746,7 +756,8 @@ var RendererModule = {
             var move = suggestion ? '<button type="button" class="today-suggest-move" data-today-project="' + projectId + '" data-today-move="' + id + '" data-today-date="' + suggestion.key + '" title="Назначить срок на менее загруженный день">На ' + suggestion.key.slice(8, 10) + '.' + suggestion.key.slice(5, 7) + ' <i class="bi bi-arrow-right" aria-hidden="true"></i></button>' : '';
             var token = JSON.stringify([String(task.projectId), String(task.id)]);
             var select = canEdit && id !== null ? '<label class="today-select-label"><input type="checkbox" data-today-select="' + id + '" data-today-project="' + projectId + '" aria-label="Выбрать задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '"' + (selectedTasks.has(token) ? ' checked' : '') + '></label>' : '';
-            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + select + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + move + '</div>';
+            var editToggle = canEdit && id !== null ? '<button type="button" class="today-edit-toggle" data-today-edit-toggle aria-expanded="false">Изменить <i class="bi bi-sliders" aria-hidden="true"></i></button>' : '';
+            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + select + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editToggle + editor + move + '</div>';
         });
         var groupMode = document.getElementById('todayGroupByProject');
         if (groupMode && groupMode.checked) {
