@@ -150,6 +150,17 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .today-search input { flex:1; width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text-primary); font-size:.81rem; }
 .today-sort { display:flex; align-items:center; gap:8px; font-size:.72rem; font-weight:700; color:var(--text-secondary); }
 .today-sort select { height:42px; padding:7px 9px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-primary); background:var(--bg-primary); font-size:.78rem; }
+.today-group-switch { display:inline-flex; align-items:center; gap:8px; min-height:42px; padding:7px 12px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-primary); background:rgba(120,100,200,.09); font-size:.76rem; font-weight:700; white-space:nowrap; cursor:pointer; }
+.today-group-switch input { width:16px; height:16px; accent-color:var(--accent); }
+.today-project-group { overflow:hidden; border:1px solid rgba(153,136,222,.25); border-radius:12px; background:rgba(107,90,179,.055); }
+.today-project-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:12px 14px; border:0; color:var(--text-primary); background:rgba(104,92,185,.14); text-align:left; }
+.today-project-heading strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.83rem; }
+.today-project-heading span { display:flex; align-items:center; gap:9px; color:var(--text-secondary); white-space:nowrap; font-size:.72rem; }
+.today-project-heading i { transition:transform .15s ease; }
+.today-project-group.is-collapsed .today-project-heading i { transform:rotate(-90deg); }
+.today-project-rows { display:grid; gap:8px; padding:9px; }
+.today-project-group.is-collapsed .today-project-rows { display:none; }
+.today-project-heading:hover,.today-project-heading:focus-visible { background:rgba(104,92,185,.25); }
 .today-more { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:40px; margin-top:11px; border:1px solid var(--border-color); border-radius:10px; color:var(--text-primary); background:rgba(110,95,184,.1); font-size:.78rem; font-weight:700; }
 .today-more[hidden] { display:none; }
 .today-more:hover,.today-more:focus-visible { border-color:var(--accent); background:rgba(110,95,184,.2); }

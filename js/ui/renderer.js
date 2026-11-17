@@ -16,11 +16,13 @@ var RendererModule = {
     _todayVisibleCount: 8,
     _todaySelectedTasks: new Map(),
     _todayBulkUndo: null,
+    _todayCollapsedGroups: new Set(),
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
         this._pinnedIds = Array.isArray(savedPins) ? savedPins.filter(function(id) { return typeof id === 'string'; }) : [];
         this._cacheContainers();
+        this._restoreTodayPreferences();
         this._initTabs();
         this._bindEvents();
         console.log('RendererModule initialized');
@@ -106,7 +108,7 @@ var RendererModule = {
                 self._renderBulkControls();
                 return;
             }
-            if (event.target.matches('#todayPriority, #todayScope, #todaySort')) { self._todayVisibleCount = 8; self._todaySelectedTasks.clear(); self._renderToday(); return; }
+            if (event.target.matches('#todayPriority, #todayScope, #todaySort, #todayGroupByProject')) { self._todayVisibleCount = 8; self._todaySelectedTasks.clear(); self._saveTodayPreferences(); self._renderToday(); return; }
             var editor = event.target.closest('[data-today-edit-project]');
             if (!editor || typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
             if (event.target.matches('[data-today-edit-priority]')) {
@@ -186,7 +188,19 @@ var RendererModule = {
                 self._todayVisibleCount = 8;
                 self._todaySelectedDay = null;
                 self._todayView = tab.dataset.todayView;
+                self._saveTodayPreferences();
                 self._renderToday();
+                return;
+            }
+            var groupButton = event.target.closest('[data-today-group]');
+            if (groupButton) {
+                var groupId = groupButton.dataset.todayGroup;
+                if (self._todayCollapsedGroups.has(groupId)) self._todayCollapsedGroups.delete(groupId);
+                else self._todayCollapsedGroups.add(groupId);
+                var group = groupButton.closest('.today-project-group');
+                var collapsed = self._todayCollapsedGroups.has(groupId);
+                if (group) group.classList.toggle('is-collapsed', collapsed);
+                groupButton.setAttribute('aria-expanded', String(!collapsed));
                 return;
             }
             if (event.target.closest('#todayMore')) {
@@ -581,6 +595,32 @@ var RendererModule = {
         return matches;
     },
 
+    _restoreTodayPreferences: function() {
+        var saved = typeof StorageService !== 'undefined' ? StorageService.get('todayPreferences', {}) : {};
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return;
+        var view = ['today', 'upcoming', 'overdue', 'undated', 'all'];
+        if (view.includes(saved.view)) this._todayView = saved.view;
+        var priority = document.getElementById('todayPriority');
+        if (priority && ['all', 'high', 'normal', 'low'].includes(saved.priority)) priority.value = saved.priority;
+        var sort = document.getElementById('todaySort');
+        if (sort && ['priority', 'deadline', 'project'].includes(saved.sort)) sort.value = saved.sort;
+        var group = document.getElementById('todayGroupByProject');
+        if (group) group.checked = saved.group === true;
+    },
+
+    _saveTodayPreferences: function() {
+        if (typeof StorageService === 'undefined') return;
+        var priority = document.getElementById('todayPriority');
+        var sort = document.getElementById('todaySort');
+        var group = document.getElementById('todayGroupByProject');
+        StorageService.set('todayPreferences', {
+            view: this._todayView || 'today',
+            priority: priority ? priority.value : 'all',
+            sort: sort ? sort.value : 'priority',
+            group: !!(group && group.checked)
+        });
+    },
+
     _validBulkTargets: function() {
         return Array.from(this._todaySelectedTasks.values()).filter(function(target) {
             var project = StateManager.getProject(target.projectId);
@@ -695,7 +735,8 @@ var RendererModule = {
         this._renderBulkControls();
         var recommend = this._suggestWeeklyDate.bind(this);
         var selectedTasks = this._todaySelectedTasks;
-        list.innerHTML = tasks.length ? tasks.slice(0, visible).map(function(task) {
+        var visibleTasks = tasks.slice(0, visible);
+        var rows = visibleTasks.map(function(task) {
             var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
             var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
             var late = task.deadline && task.deadline < key;
@@ -706,7 +747,25 @@ var RendererModule = {
             var token = JSON.stringify([String(task.projectId), String(task.id)]);
             var select = canEdit && id !== null ? '<label class="today-select-label"><input type="checkbox" data-today-select="' + id + '" data-today-project="' + projectId + '" aria-label="Выбрать задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '"' + (selectedTasks.has(token) ? ' checked' : '') + '></label>' : '';
             return '<div class="today-task' + (late ? ' is-late' : '') + '">' + select + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + move + '</div>';
-        }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
+        });
+        var groupMode = document.getElementById('todayGroupByProject');
+        if (groupMode && groupMode.checked) {
+            var grouped = new Map();
+            visibleTasks.forEach(function(task, index) {
+                var id = String(task.projectId);
+                if (!grouped.has(id)) grouped.set(id, { name: task.projectName, rows: [] });
+                grouped.get(id).rows.push(rows[index]);
+            });
+            var collapsedGroups = this._todayCollapsedGroups;
+            list.innerHTML = grouped.size ? Array.from(grouped, function(entry) {
+                var id = entry[0];
+                var group = entry[1];
+                var collapsed = collapsedGroups.has(id);
+                return '<section class="today-project-group' + (collapsed ? ' is-collapsed' : '') + '"><button type="button" class="today-project-heading" data-today-group="' + Helpers.escapeHtml(id).replace(/"/g, '&quot;') + '" aria-expanded="' + !collapsed + '"><strong>' + Helpers.escapeHtml(group.name) + '</strong><span>' + group.rows.length + ' задач <i class="bi bi-chevron-down" aria-hidden="true"></i></span></button><div class="today-project-rows">' + group.rows.join('') + '</div></section>';
+            }).join('') : '<p class="today-empty">✨ Задач по выбранным условиям пока нет.</p>';
+        } else {
+            list.innerHTML = rows.length ? rows.join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
+        }
     },
 
     _collectInsights: function(projects, now) {
