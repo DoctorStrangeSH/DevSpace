@@ -142,3 +142,14 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .workspace-metric > span:last-child { color:#aaa6bd; font-size:.75rem; font-weight:600; }
 @media(max-width:1000px) { .workspace-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:570px) { .workspace-overview { padding:17px; } .workspace-overview-heading { align-items:flex-start; flex-direction:column; } .workspace-overview-heading h3 { font-size:1.1rem; } .workspace-metrics { gap:8px; } .workspace-metric { padding:10px; grid-template-columns:34px 1fr; column-gap:8px; } .workspace-metric-icon { width:34px; height:34px; font-size:1rem; } .workspace-metric strong { font-size:1.36rem; } .workspace-metric > span:last-child { font-size:.66rem; } }
+
+/* Task center: readable time-based lanes without another long calendar. */
+#todayScope[hidden] { display:none!important; }
+.today-tabs { display:flex; flex-wrap:wrap; gap:7px; padding-bottom:15px; margin-bottom:9px; border-bottom:1px solid rgba(143,131,194,.18); }
+.today-tab { min-height:37px; padding:8px 14px; border:1px solid rgba(154,141,221,.2); border-radius:10px; color:var(--text-secondary); background:rgba(106,92,180,.08); font-size:.78rem; font-weight:700; cursor:pointer; }
+.today-tab:hover,.today-tab:focus-visible { color:var(--text-primary); border-color:var(--accent); }
+.today-tab.is-active { color:#fff; border-color:rgba(143,129,248,.5); background:linear-gradient(120deg,#5e58e8,#7664e8); }
+#todayPanel .today-list { display:grid; gap:8px; }
+#todayPanel .today-task { border-radius:12px; border-color:rgba(141,129,201,.18); }
+#todayPanel .today-check { flex-shrink:0; border-radius:9px; }
+@media(max-width:600px) { .today-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .today-tab { text-align:center; padding:8px; } }

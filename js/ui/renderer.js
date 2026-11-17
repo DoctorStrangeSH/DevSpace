@@ -96,6 +96,17 @@ var RendererModule = {
             if (event.target.matches('#todayPriority, #todayScope')) self._renderToday();
         });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            var tab = event.target.closest('[data-today-view]');
+            if (tab) {
+                self._todayView = tab.dataset.todayView;
+                todayPanel.querySelectorAll('[data-today-view]').forEach(function(button) {
+                    var active = button === tab;
+                    button.classList.toggle('is-active', active);
+                    button.setAttribute('aria-pressed', String(active));
+                });
+                self._renderToday();
+                return;
+            }
             var complete = event.target.closest('[data-today-complete]');
             if (complete) {
                 if (typeof ChecklistModule !== 'undefined') ChecklistModule.toggleItem(complete.dataset.todayProject, complete.dataset.todayComplete);
@@ -416,7 +427,16 @@ var RendererModule = {
         if (!list) return;
         var priority = document.getElementById('todayPriority');
         var scope = document.getElementById('todayScope');
-        var tasks = this._collectTodayTasks(StateManager.get('projects') || [], new Date(), priority ? priority.value : 'all', scope ? scope.value : 'urgent');
+        var tasks = this._collectTodayTasks(StateManager.get('projects') || [], new Date(), priority ? priority.value : 'all', scope ? scope.value : 'all');
+        var view = this._todayView || 'today';
+        var todayKey = new Date();
+        var dateKey = todayKey.getFullYear() + '-' + String(todayKey.getMonth() + 1).padStart(2, '0') + '-' + String(todayKey.getDate()).padStart(2, '0');
+        tasks = tasks.filter(function(task) {
+            if (view === 'all') return true;
+            if (view === 'overdue') return !!task.deadline && task.deadline < dateKey;
+            if (view === 'upcoming') return !!task.deadline && task.deadline > dateKey;
+            return task.deadline === dateKey || (!task.deadline && task.priority === 'high');
+        });
         var summary = document.getElementById('todaySummary');
         if (summary) summary.textContent = tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет';
         var today = new Date();
