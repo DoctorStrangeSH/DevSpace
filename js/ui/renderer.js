@@ -140,6 +140,16 @@ var RendererModule = {
                 self._renderToday();
                 return;
             }
+            var move = event.target.closest('[data-today-move]');
+            if (move) {
+                if (typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
+                var project = StateManager.getProject(move.dataset.todayProject);
+                var item = project && Array.isArray(project.checklist) ? project.checklist.find(function(task) { return String(task.id) === move.dataset.todayMove; }) : null;
+                var week = self._collectWeeklyLoad(StateManager.get('projects') || [], new Date());
+                var suggested = item && !item.completed && self._suggestWeeklyDate(week, item.deadline || '');
+                if (suggested && suggested.key === move.dataset.todayDate) ChecklistModule.setDeadline(project.id, item.id, suggested.key);
+                return;
+            }
             var complete = event.target.closest('[data-today-complete]');
             if (complete) {
                 if (typeof ChecklistModule !== 'undefined') ChecklistModule.toggleItem(complete.dataset.todayProject, complete.dataset.todayComplete);
@@ -469,6 +479,16 @@ var RendererModule = {
         return days;
     },
 
+    _suggestWeeklyDate: function(days, current) {
+        if (!Array.isArray(days) || !days.length) return null;
+        var source = days.find(function(day) { return day.key === current; });
+        if (current && (!source || source.count < 4)) return null;
+        var candidates = days.filter(function(day) {
+            return (!current || day.key > current) && day.count < 4;
+        });
+        return candidates.sort(function(a, b) { return a.count - b.count || a.key.localeCompare(b.key); })[0] || null;
+    },
+
     _renderWeeklyLoad: function(projects, now) {
         var container = document.getElementById('weeklyLoadDays');
         if (!container) return;
@@ -476,7 +496,9 @@ var RendererModule = {
         var max = Math.max(1, ...days.map(function(day) { return day.count; }));
         var total = days.reduce(function(sum, day) { return sum + day.count; }, 0);
         var summary = document.getElementById('weeklyLoadSummary');
-        if (summary) summary.textContent = total ? total + ' задач со сроком · красным отмечены дни с 4+ задачами' : 'На ближайшие 7 дней задачи пока не назначены';
+        var busy = days.filter(function(day) { return day.count >= 4; }).length;
+        var free = days.filter(function(day) { return day.count < 4; }).length;
+        if (summary) summary.textContent = total ? total + ' задач · ' + (busy ? 'перегружено дней: ' + busy + ' · свободнее: ' + free : 'нагрузка распределена равномерно') : 'На ближайшие 7 дней задачи пока не назначены';
         var clear = document.getElementById('weeklyLoadClear');
         if (clear) clear.hidden = !this._todaySelectedDay;
         var selected = this._todaySelectedDay;
@@ -495,6 +517,7 @@ var RendererModule = {
         var scope = document.getElementById('todayScope');
         var projects = StateManager.get('projects') || [];
         var now = new Date();
+        var weeklyDays = this._collectWeeklyLoad(projects, now);
         this._renderWeeklyLoad(projects, now);
         var activeProjects = projects.filter(function(project) { return project && project.status !== 'completed' && project.status !== 'archived'; });
         var tasks = this._collectTodayTasks(this._todaySelectedDay ? activeProjects : projects, now, priority ? priority.value : 'all', scope ? scope.value : 'all');
@@ -506,6 +529,7 @@ var RendererModule = {
             if (selectedDay) return task.deadline === selectedDay;
             if (view === 'all') return true;
             if (view === 'overdue') return !!task.deadline && task.deadline < dateKey;
+            if (view === 'undated') return !task.deadline;
             if (view === 'upcoming') return !!task.deadline && task.deadline > dateKey;
             return task.deadline === dateKey || (!task.deadline && task.priority === 'high');
         });
@@ -519,13 +543,16 @@ var RendererModule = {
         var today = new Date();
         var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
         var canEdit = typeof AuthService !== 'undefined' && AuthService.isOwner();
+        var recommend = this._suggestWeeklyDate.bind(this);
         list.innerHTML = tasks.length ? tasks.slice(0, 8).map(function(task) {
             var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
             var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
             var late = task.deadline && task.deadline < key;
             var due = task.deadline ? (late ? 'Просрочено · ' : '') + task.deadline.slice(8, 10) + '.' + task.deadline.slice(5, 7) : 'Без срока';
             var editor = canEdit && id !== null ? '<span class="today-inline-edit" data-today-edit-project="' + projectId + '" data-today-edit-item="' + id + '"><label>Приоритет<select data-today-edit-priority aria-label="Приоритет задачи"><option value="normal"' + (task.priority === 'normal' ? ' selected' : '') + '>Обычный</option><option value="high"' + (task.priority === 'high' ? ' selected' : '') + '>Высокий</option><option value="low"' + (task.priority === 'low' ? ' selected' : '') + '>Низкий</option></select></label><label>Срок<input type="date" data-today-edit-deadline aria-label="Срок задачи" value="' + task.deadline + '"></label></span>' : '';
-            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + '</div>';
+            var suggestion = canEdit && id !== null ? recommend(weeklyDays, task.deadline) : null;
+            var move = suggestion ? '<button type="button" class="today-suggest-move" data-today-project="' + projectId + '" data-today-move="' + id + '" data-today-date="' + suggestion.key + '" title="Назначить срок на менее загруженный день">На ' + suggestion.key.slice(8, 10) + '.' + suggestion.key.slice(5, 7) + ' <i class="bi bi-arrow-right" aria-hidden="true"></i></button>' : '';
+            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + move + '</div>';
         }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
     },
 
