@@ -95,6 +95,22 @@ var RendererModule = {
         if (todayPanel) todayPanel.addEventListener('change', function(event) {
             if (event.target.matches('#todayPriority, #todayScope')) self._renderToday();
         });
+        var quickTaskForm = document.getElementById('quickTaskForm');
+        if (quickTaskForm) quickTaskForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            if (typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
+            var projectId = document.getElementById('quickTaskProject').value;
+            var text = document.getElementById('quickTaskText').value.trim();
+            var priority = document.getElementById('quickTaskPriority').value;
+            var deadline = document.getElementById('quickTaskDeadline').value;
+            if (!projectId || !text || text.length > 240 || !StateManager.getProject(projectId)) return;
+            var item = ChecklistModule.addItem(projectId, text);
+            if (!item) return;
+            if (priority !== 'normal') ChecklistModule.setPriority(projectId, item.id, priority);
+            if (deadline) ChecklistModule.setDeadline(projectId, item.id, deadline);
+            document.getElementById('quickTaskText').value = '';
+            document.getElementById('quickTaskText').focus();
+        });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
             var tab = event.target.closest('[data-today-view]');
             if (tab) {
@@ -849,6 +865,7 @@ var RendererModule = {
     // ========== РЕНДЕР ==========
 
     renderProjects: function() {
+        this._renderQuickTaskProjects();
         this._renderWorkspaceSummary();
         this._renderInsights();
         this._renderToday();
@@ -915,6 +932,27 @@ var RendererModule = {
         var self = this;
         container.innerHTML = projects.slice(0, this._visibleCount).map(function(p, i) { return self._renderProjectCard(p, i); }).join('');
         this._attachProjectEvents();
+    },
+
+    _renderQuickTaskProjects: function() {
+        var select = document.getElementById('quickTaskProject');
+        if (!select) return;
+        var selected = select.value;
+        var projects = (StateManager.get('projects') || []).filter(function(project) {
+            return project && project.id && project.status !== 'completed' && project.status !== 'archived';
+        });
+        select.replaceChildren();
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = projects.length ? 'Выбери проект' : 'Нет активных проектов';
+        select.appendChild(placeholder);
+        projects.forEach(function(project) {
+            var option = document.createElement('option');
+            option.value = project.id;
+            option.textContent = project.name || 'Без названия';
+            select.appendChild(option);
+        });
+        if (projects.some(function(project) { return project.id === selected; })) select.value = selected;
     },
 
     _renderWorkspaceSummary: function() {
