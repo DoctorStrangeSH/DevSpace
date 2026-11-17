@@ -21,20 +21,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- App CSS -->
-    <link href="css/theme.css?v=3.63.3" rel="stylesheet">
-    <link href="css/main.css?v=3.63.3" rel="stylesheet">
-    <link href="css/animations.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/navbar.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/hero.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/cards.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/checklist.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/modal.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/buttons.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/project-detail.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/notes.css?v=3.63.3" rel="stylesheet">
-    <link href="css/components/widgets.css?v=3.63.3" rel="stylesheet">
-    <link href="css/portfolio.css?v=3.63.3" rel="stylesheet">
-    <link href="css/workspace.css?v=3.63.3" rel="stylesheet">
+    <link href="css/theme.css?v=3.63.4" rel="stylesheet">
+    <link href="css/main.css?v=3.63.4" rel="stylesheet">
+    <link href="css/animations.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/navbar.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/hero.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/cards.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/checklist.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/modal.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/buttons.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/project-detail.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/notes.css?v=3.63.4" rel="stylesheet">
+    <link href="css/components/widgets.css?v=3.63.4" rel="stylesheet">
+    <link href="css/portfolio.css?v=3.63.4" rel="stylesheet">
+    <link href="css/workspace.css?v=3.63.4" rel="stylesheet">
 </head>
 <body>
     <!-- Particles Background -->
@@ -250,6 +250,15 @@
                 
                 <!-- Контент табов -->
                 <div class="tab-content" id="tabProjects" data-workspace-view="overview">
+                    <section class="workspace-overview" id="workspaceOverview" aria-labelledby="workspaceOverviewTitle">
+                        <div class="workspace-overview-heading"><div><span class="focus-panel-kicker">МОЯ МАСТЕРСКАЯ</span><h3 id="workspaceOverviewTitle">Всё важное — на одном экране</h3><p>Живая сводка по твоим проектам и задачам</p></div><button type="button" class="workspace-overview-all" data-workspace-view-target="projects">Все проекты <i class="bi bi-arrow-up-right" aria-hidden="true"></i></button></div>
+                        <div class="workspace-metrics" aria-label="Основные показатели мастерской">
+                            <button type="button" class="workspace-metric" data-workspace-view-target="projects"><span class="workspace-metric-icon metric-projects"><i class="bi bi-layers" aria-hidden="true"></i></span><strong id="workspaceActiveProjects">0</strong><span>В работе</span></button>
+                            <button type="button" class="workspace-metric" data-workspace-view-target="overview"><span class="workspace-metric-icon metric-tasks"><i class="bi bi-list-check" aria-hidden="true"></i></span><strong id="workspaceOpenTasks">0</strong><span>Открытых задач</span></button>
+                            <button type="button" class="workspace-metric" data-workspace-view-target="planning"><span class="workspace-metric-icon metric-deadline"><i class="bi bi-calendar-event" aria-hidden="true"></i></span><strong id="workspaceOverdueTasks">0</strong><span>Просрочено</span></button>
+                            <button type="button" class="workspace-metric" data-workspace-view-target="analytics"><span class="workspace-metric-icon metric-complete"><i class="bi bi-check2-circle" aria-hidden="true"></i></span><strong id="workspaceDoneTasks">0</strong><span>Завершено задач</span></button>
+                        </div>
+                    </section>
                     <section class="cloud-workspace-panel" id="cloudWorkspacePanel" aria-labelledby="cloudWorkspaceTitle">
                         <div class="cloud-workspace-heading"><span class="cloud-workspace-emblem"><i class="bi bi-cloud-check" aria-hidden="true"></i></span><div><span class="focus-panel-kicker">ЛИЧНОЕ ОБЛАКО</span><h3 id="cloudWorkspaceTitle">Мои данные, под защитой</h3><p>Ручной перенос между устройствами. Никакой автоматической перезаписи.</p></div></div>
                         <p class="health-history-note" id="cloudIdentityStatus">Войди через Google, чтобы увидеть свои проекты.</p>
@@ -381,7 +390,7 @@
                         </span>
                     </div>
                     <div class="col-md-4 text-md-end footer-actions">
-                        <span class="footer-version" id="appVersion">v3.63.3</span>
+                        <span class="footer-version" id="appVersion">v3.63.4</span>
                         <button class="footer-link ms-3 owner-only" id="footerExportBtn" title="Экспорт проектов" style="display:none;">
                             <i class="bi bi-download"></i>
                         </button>
@@ -549,52 +558,52 @@
     <!-- Firebase SDK is loaded after the interface becomes interactive. -->
     
     <!-- App JS - Core -->
-    <script src="js/core/events.js?v=3.63.3" defer></script>
-    <script src="js/core/storage.js?v=3.63.3" defer></script>
-    <script src="js/core/state.js?v=3.63.3" defer></script>
+    <script src="js/core/events.js?v=3.63.4" defer></script>
+    <script src="js/core/storage.js?v=3.63.4" defer></script>
+    <script src="js/core/state.js?v=3.63.4" defer></script>
     
     <!-- Services -->
-    <script src="js/services/localStorage.js?v=3.63.3" defer></script>
-    <script src="js/services/firebase.js?v=3.63.3" defer></script>
-    <script src="js/services/firebase-identity.js?v=3.63.3" defer></script>
-    <script src="js/services/auth.js?v=3.63.3" defer></script>
-    <script src="js/services/github.js?v=3.63.3" defer></script>
-    <script src="js/services/supabase.js?v=3.63.3" defer></script>
+    <script src="js/services/localStorage.js?v=3.63.4" defer></script>
+    <script src="js/services/firebase.js?v=3.63.4" defer></script>
+    <script src="js/services/firebase-identity.js?v=3.63.4" defer></script>
+    <script src="js/services/auth.js?v=3.63.4" defer></script>
+    <script src="js/services/github.js?v=3.63.4" defer></script>
+    <script src="js/services/supabase.js?v=3.63.4" defer></script>
     
     <!-- Sync -->
-    <script src="js/core/sync.js?v=3.63.3" defer></script>
+    <script src="js/core/sync.js?v=3.63.4" defer></script>
     
     <!-- Utils -->
-    <script src="js/utils/helpers.js?v=3.63.3" defer></script>
-    <script src="js/utils/validators.js?v=3.63.3" defer></script>
+    <script src="js/utils/helpers.js?v=3.63.4" defer></script>
+    <script src="js/utils/validators.js?v=3.63.4" defer></script>
     
     <!-- UI -->
-    <script src="js/ui/notifications.js?v=3.63.3" defer></script>
-    <script src="js/ui/renderer.js?v=3.63.3" defer></script>
-    <script src="js/ui/workspace-view.js?v=3.63.3" defer></script>
+    <script src="js/ui/notifications.js?v=3.63.4" defer></script>
+    <script src="js/ui/renderer.js?v=3.63.4" defer></script>
+    <script src="js/ui/workspace-view.js?v=3.63.4" defer></script>
     
     <!-- Modules -->
-    <script src="js/modules/theme.js?v=3.63.3" defer></script>
-    <script src="js/modules/projects.js?v=3.63.3" defer></script>
-    <script src="js/modules/checklist.js?v=3.63.3" defer></script>
-    <script src="js/modules/updates.js?v=3.63.3" defer></script>
-    <script src="js/modules/stats.js?v=3.63.3" defer></script>
-    <script src="js/modules/notes.js?v=3.63.3" defer></script>
-    <script src="js/modules/tags.js?v=3.63.3" defer></script>
-    <script src="js/modules/favorites.js?v=3.63.3" defer></script>
-    <script src="js/modules/gallery.js?v=3.63.3" defer></script>
-    <script src="js/modules/project-detail.js?v=3.63.3" defer></script>
-    <script src="js/modules/export.js?v=3.63.3" defer></script>
-    <script src="js/modules/share.js?v=3.63.3" defer></script>
-    <script src="js/modules/achievements.js?v=3.63.3" defer></script>
-    <script src="js/modules/timetracker.js?v=3.63.3" defer></script>
+    <script src="js/modules/theme.js?v=3.63.4" defer></script>
+    <script src="js/modules/projects.js?v=3.63.4" defer></script>
+    <script src="js/modules/checklist.js?v=3.63.4" defer></script>
+    <script src="js/modules/updates.js?v=3.63.4" defer></script>
+    <script src="js/modules/stats.js?v=3.63.4" defer></script>
+    <script src="js/modules/notes.js?v=3.63.4" defer></script>
+    <script src="js/modules/tags.js?v=3.63.4" defer></script>
+    <script src="js/modules/favorites.js?v=3.63.4" defer></script>
+    <script src="js/modules/gallery.js?v=3.63.4" defer></script>
+    <script src="js/modules/project-detail.js?v=3.63.4" defer></script>
+    <script src="js/modules/export.js?v=3.63.4" defer></script>
+    <script src="js/modules/share.js?v=3.63.4" defer></script>
+    <script src="js/modules/achievements.js?v=3.63.4" defer></script>
+    <script src="js/modules/timetracker.js?v=3.63.4" defer></script>
     
     <!-- App Entry -->
-    <script src="js/portfolio.js?v=3.63.3" defer></script>
-    <script src="js/github-metadata.js?v=3.63.3" defer></script>
-    <script src="js/portfolio-gallery.js?v=3.63.3" defer></script>
-    <script src="js/portfolio-nav.js?v=3.63.3" defer></script>
-    <script src="js/portfolio-search.js?v=3.63.3" defer></script>
-    <script src="js/app.js?v=3.63.3" defer></script>
+    <script src="js/portfolio.js?v=3.63.4" defer></script>
+    <script src="js/github-metadata.js?v=3.63.4" defer></script>
+    <script src="js/portfolio-gallery.js?v=3.63.4" defer></script>
+    <script src="js/portfolio-nav.js?v=3.63.4" defer></script>
+    <script src="js/portfolio-search.js?v=3.63.4" defer></script>
+    <script src="js/app.js?v=3.63.4" defer></script>
 </body>
 </html>

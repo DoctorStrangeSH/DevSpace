@@ -829,6 +829,7 @@ var RendererModule = {
     // ========== РЕНДЕР ==========
 
     renderProjects: function() {
+        this._renderWorkspaceSummary();
         this._renderInsights();
         this._renderToday();
         this._renderFocus();
@@ -894,6 +895,29 @@ var RendererModule = {
         var self = this;
         container.innerHTML = projects.slice(0, this._visibleCount).map(function(p, i) { return self._renderProjectCard(p, i); }).join('');
         this._attachProjectEvents();
+    },
+
+    _renderWorkspaceSummary: function() {
+        var projects = StateManager.get('projects') || [];
+        var now = new Date();
+        var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        var active = 0, open = 0, overdue = 0, done = 0;
+        projects.forEach(function(project) {
+            if (!project) return;
+            var isActive = project.status !== 'completed' && project.status !== 'archived';
+            if (isActive) active++;
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || !task.text) return;
+                if (task.completed) { done++; return; }
+                if (!isActive) return;
+                open++;
+                if (typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) && task.deadline < today) overdue++;
+            });
+        });
+        [['workspaceActiveProjects', active], ['workspaceOpenTasks', open], ['workspaceOverdueTasks', overdue], ['workspaceDoneTasks', done]].forEach(function(entry) {
+            var el = document.getElementById(entry[0]);
+            if (el) el.textContent = String(entry[1]);
+        });
     },
 
     _renderProjectCard: function(project, index) {

@@ -15,6 +15,12 @@ var WorkspaceViewModule = {
         document.querySelectorAll('[data-workspace-jump]').forEach(function(button) {
             button.addEventListener('click', function() { self.setView(button.dataset.workspaceJump); });
         });
+        document.querySelectorAll('[data-workspace-view-target]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                self.setView(button.dataset.workspaceViewTarget);
+                document.getElementById('workspaceSwitcher').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
         var search = document.getElementById('searchProjects');
         if (search) {
             search.addEventListener('input', function() {
