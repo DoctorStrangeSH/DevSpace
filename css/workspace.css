@@ -144,6 +144,16 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 @media(max-width:570px) { .workspace-overview { padding:17px; } .workspace-overview-heading { align-items:flex-start; flex-direction:column; } .workspace-overview-heading h3 { font-size:1.1rem; } .workspace-metrics { gap:8px; } .workspace-metric { padding:10px; grid-template-columns:34px 1fr; column-gap:8px; } .workspace-metric-icon { width:34px; height:34px; font-size:1rem; } .workspace-metric strong { font-size:1.36rem; } .workspace-metric > span:last-child { font-size:.66rem; } }
 
 /* Task center: readable time-based lanes without another long calendar. */
+.today-tools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; }
+.today-search { display:flex; align-items:center; gap:9px; flex:1 1 260px; min-width:0; min-height:42px; padding:0 13px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-secondary); background:var(--bg-primary); }
+.today-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
+.today-search input { flex:1; width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text-primary); font-size:.81rem; }
+.today-sort { display:flex; align-items:center; gap:8px; font-size:.72rem; font-weight:700; color:var(--text-secondary); }
+.today-sort select { height:42px; padding:7px 9px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-primary); background:var(--bg-primary); font-size:.78rem; }
+.today-more { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:40px; margin-top:11px; border:1px solid var(--border-color); border-radius:10px; color:var(--text-primary); background:rgba(110,95,184,.1); font-size:.78rem; font-weight:700; }
+.today-more[hidden] { display:none; }
+.today-more:hover,.today-more:focus-visible { border-color:var(--accent); background:rgba(110,95,184,.2); }
+@media(max-width:580px) { .today-sort { justify-content:space-between; width:100%; } .today-sort select { flex:1; max-width:220px; } }
 .weekly-load { margin:0 0 17px; padding:15px; border:1px solid rgba(140,127,216,.22); border-radius:15px; background:linear-gradient(130deg,rgba(115,100,218,.09),rgba(30,30,55,.1)); }
 .weekly-load-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:13px; }
 .weekly-load-heading > div { display:flex; flex-direction:column; gap:4px; }

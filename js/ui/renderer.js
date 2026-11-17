@@ -13,6 +13,7 @@ var RendererModule = {
     _scheduleMonth: null,
     _scheduleSelected: null,
     _todaySelectedDay: null,
+    _todayVisibleCount: 8,
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
@@ -94,7 +95,7 @@ var RendererModule = {
             if (project && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.insightProject);
         });
         if (todayPanel) todayPanel.addEventListener('change', function(event) {
-            if (event.target.matches('#todayPriority, #todayScope')) { self._renderToday(); return; }
+            if (event.target.matches('#todayPriority, #todayScope, #todaySort')) { self._todayVisibleCount = 8; self._renderToday(); return; }
             var editor = event.target.closest('[data-today-edit-project]');
             if (!editor || typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
             if (event.target.matches('[data-today-edit-priority]')) {
@@ -102,6 +103,13 @@ var RendererModule = {
             } else if (event.target.matches('[data-today-edit-deadline]')) {
                 ChecklistModule.setDeadline(editor.dataset.todayEditProject, editor.dataset.todayEditItem, event.target.value);
             }
+        });
+        if (todayPanel) todayPanel.addEventListener('input', function(event) {
+            if (event.target.id !== 'todaySearch') return;
+            self._todaySelectedDay = null;
+            self._todayView = 'all';
+            self._todayVisibleCount = 8;
+            self._renderToday();
         });
         var quickTaskForm = document.getElementById('quickTaskForm');
         if (quickTaskForm) quickTaskForm.addEventListener('submit', function(event) {
@@ -122,12 +130,14 @@ var RendererModule = {
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
             var day = event.target.closest('[data-weekly-day]');
             if (day) {
+                self._todayVisibleCount = 8;
                 self._todaySelectedDay = day.dataset.weeklyDay;
                 self._todayView = 'all';
                 self._renderToday();
                 return;
             }
             if (event.target.closest('#weeklyLoadClear')) {
+                self._todayVisibleCount = 8;
                 self._todaySelectedDay = null;
                 self._todayView = 'today';
                 self._renderToday();
@@ -135,8 +145,14 @@ var RendererModule = {
             }
             var tab = event.target.closest('[data-today-view]');
             if (tab) {
+                self._todayVisibleCount = 8;
                 self._todaySelectedDay = null;
                 self._todayView = tab.dataset.todayView;
+                self._renderToday();
+                return;
+            }
+            if (event.target.closest('#todayMore')) {
+                self._todayVisibleCount += 8;
                 self._renderToday();
                 return;
             }
@@ -489,6 +505,21 @@ var RendererModule = {
         return candidates.sort(function(a, b) { return a.count - b.count || a.key.localeCompare(b.key); })[0] || null;
     },
 
+    _filterAndSortTasks: function(tasks, query, sort) {
+        var needle = String(query || '').trim().toLocaleLowerCase();
+        var rank = { high: 0, normal: 1, low: 2 };
+        var matches = (tasks || []).filter(function(task) {
+            return !needle || (String(task.text || '') + ' ' + String(task.projectName || '')).toLocaleLowerCase().includes(needle);
+        });
+        if (sort === 'deadline') return matches.sort(function(a, b) {
+            return (a.deadline || '9999').localeCompare(b.deadline || '9999') || (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1);
+        });
+        if (sort === 'project') return matches.sort(function(a, b) {
+            return String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru') || (a.deadline || '9999').localeCompare(b.deadline || '9999');
+        });
+        return matches;
+    },
+
     _renderWeeklyLoad: function(projects, now) {
         var container = document.getElementById('weeklyLoadDays');
         if (!container) return;
@@ -533,18 +564,24 @@ var RendererModule = {
             if (view === 'upcoming') return !!task.deadline && task.deadline > dateKey;
             return task.deadline === dateKey || (!task.deadline && task.priority === 'high');
         });
+        var search = document.getElementById('todaySearch');
+        var sort = document.getElementById('todaySort');
+        tasks = this._filterAndSortTasks(tasks, search ? search.value : '', sort ? sort.value : 'priority');
+        var visible = Math.max(8, this._todayVisibleCount || 8);
+        var more = document.getElementById('todayMore');
+        if (more) more.hidden = tasks.length <= visible;
         document.querySelectorAll('#todayPanel [data-today-view]').forEach(function(button) {
             var active = !selectedDay && button.dataset.todayView === view;
             button.classList.toggle('is-active', active);
             button.setAttribute('aria-pressed', String(active));
         });
         var summary = document.getElementById('todaySummary');
-        if (summary) summary.textContent = (selectedDay ? 'На ' + selectedDay.slice(8, 10) + '.' + selectedDay.slice(5, 7) + ' · ' : '') + (tasks.length ? 'Найдено задач: ' + tasks.length + ' · показаны первые ' + Math.min(tasks.length, 8) : 'Задач по выбранным условиям пока нет');
+        if (summary) summary.textContent = (selectedDay ? 'На ' + selectedDay.slice(8, 10) + '.' + selectedDay.slice(5, 7) + ' · ' : '') + (tasks.length ? 'Найдено задач: ' + tasks.length + ' · показано ' + Math.min(tasks.length, visible) : 'Задач по выбранным условиям пока нет');
         var today = new Date();
         var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
         var canEdit = typeof AuthService !== 'undefined' && AuthService.isOwner();
         var recommend = this._suggestWeeklyDate.bind(this);
-        list.innerHTML = tasks.length ? tasks.slice(0, 8).map(function(task) {
+        list.innerHTML = tasks.length ? tasks.slice(0, visible).map(function(task) {
             var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
             var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
             var late = task.deadline && task.deadline < key;
