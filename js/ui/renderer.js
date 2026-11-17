@@ -149,6 +149,14 @@ var RendererModule = {
             self._renderToday();
         });
         var quickTaskForm = document.getElementById('quickTaskForm');
+        var quickTaskOptionsToggle = document.getElementById('quickTaskOptionsToggle');
+        if (quickTaskForm && quickTaskOptionsToggle) quickTaskOptionsToggle.addEventListener('click', function() {
+            var expanded = quickTaskForm.classList.toggle('is-expanded');
+            quickTaskOptionsToggle.setAttribute('aria-expanded', String(expanded));
+            quickTaskOptionsToggle.innerHTML = expanded
+                ? '<i class="bi bi-chevron-up" aria-hidden="true"></i> Скрыть параметры'
+                : '<i class="bi bi-sliders" aria-hidden="true"></i> Параметры';
+        });
         if (quickTaskForm) quickTaskForm.addEventListener('submit', function(event) {
             event.preventDefault();
             if (typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;

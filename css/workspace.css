@@ -216,8 +216,17 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .quick-task-field input:focus,.quick-task-field select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
 .quick-task-submit { display:inline-flex; justify-content:center; align-items:center; gap:8px; min-height:41px; padding:9px 15px; border:0; border-radius:10px; background:linear-gradient(125deg,#6058e9,#8269ed); color:white; font-size:.79rem; font-weight:750; white-space:nowrap; }
 .quick-task-submit:hover,.quick-task-submit:focus-visible { filter:brightness(1.12); }
+.quick-task-options-toggle { display:none; }
 @media(max-width:1200px) { .quick-task-form { grid-template-columns:repeat(2,minmax(0,1fr)); } .quick-task-main { grid-column:2; } .quick-task-submit { grid-column:1/-1; } }
-@media(max-width:560px) { .quick-task-form { grid-template-columns:1fr; } .quick-task-main,.quick-task-submit { grid-column:auto; } }
+@media(max-width:560px) {
+    .quick-task-form { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:11px; }
+    .quick-task-form > .quick-task-field:not(.quick-task-advanced) { grid-column:1/-1; }
+    .quick-task-form:not(.is-expanded) .quick-task-advanced { display:none; }
+    .quick-task-main { grid-column:1/-1; }
+    .quick-task-options-toggle { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:41px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-primary); color:var(--text-secondary); font-size:.78rem; font-weight:700; }
+    .quick-task-options-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .quick-task-submit { grid-column:auto; }
+}
 
 /* Quick edits stay inline and use the same checklist validation as project detail. */
 #todayPanel .today-task { flex-wrap:wrap; }
