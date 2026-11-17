@@ -153,7 +153,18 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .today-more { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:40px; margin-top:11px; border:1px solid var(--border-color); border-radius:10px; color:var(--text-primary); background:rgba(110,95,184,.1); font-size:.78rem; font-weight:700; }
 .today-more[hidden] { display:none; }
 .today-more:hover,.today-more:focus-visible { border-color:var(--accent); background:rgba(110,95,184,.2); }
+.today-bulk { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin:0 0 13px; padding:12px; border:1px solid rgba(154,139,235,.36); border-radius:12px; background:rgba(100,85,195,.15); }
+.today-bulk[hidden] { display:none!important; }
+.today-bulk strong { align-self:center; margin-right:auto; color:var(--text-primary); font-size:.83rem; white-space:nowrap; }
+.today-bulk label { display:flex; flex-direction:column; gap:4px; color:var(--text-secondary); font-size:.7rem; font-weight:700; }
+.today-bulk input,.today-bulk select { min-height:36px; padding:6px 9px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-primary); color:var(--text-primary); font-size:.76rem; }
+.today-bulk button { min-height:36px; padding:7px 11px; border-radius:9px; font-size:.76rem; font-weight:700; }
+.today-bulk-apply { border:1px solid #8470f5; background:#6657d9; color:white; }
+.today-bulk-clear { border:1px solid var(--border-color); background:var(--bg-primary); color:var(--text-secondary); }
+#todayPanel .today-select-label { display:flex; align-items:center; flex-shrink:0; align-self:center; margin:0 2px 0 0; padding:5px; cursor:pointer; }
+#todayPanel .today-select-label input { width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
 @media(max-width:580px) { .today-sort { justify-content:space-between; width:100%; } .today-sort select { flex:1; max-width:220px; } }
+@media(max-width:580px) { .today-bulk strong { width:100%; } .today-bulk label { flex:1 1 120px; } .today-bulk button { flex:1 1 120px; } }
 .weekly-load { margin:0 0 17px; padding:15px; border:1px solid rgba(140,127,216,.22); border-radius:15px; background:linear-gradient(130deg,rgba(115,100,218,.09),rgba(30,30,55,.1)); }
 .weekly-load-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:13px; }
 .weekly-load-heading > div { display:flex; flex-direction:column; gap:4px; }

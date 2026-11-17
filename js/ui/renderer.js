@@ -14,6 +14,7 @@ var RendererModule = {
     _scheduleSelected: null,
     _todaySelectedDay: null,
     _todayVisibleCount: 8,
+    _todaySelectedTasks: new Map(),
 
     init: function() {
         var savedPins = typeof StorageService !== 'undefined' ? StorageService.get('pinnedProjects', []) : [];
@@ -95,7 +96,16 @@ var RendererModule = {
             if (project && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(project.dataset.insightProject);
         });
         if (todayPanel) todayPanel.addEventListener('change', function(event) {
-            if (event.target.matches('#todayPriority, #todayScope, #todaySort')) { self._todayVisibleCount = 8; self._renderToday(); return; }
+            if (event.target.matches('[data-today-select]')) {
+                if (typeof AuthService === 'undefined' || !AuthService.isOwner()) return;
+                var selected = event.target;
+                var token = JSON.stringify([selected.dataset.todayProject, selected.dataset.todaySelect]);
+                if (selected.checked) self._todaySelectedTasks.set(token, { projectId: selected.dataset.todayProject, itemId: selected.dataset.todaySelect });
+                else self._todaySelectedTasks.delete(token);
+                self._renderBulkControls();
+                return;
+            }
+            if (event.target.matches('#todayPriority, #todayScope, #todaySort')) { self._todayVisibleCount = 8; self._todaySelectedTasks.clear(); self._renderToday(); return; }
             var editor = event.target.closest('[data-today-edit-project]');
             if (!editor || typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
             if (event.target.matches('[data-today-edit-priority]')) {
@@ -109,6 +119,29 @@ var RendererModule = {
             self._todaySelectedDay = null;
             self._todayView = 'all';
             self._todayVisibleCount = 8;
+            self._todaySelectedTasks.clear();
+            self._renderToday();
+        });
+        var bulkForm = document.getElementById('todayBulkForm');
+        if (bulkForm) bulkForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            if (typeof AuthService === 'undefined' || !AuthService.isOwner() || typeof ChecklistModule === 'undefined') return;
+            var priority = document.getElementById('todayBulkPriority').value;
+            var deadline = document.getElementById('todayBulkDeadline').value;
+            if (!priority && !deadline) return;
+            if (priority && !['high', 'normal', 'low'].includes(priority)) return;
+            if (deadline && (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return;
+            var targets = self._validBulkTargets();
+            if (!targets.length) { self._todaySelectedTasks.clear(); self._renderToday(); return; }
+            var detail = [priority ? 'приоритет' : '', deadline ? 'срок' : ''].filter(Boolean).join(' и ');
+            if (!window.confirm('Изменить ' + detail + ' для ' + targets.length + ' задач?')) return;
+            targets.forEach(function(target) {
+                if (priority) ChecklistModule.setPriority(target.projectId, target.itemId, priority);
+                if (deadline) ChecklistModule.setDeadline(target.projectId, target.itemId, deadline);
+            });
+            self._todaySelectedTasks.clear();
+            document.getElementById('todayBulkPriority').value = '';
+            document.getElementById('todayBulkDeadline').value = '';
             self._renderToday();
         });
         var quickTaskForm = document.getElementById('quickTaskForm');
@@ -130,6 +163,7 @@ var RendererModule = {
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
             var day = event.target.closest('[data-weekly-day]');
             if (day) {
+                self._todaySelectedTasks.clear();
                 self._todayVisibleCount = 8;
                 self._todaySelectedDay = day.dataset.weeklyDay;
                 self._todayView = 'all';
@@ -137,6 +171,7 @@ var RendererModule = {
                 return;
             }
             if (event.target.closest('#weeklyLoadClear')) {
+                self._todaySelectedTasks.clear();
                 self._todayVisibleCount = 8;
                 self._todaySelectedDay = null;
                 self._todayView = 'today';
@@ -145,6 +180,7 @@ var RendererModule = {
             }
             var tab = event.target.closest('[data-today-view]');
             if (tab) {
+                self._todaySelectedTasks.clear();
                 self._todayVisibleCount = 8;
                 self._todaySelectedDay = null;
                 self._todayView = tab.dataset.todayView;
@@ -153,6 +189,11 @@ var RendererModule = {
             }
             if (event.target.closest('#todayMore')) {
                 self._todayVisibleCount += 8;
+                self._renderToday();
+                return;
+            }
+            if (event.target.closest('#todayBulkClear')) {
+                self._todaySelectedTasks.clear();
                 self._renderToday();
                 return;
             }
@@ -520,6 +561,24 @@ var RendererModule = {
         return matches;
     },
 
+    _validBulkTargets: function() {
+        return Array.from(this._todaySelectedTasks.values()).filter(function(target) {
+            var project = StateManager.getProject(target.projectId);
+            return project && project.status !== 'completed' && project.status !== 'archived' && Array.isArray(project.checklist) && project.checklist.some(function(task) {
+                return task && !task.completed && String(task.id) === target.itemId;
+            });
+        });
+    },
+
+    _renderBulkControls: function() {
+        var form = document.getElementById('todayBulkForm');
+        if (!form) return;
+        var count = typeof AuthService !== 'undefined' && AuthService.isOwner() ? this._validBulkTargets().length : 0;
+        form.hidden = count === 0;
+        var label = document.getElementById('todayBulkCount');
+        if (label) label.textContent = 'Выбрано: ' + count;
+    },
+
     _renderWeeklyLoad: function(projects, now) {
         var container = document.getElementById('weeklyLoadDays');
         if (!container) return;
@@ -580,7 +639,9 @@ var RendererModule = {
         var today = new Date();
         var key = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
         var canEdit = typeof AuthService !== 'undefined' && AuthService.isOwner();
+        this._renderBulkControls();
         var recommend = this._suggestWeeklyDate.bind(this);
+        var selectedTasks = this._todaySelectedTasks;
         list.innerHTML = tasks.length ? tasks.slice(0, visible).map(function(task) {
             var projectId = Helpers.escapeHtml(String(task.projectId)).replace(/"/g, '&quot;');
             var id = task.id == null ? null : Helpers.escapeHtml(String(task.id)).replace(/"/g, '&quot;');
@@ -589,7 +650,9 @@ var RendererModule = {
             var editor = canEdit && id !== null ? '<span class="today-inline-edit" data-today-edit-project="' + projectId + '" data-today-edit-item="' + id + '"><label>Приоритет<select data-today-edit-priority aria-label="Приоритет задачи"><option value="normal"' + (task.priority === 'normal' ? ' selected' : '') + '>Обычный</option><option value="high"' + (task.priority === 'high' ? ' selected' : '') + '>Высокий</option><option value="low"' + (task.priority === 'low' ? ' selected' : '') + '>Низкий</option></select></label><label>Срок<input type="date" data-today-edit-deadline aria-label="Срок задачи" value="' + task.deadline + '"></label></span>' : '';
             var suggestion = canEdit && id !== null ? recommend(weeklyDays, task.deadline) : null;
             var move = suggestion ? '<button type="button" class="today-suggest-move" data-today-project="' + projectId + '" data-today-move="' + id + '" data-today-date="' + suggestion.key + '" title="Назначить срок на менее загруженный день">На ' + suggestion.key.slice(8, 10) + '.' + suggestion.key.slice(5, 7) + ' <i class="bi bi-arrow-right" aria-hidden="true"></i></button>' : '';
-            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + move + '</div>';
+            var token = JSON.stringify([String(task.projectId), String(task.id)]);
+            var select = canEdit && id !== null ? '<label class="today-select-label"><input type="checkbox" data-today-select="' + id + '" data-today-project="' + projectId + '" aria-label="Выбрать задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '"' + (selectedTasks.has(token) ? ' checked' : '') + '></label>' : '';
+            return '<div class="today-task' + (late ? ' is-late' : '') + '">' + select + (id === null ? '' : '<button type="button" class="today-check" data-today-project="' + projectId + '" data-today-complete="' + id + '" aria-label="Завершить задачу: ' + Helpers.escapeHtml(task.text).replace(/"/g, '&quot;') + '">○</button>') + '<button type="button" class="today-open" data-focus-project="' + projectId + '"><strong>' + Helpers.escapeHtml(task.text) + '</strong><small>' + Helpers.escapeHtml(task.projectName) + '</small></button><span class="today-meta"><span class="today-priority priority-' + task.priority + '">' + (task.priority === 'high' ? 'Высокий' : task.priority === 'low' ? 'Низкий' : 'Обычный') + '</span><time>' + due + '</time></span>' + editor + move + '</div>';
         }).join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
     },
 
