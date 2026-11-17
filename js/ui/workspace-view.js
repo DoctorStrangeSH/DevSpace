@@ -15,6 +15,32 @@ var WorkspaceViewModule = {
         document.querySelectorAll('[data-workspace-jump]').forEach(function(button) {
             button.addEventListener('click', function() { self.setView(button.dataset.workspaceJump); });
         });
+        var search = document.getElementById('searchProjects');
+        if (search) {
+            search.addEventListener('input', function() {
+                if (search.value.trim()) self.setView('projects');
+            });
+            search.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    self.setView('projects');
+                    document.getElementById('projects').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        }
+        document.addEventListener('keydown', function(event) {
+            var focused = event.target;
+            var typing = focused && (focused.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName));
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                if (search) { search.focus(); search.select(); }
+            } else if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                if (search) search.focus();
+            } else if (event.key === 'Escape' && focused === search) {
+                search.blur();
+            }
+        });
     },
     setView: function(view) {
         if (['overview', 'projects', 'planning', 'cloud', 'analytics'].indexOf(view) < 0) return;
