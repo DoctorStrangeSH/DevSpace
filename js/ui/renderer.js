@@ -964,9 +964,11 @@ var RendererModule = {
             (project.description ? '<div class="project-description-wrapper"><p class="project-description" data-full="' + Helpers.escapeHtml(project.description).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(Helpers.truncateText(project.description, 150)) + '</p>' + (project.description.length > 150 ? '<button class="btn-show-more" onclick="event.stopPropagation(); RendererModule._toggleDescription(this)"><i class="bi bi-chevron-down me-1"></i>Показать полностью</button>' : '') + '</div>' : '') +
             (links.length ? '<div class="project-links">' + links.join('') + '</div>' : '') +
             (techs ? '<div class="project-tech">' + techs + '</div>' : '') +
+            '<div class="project-card-snapshot" aria-label="Состояние проекта"><span><i class="bi bi-check2-circle" aria-hidden="true"></i> Задачи <strong>' + clDone + '/' + clTotal + '</strong></span><span><i class="bi bi-journal-text" aria-hidden="true"></i> Заметки <strong>' + nActive.length + '</strong></span></div>' +
+            '<details class="project-card-extras" onclick="event.stopPropagation()"><summary><i class="bi bi-chevron-down" aria-hidden="true"></i> Задачи, заметки и план</summary>' +
             '<div class="card-mini-sections"><div class="card-mini-section"><div class="mini-section-header"><i class="bi bi-check2-square"></i><span>Чек-лист</span>' + (clTotal > 0 ? '<span class="mini-badge">' + clDone + '/' + clTotal + '</span>' : '<span class="mini-badge empty">0</span>') + '</div>' + clHTML + '</div>' +
             '<div class="card-mini-section"><div class="mini-section-header"><i class="bi bi-journal-text"></i><span>Заметки</span>' + (nActive.length > 0 ? '<span class="mini-badge">' + nActive.length + '</span>' : '<span class="mini-badge empty">0</span>') + '</div>' + nHTML + '</div></div>' +
-            mHTML +
+            mHTML + '</details>' +
             '<div class="project-footer"><span class="project-date"><i class="bi bi-clock me-1"></i>' + ua + '</span><div class="project-stats-mini"><span><i class="bi bi-arrow-repeat me-1"></i>' + (project.updates ? project.updates.length : 0) + '</span><span><i class="bi bi-sticky me-1"></i>' + notes.length + '</span><span><i class="bi bi-check2 me-1"></i>' + clTotal + '</span></div></div>' +
             '</div></div>';
     },
