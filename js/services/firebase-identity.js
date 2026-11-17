@@ -382,7 +382,9 @@ var FirebaseIdentityModule = {
         var button = document.getElementById('cloudIdentityBtn');
         if (!button) return;
         var user = this._user;
-        button.textContent = user ? 'Google: выйти' : 'Google: войти';
+        button.innerHTML = user
+            ? '<i class="bi bi-cloud-check" aria-hidden="true"></i> <span>Подключено</span>'
+            : '<i class="bi bi-cloud" aria-hidden="true"></i> <span>Войти</span>';
         button.title = user ? 'Аккаунт: ' + (user.email || 'Google') + '. Автоматическая облачная запись отключена.' : 'Войти через Google. Облачная запись пока отключена.';
         button.setAttribute('aria-label', button.title);
         var status = document.getElementById('cloudIdentityStatus');

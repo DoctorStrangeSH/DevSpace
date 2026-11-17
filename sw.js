@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.62.9';
-const ASSET_VERSION = '3.62.9';
+const CACHE_VERSION = 'devspace-v3.63.0';
+const ASSET_VERSION = '3.63.0';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -19,6 +19,7 @@ const PRECACHE_URLS = [
     'css/theme.css',
     'css/main.css',
     'css/portfolio.css',
+    'css/workspace.css',
     'css/animations.css',
     'css/components/navbar.css',
     'css/components/hero.css',
@@ -49,6 +50,7 @@ const PRECACHE_URLS = [
     'js/utils/validators.js',
     'js/ui/notifications.js',
     'js/ui/renderer.js',
+    'js/ui/workspace-view.js',
     'js/modules/theme.js',
     'js/modules/projects.js',
     'js/modules/checklist.js',

@@ -1,0 +1,41 @@
+/* DevSpace · compact workspace, independent from the public portfolio */
+#mainNavbar { box-shadow:0 10px 38px rgba(0,0,0,.12); }
+#mainNavbar .container { max-width:1580px; }
+#mainNavbar .nav-link { font-size:.88rem; font-weight:600; white-space:nowrap; border-radius:12px; }
+#mainNavbar .navbar-brand { flex-shrink:0; }
+#cloudIdentityBtn { min-width:98px; border:1px solid rgba(125,109,255,.32)!important; background:rgba(111,91,255,.1)!important; color:#e5deff!important; border-radius:12px!important; font-size:.82rem!important; font-weight:700; white-space:nowrap; }
+#cloudIdentityBtn:hover { border-color:#9586ff!important; background:rgba(111,91,255,.2)!important; }
+.workspace-launch { position:fixed; right:23px; bottom:25px; z-index:1010; display:flex; align-items:center; gap:10px; padding:12px 18px; border:1px solid rgba(190,176,255,.33); border-radius:999px; color:#fff; background:linear-gradient(120deg,#685df1,#8669e9); box-shadow:0 10px 35px rgba(40,24,113,.4); font-size:.86rem; font-weight:750; text-decoration:none; transition:transform .2s,box-shadow .2s; }
+.workspace-launch:hover,.workspace-launch:focus-visible { color:#fff; transform:translateY(-3px); box-shadow:0 15px 45px rgba(65,45,165,.5); }
+body:has(#projects:target) .workspace-launch { opacity:.3; }
+.workspace-switcher { display:flex; align-items:center; gap:7px; padding:8px; margin-top:20px; margin-bottom:22px; overflow-x:auto; border:1px solid rgba(149,139,197,.18); border-radius:17px; background:rgba(21,21,33,.9); scrollbar-width:thin; }
+.workspace-switch { display:inline-flex; justify-content:center; align-items:center; gap:9px; min-height:43px; padding:10px 18px; border:1px solid transparent; border-radius:11px; background:transparent; color:#aaa9bc; font-size:.88rem; font-weight:650; white-space:nowrap; cursor:pointer; transition:background .2s,color .2s; }
+.workspace-switch:hover,.workspace-switch:focus-visible { background:rgba(136,119,255,.13); color:#f4efff; }
+.workspace-switch.active { background:linear-gradient(115deg,#655af0,#7866eb); color:white; box-shadow:0 4px 16px rgba(92,69,235,.22); }
+#tabProjects > .cloud-workspace-panel,#tabProjects > .insights-panel,#tabProjects > .today-panel,#tabProjects > .productivity-panel,#tabProjects > .roadmap-overview,#tabProjects > .schedule-calendar,#tabProjects > .focus-panel,#tabProjects > #projectsContainer,#tabProjects > .projects-load-more-wrap,#tabProjects > #emptyState { display:none!important; }
+#tabProjects[data-workspace-view="overview"] > .today-panel,#tabProjects[data-workspace-view="overview"] > .focus-panel,#tabProjects[data-workspace-view="overview"] > .roadmap-overview,#tabProjects[data-workspace-view="overview"] > .productivity-panel { display:block!important; }
+#tabProjects[data-workspace-view="projects"] > #projectsContainer { display:flex!important; }
+#tabProjects[data-workspace-view="projects"] > .projects-load-more-wrap,#tabProjects[data-workspace-view="projects"] > #emptyState { display:block!important; }
+#tabProjects[data-workspace-view="planning"] > .schedule-calendar,#tabProjects[data-workspace-view="planning"] > .roadmap-overview { display:block!important; }
+#tabProjects[data-workspace-view="cloud"] > .cloud-workspace-panel { display:block!important; }
+#tabProjects[data-workspace-view="analytics"] > .insights-panel,#tabProjects[data-workspace-view="analytics"] > .productivity-panel { display:block!important; }
+#tabProjects[data-workspace-view] > [hidden],#projectsFilters[hidden] { display:none!important; }
+#tabProjects[data-workspace-view="overview"] > .today-panel,#tabProjects[data-workspace-view="overview"] > .focus-panel { margin-bottom:16px!important; }
+#tabProjects[data-workspace-view="overview"] > .today-panel { background:linear-gradient(140deg,rgba(38,36,64,.95),rgba(20,21,34,.95)); border-color:rgba(120,104,230,.3); }
+#projectsFilters { margin-top:0!important; margin-bottom:18px; }
+.cloud-workspace-panel { padding:28px; border:1px solid rgba(137,117,255,.3); border-radius:21px; background:radial-gradient(circle at 100% 0%,rgba(116,78,210,.13),transparent 37%),linear-gradient(145deg,#1d1c2d,#141520); box-shadow:0 18px 48px rgba(0,0,0,.15); }
+.cloud-workspace-heading { display:flex; align-items:center; gap:17px; padding-bottom:21px; margin-bottom:19px; border-bottom:1px solid rgba(197,188,255,.13); }
+.cloud-workspace-emblem { display:grid; place-items:center; width:58px; height:58px; border-radius:17px; color:#b5a6ff; background:rgba(119,98,237,.15); font-size:1.65rem; flex-shrink:0; }
+.cloud-workspace-heading h3 { margin:4px 0 5px; color:#f7f5ff; font-size:1.35rem; font-weight:750; }
+.cloud-workspace-heading p { margin:0; color:#b6b4c6; font-size:.88rem; }
+.cloud-workspace-panel #cloudIdentityStatus { padding:13px 16px; border-radius:11px; background:rgba(130,113,236,.09); color:#d9d2fd; }
+.cloud-migration-preview { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px 16px; align-items:end; }
+.cloud-migration-preview button { min-height:45px; width:100%; padding:11px 15px; border:1px solid rgba(130,115,239,.38); border-radius:12px; background:rgba(31,29,52,.9); color:#f3efff; font-size:.86rem; font-weight:650; text-align:center; }
+.cloud-migration-preview button:hover:not(:disabled) { background:rgba(108,89,214,.25); border-color:#8a78ff; }
+.cloud-migration-preview button:disabled { opacity:.38; }
+.cloud-migration-preview label { display:block; margin:7px 0 0; color:#bdb9cc; font-size:.8rem; }
+.cloud-migration-preview select { width:100%; min-width:0; min-height:44px; padding:9px 12px; border:1px solid rgba(156,143,213,.34); border-radius:11px; color:#f4efff; background:#222131; }
+.cloud-migration-preview #cloudMigrationPreviewStatus { grid-column:1/-1; padding:12px 15px; margin-top:5px; border-radius:11px; color:#d0c7e5; background:rgba(8,8,18,.35); }
+#tabProjects .health-history-note { line-height:1.6; }
+@media(max-width:1150px) { #mainNavbar .nav-link { font-size:.81rem; } #mainNavbar .navbar-nav { gap:1px; } }
+@media(max-width:767px) { .workspace-launch { right:15px; bottom:16px; padding:11px 14px; } .workspace-switcher { margin-top:13px; } .workspace-switch { min-height:42px; padding:9px 13px; font-size:.8rem; } .cloud-workspace-panel { padding:18px; border-radius:17px; } .cloud-migration-preview { grid-template-columns:1fr; } .cloud-workspace-heading { align-items:flex-start; gap:11px; } .cloud-workspace-emblem { width:44px;height:44px;font-size:1.2rem; } .cloud-workspace-heading h3 { font-size:1.13rem; } }

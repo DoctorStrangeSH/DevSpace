@@ -190,7 +190,7 @@ var SyncModule = {
     _updateSyncDisplay: function() {
         var el = document.getElementById('lastSyncDisplay');
         if (!el) return;
-        el.textContent = this._mode === 'local' ? 'Локальное хранение' : 'Облако: только чтение · изменения сохраняются в браузере';
+        el.textContent = this._mode === 'local' ? 'Локальное хранение' : 'Облако: ручной перенос · изменения сохраняются в браузере';
     }
 };
 

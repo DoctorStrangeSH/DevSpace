@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.62.9',
+        version: '3.63.0',
         debug: false
     },
 
@@ -116,7 +116,7 @@ var App = {
         var modules = [
             'AuthService', 'FirebaseIdentityModule', 'ThemeModule', 'NotificationModule',
             'GitHubService', 'SupabaseService',
-            'RendererModule', 'ProjectsModule', 'ChecklistModule',
+            'RendererModule', 'WorkspaceViewModule', 'ProjectsModule', 'ChecklistModule',
             'UpdatesModule', 'StatsModule', 'NotesModule',
             'TagsModule', 'FavoritesModule', 'GalleryModule',
             'ProjectDetailModule', 'ExportModule', 'ShareModule',
