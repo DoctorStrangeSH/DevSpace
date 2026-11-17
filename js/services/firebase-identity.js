@@ -8,6 +8,7 @@ var FirebaseIdentityModule = {
     _previewBusy: false,
     _uploadBusy: false,
     _downloadBusy: false,
+    _batchBusy: false,
     _backupReady: false,
     _eligibleUploads: [],
     _eligibleDownloads: [],
@@ -22,6 +23,8 @@ var FirebaseIdentityModule = {
         if (previewButton) previewButton.addEventListener('click', function() { self.previewMigration(); });
         var uploadButton = document.getElementById('cloudMigrationUploadBtn');
         if (uploadButton) uploadButton.addEventListener('click', function() { self.uploadOneProject(); });
+        var batchButton = document.getElementById('cloudMigrationBatchBtn');
+        if (batchButton) batchButton.addEventListener('click', function() { self.uploadRemainingProjects(); });
         var downloadButton = document.getElementById('cloudMigrationDownloadBtn');
         if (downloadButton) downloadButton.addEventListener('click', function() { self.downloadOneProject(); });
         var backupButton = document.getElementById('cloudMigrationBackupBtn');
@@ -84,6 +87,7 @@ var FirebaseIdentityModule = {
                         self._previewBusy = false;
                         self._uploadBusy = false;
                         self._downloadBusy = false;
+                        self._batchBusy = false;
                         self._backupReady = false;
                         self._eligibleUploads = [];
                         self._eligibleDownloads = [];
@@ -120,7 +124,7 @@ var FirebaseIdentityModule = {
         var self = this;
         var status = document.getElementById('cloudMigrationPreviewStatus');
         var user = this._auth && this._auth.currentUser;
-        if (this._previewBusy || this._uploadBusy || this._downloadBusy || !user || !user.uid || !this._ready) return Promise.resolve(false);
+        if (this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !user || !user.uid || !this._ready) return Promise.resolve(false);
         var uid = user.uid;
         var requestId = ++this._previewRequestId;
         this._previewBusy = true;
@@ -170,7 +174,7 @@ var FirebaseIdentityModule = {
         var status = document.getElementById('cloudMigrationPreviewStatus');
         var user = this._auth && this._auth.currentUser;
         var projectId = select && select.value;
-        if (this._uploadBusy || this._downloadBusy || this._previewBusy || !this._ready || !this._backupReady ||
+        if (this._uploadBusy || this._downloadBusy || this._batchBusy || this._previewBusy || !this._ready || !this._backupReady ||
             !user || !user.uid || !projectId ||
             !this._eligibleUploads.some(function(project) { return project.id === projectId; })) {
             return Promise.resolve(false);
@@ -230,7 +234,7 @@ var FirebaseIdentityModule = {
         var status = document.getElementById('cloudMigrationPreviewStatus');
         var user = this._auth && this._auth.currentUser;
         var projectId = select && select.value;
-        if (this._previewBusy || this._uploadBusy || this._downloadBusy || !this._ready ||
+        if (this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !this._ready ||
             !this._backupReady || !user || !user.uid || !projectId ||
             !this._eligibleDownloads.some(function(project) { return project.id === projectId; })) {
             return Promise.resolve(false);
@@ -290,6 +294,90 @@ var FirebaseIdentityModule = {
             self._render();
         });
     },
+    // Explicit, bounded migration of missing projects. Each write is a separate
+    // create-only transaction; failure stops the queue without touching local data.
+    uploadRemainingProjects: function() {
+        var self = this;
+        var status = document.getElementById('cloudMigrationPreviewStatus');
+        var user = this._auth && this._auth.currentUser;
+        if (this._batchBusy || this._uploadBusy || this._downloadBusy || this._previewBusy ||
+            !this._ready || !this._backupReady || !user || !user.uid || !this._eligibleUploads.length) {
+            return Promise.resolve(false);
+        }
+        var uid = user.uid;
+        var expected = this._eligibleUploads.slice(0, 20).map(function(project) {
+            return { id: project.id, json: JSON.stringify(project) };
+        });
+        if (!window.confirm('Загрузить до ' + expected.length + ' новых проектов в личное облако?\n\n' +
+            'Существующие облачные записи не изменятся. Перед продолжением убедись, что резервная копия скачана.')) {
+            return Promise.resolve(false);
+        }
+        var requestId = ++this._previewRequestId;
+        this._batchBusy = true;
+        this._eligibleUploads = [];
+        this._eligibleDownloads = [];
+        this._render();
+        if (status) status.textContent = 'Перепроверяем облако перед пакетным переносом…';
+        var matchesSession = function() {
+            return requestId === self._previewRequestId && self._auth &&
+                self._auth.currentUser && self._auth.currentUser.uid === uid && self._batchBusy;
+        };
+        return FirebaseService.getPrivateProjectPreview().then(function(remote) {
+            if (!matchesSession()) return false;
+            if (!Array.isArray(remote)) {
+                if (status) status.textContent = FirebaseService._describePrivatePreviewError(
+                    FirebaseService._lastPrivatePreviewError) + ' Перенос не начинался.';
+                return false;
+            }
+            var local = StateManager.get('projects') || [];
+            var candidates = expected.map(function(entry) {
+                return SyncModule._prepareSinglePrivateMigration(entry.id, local, remote);
+            });
+            if (candidates.some(function(project, index) {
+                return !project || JSON.stringify(project) !== expected[index].json;
+            })) {
+                if (status) status.textContent = 'Состав проектов изменился после проверки. Перенос отменён; проверь облако снова.';
+                return false;
+            }
+            var uploaded = 0;
+            var sendNext = function(index) {
+                if (!matchesSession()) return Promise.resolve(false);
+                if (index >= candidates.length) {
+                    if (status) status.textContent = 'Перенос завершён: сохранено ' + uploaded +
+                        ' из ' + candidates.length + ' проектов. Локальные копии сохранены. Повтори проверку для обновления списка.';
+                    return Promise.resolve(true);
+                }
+                // Do not accidentally continue with a project edited after the initial snapshot.
+                var current = StateManager.get('projects') || [];
+                var snapshot = current.find(function(project) { return project && project.id === candidates[index].id; });
+                if (!snapshot || JSON.stringify(snapshot) !== expected[index].json) {
+                    if (status) status.textContent = 'Остановлено: локальный проект изменился. Сохранено ' + uploaded +
+                        ' из ' + candidates.length + '. Повтори проверку перед продолжением.';
+                    return Promise.resolve(false);
+                }
+                if (status) status.textContent = 'Сохраняем проект ' + (index + 1) + ' из ' + candidates.length + '…';
+                return FirebaseService.createPrivateProjectIfAbsent(candidates[index], uid).then(function(created) {
+                    if (!matchesSession()) return false;
+                    if (!created) {
+                        if (status) status.textContent = 'Остановлено после ' + uploaded + ' проектов: ' +
+                            FirebaseService._describePrivateCreateError(FirebaseService._lastPrivateCreateError) +
+                            ' Повтори проверку, чтобы продолжить без повторных записей.';
+                        return false;
+                    }
+                    uploaded++;
+                    return sendNext(index + 1);
+                });
+            };
+            return sendNext(0);
+        }).catch(function() {
+            if (matchesSession() && status) status.textContent = 'Перенос прервался. Проверь облако, прежде чем повторять.';
+            return false;
+        }).finally(function() {
+            if (requestId !== self._previewRequestId) return;
+            self._batchBusy = false;
+            self._render();
+        });
+    },
     _render: function() {
         var button = document.getElementById('cloudIdentityBtn');
         if (!button) return;
@@ -300,7 +388,7 @@ var FirebaseIdentityModule = {
         var status = document.getElementById('cloudIdentityStatus');
         if (status) status.textContent = user ? 'Вход выполнен · доступен ручной перенос одного проекта' : (this._lastError || 'Для загрузки одного проекта войди через Google');
         var previewButton = document.getElementById('cloudMigrationPreviewBtn');
-        if (previewButton) previewButton.disabled = !user || !this._ready || this._previewBusy || this._uploadBusy || this._downloadBusy;
+        if (previewButton) previewButton.disabled = !user || !this._ready || this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy;
         var select = document.getElementById('cloudMigrationProjectSelect');
         if (select) {
             var previous = select.value;
@@ -316,11 +404,14 @@ var FirebaseIdentityModule = {
                 select.appendChild(option);
             });
             if (this._eligibleUploads.some(function(project) { return project.id === previous; })) select.value = previous;
-            select.disabled = !user || this._previewBusy || this._uploadBusy || this._downloadBusy || !this._eligibleUploads.length;
+            select.disabled = !user || this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !this._eligibleUploads.length;
         }
         var uploadButton = document.getElementById('cloudMigrationUploadBtn');
         if (uploadButton) uploadButton.disabled = !user || !this._ready || this._previewBusy ||
-            this._uploadBusy || this._downloadBusy || !this._backupReady || !select || !select.value;
+            this._uploadBusy || this._downloadBusy || this._batchBusy || !this._backupReady || !select || !select.value;
+        var batchButton = document.getElementById('cloudMigrationBatchBtn');
+        if (batchButton) batchButton.disabled = !user || !this._ready || !this._backupReady ||
+            this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !this._eligibleUploads.length;
         var downloadSelect = document.getElementById('cloudMigrationDownloadSelect');
         if (downloadSelect) {
             var selectedDownload = downloadSelect.value;
@@ -336,7 +427,7 @@ var FirebaseIdentityModule = {
                 downloadSelect.appendChild(option);
             });
             if (this._eligibleDownloads.some(function(project) { return project.id === selectedDownload; })) downloadSelect.value = selectedDownload;
-            downloadSelect.disabled = !user || this._previewBusy || this._uploadBusy || this._downloadBusy || !this._eligibleDownloads.length;
+            downloadSelect.disabled = !user || this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !this._eligibleDownloads.length;
             if (!downloadSelect._cloudDownloadListenerBound) {
                 downloadSelect.addEventListener('change', this._render.bind(this));
                 downloadSelect._cloudDownloadListenerBound = true;
@@ -344,7 +435,7 @@ var FirebaseIdentityModule = {
         }
         var downloadButton = document.getElementById('cloudMigrationDownloadBtn');
         if (downloadButton) downloadButton.disabled = !user || !this._ready || !this._backupReady ||
-            this._previewBusy || this._uploadBusy || this._downloadBusy || !downloadSelect || !downloadSelect.value;
+            this._previewBusy || this._uploadBusy || this._downloadBusy || this._batchBusy || !downloadSelect || !downloadSelect.value;
         if (select && !select._cloudUploadListenerBound) {
             select.addEventListener('change', this._render.bind(this));
             select._cloudUploadListenerBound = true;
