@@ -196,7 +196,8 @@ var FirebaseIdentityModule = {
                     !self._auth.currentUser || self._auth.currentUser.uid !== uid) return false;
                 if (status) status.textContent = created
                     ? 'Готово! Один проект проверен и сохранён в личном облаке. Локальная копия не изменена. Для следующего проекта повтори проверку.'
-                    : 'Не удалось подтвердить создание. Ничего не перезаписано. Повтори проверку: возможно, проект уже существует или правила не совпадают.';
+                    : FirebaseService._describePrivateCreateError(FirebaseService._lastPrivateCreateError) +
+                        ' Локальные данные сохранены.';
                 return created;
             });
         }).catch(function() {

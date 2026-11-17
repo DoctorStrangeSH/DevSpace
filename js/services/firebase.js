@@ -27,6 +27,20 @@ var FirebaseService = {
     // Automatic sync, updates and deletions remain disabled.
     _privateProjectCreatesEnabled: true,
     _lastPrivatePreviewError: null,
+    _lastPrivateCreateError: null,
+
+    _describePrivateCreateError: function(code) {
+        switch (code) {
+            case 'permission-denied': return 'Firebase отклонил запись. Проверь, что опубликованы именно правила создания проектов для владельца.';
+            case 'unauthenticated': return 'Сессия Google изменилась. Войди снова и запусти проверку.';
+            case 'already-exists': return 'Проект с таким ID уже есть в облаке. Он не перезаписан.';
+            case 'invalid-project': return 'Проект не соответствует требованиям безопасности или превышает допустимый размер.';
+            case 'unavailable': return 'Нет связи с Firestore. Проверь интернет и затем повтори проверку.';
+            case 'deadline-exceeded': return 'Истекло время ожидания Firebase. Проверь облако, прежде чем повторять загрузку.';
+            case 'verification-failed': return 'Не удалось подтвердить сохранение. Сначала обнови список облачных проектов.';
+            default: return 'Не удалось подтвердить создание. Запусти проверку облака перед повтором.';
+        }
+    },
 
     _describePrivatePreviewError: function(code) {
         switch (code) {
@@ -201,13 +215,18 @@ var FirebaseService = {
     // the absence check atomic with creation, even across several devices.
     // This is intentionally unreachable in production while the gate is false.
     createPrivateProjectIfAbsent: function(project, expectedUid) {
+        this._lastPrivateCreateError = null;
         if (!this._privateProjectCreatesEnabled || !this._db ||
             typeof firebase === 'undefined' || !firebase.auth ||
             !firebase.firestore || !firebase.firestore.FieldValue ||
-            !firebase.firestore.FieldValue.serverTimestamp) return Promise.resolve(false);
+            !firebase.firestore.FieldValue.serverTimestamp) {
+            this._lastPrivateCreateError = 'unavailable';
+            return Promise.resolve(false);
+        }
         var envelope = this._preparePrivateProjectEnvelope(project);
         if (!envelope || typeof expectedUid !== 'string' || !expectedUid ||
             !firebase.auth().currentUser || firebase.auth().currentUser.uid !== expectedUid) {
+            this._lastPrivateCreateError = envelope ? 'unauthenticated' : 'invalid-project';
             return Promise.resolve(false);
         }
         var self = this;
@@ -216,9 +235,16 @@ var FirebaseService = {
         return this._db.runTransaction(function(transaction) {
             return transaction.get(reference).then(function(snapshot) {
                 // Never replace an existing project, even when contents match.
-                if (snapshot.exists || !firebase.auth().currentUser ||
+                if (snapshot.exists) {
+                    self._lastPrivateCreateError = 'already-exists';
+                    return false;
+                }
+                if (!firebase.auth().currentUser ||
                     firebase.auth().currentUser.uid !== expectedUid ||
-                    !self._privateProjectCreatesEnabled) return false;
+                    !self._privateProjectCreatesEnabled) {
+                    self._lastPrivateCreateError = 'unauthenticated';
+                    return false;
+                }
                 transaction.set(reference, {
                     id: envelope.id,
                     schemaVersion: envelope.schemaVersion,
@@ -228,16 +254,29 @@ var FirebaseService = {
                 return true;
             });
         }).then(function(created) {
-            if (!created || !firebase.auth().currentUser ||
-                firebase.auth().currentUser.uid !== expectedUid) return false;
+            if (!created) return false;
+            if (!firebase.auth().currentUser ||
+                firebase.auth().currentUser.uid !== expectedUid) {
+                self._lastPrivateCreateError = 'unauthenticated';
+                return false;
+            }
             return reference.get().then(function(saved) {
                 if (!firebase.auth().currentUser || firebase.auth().currentUser.uid !== expectedUid ||
-                    !saved.exists) return false;
+                    !saved.exists) {
+                    self._lastPrivateCreateError = 'verification-failed';
+                    return false;
+                }
                 var data = saved.data();
-                return !!(data && data.payload === envelope.payload &&
+                var verified = !!(data && data.payload === envelope.payload &&
                     self._decodePrivateProjectDocument(data, envelope.id));
+                if (!verified) self._lastPrivateCreateError = 'verification-failed';
+                return verified;
             });
-        }).catch(function() { return false; });
+        }).catch(function(error) {
+            var allowed = ['permission-denied', 'unauthenticated', 'unavailable', 'deadline-exceeded', 'already-exists'];
+            self._lastPrivateCreateError = allowed.indexOf(error && error.code) !== -1 ? error.code : 'unknown';
+            return false;
+        });
     },
 
     deleteProject: function(projectId) {
