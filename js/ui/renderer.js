@@ -699,15 +699,16 @@ var RendererModule = {
         var summary = document.getElementById('weeklyLoadSummary');
         var busy = days.filter(function(day) { return day.count >= 4; }).length;
         var free = days.filter(function(day) { return day.count < 4; }).length;
-        if (summary) summary.textContent = total ? total + ' задач · ' + (busy ? 'перегружено дней: ' + busy + ' · свободнее: ' + free : 'нагрузка распределена равномерно') : 'На ближайшие 7 дней задачи пока не назначены';
+        if (summary) summary.textContent = total ? total + ' задач · ' + (busy ? 'загруженных дней: ' + busy + ' · свободнее: ' + free : 'неделя без перегрузок') + ' · выбери день' : 'На ближайшие 7 дней задачи пока не назначены';
         var clear = document.getElementById('weeklyLoadClear');
         if (clear) clear.hidden = !this._todaySelectedDay;
         var selected = this._todaySelectedDay;
         container.innerHTML = days.map(function(day, index) {
             var active = selected === day.key;
             var height = Math.round(100 * day.count / max);
-            var label = day.label + ', ' + day.date + ' · задач: ' + day.count;
-            return '<button type="button" class="weekly-load-day' + (index === 0 ? ' is-today' : '') + (day.count >= 4 ? ' is-busy' : '') + (active ? ' is-selected' : '') + '" data-weekly-day="' + day.key + '" aria-label="' + label + '" aria-pressed="' + active + '" title="' + label + '"><span class="weekly-load-label">' + day.label + '</span><span class="weekly-load-bar-track"><span class="weekly-load-bar" style="height:' + height + '%"></span></span><strong>' + day.count + '</strong><small>' + day.date + '</small></button>';
+            var load = day.count >= 4 ? 'Высокая нагрузка' : day.count >= 2 ? 'Средняя нагрузка' : day.count ? 'Низкая нагрузка' : 'Свободный день';
+            var label = day.label + ', ' + day.date + ' · задач: ' + day.count + ' · ' + load;
+            return '<button type="button" class="weekly-load-day' + (index === 0 ? ' is-today' : '') + (day.count >= 4 ? ' is-busy' : day.count >= 2 ? ' is-moderate' : ' is-light') + (active ? ' is-selected' : '') + '" data-weekly-day="' + day.key + '" aria-label="' + label + '" aria-pressed="' + active + '" title="' + label + '"><span class="weekly-load-label">' + day.label + '</span><span class="weekly-load-bar-track"><span class="weekly-load-bar" style="height:' + height + '%"></span></span><strong>' + day.count + '</strong><small>' + day.date + '</small></button>';
         }).join('');
     },
 
