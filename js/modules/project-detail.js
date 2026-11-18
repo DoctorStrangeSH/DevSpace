@@ -5,6 +5,7 @@
 
 var ProjectDetailModule = {
     _currentProjectId: null,
+    _notesFilter: null,
 
     init: function() {
         this._bindEvents();
@@ -31,6 +32,7 @@ var ProjectDetailModule = {
         }
 
         this._currentProjectId = projectId;
+        this._notesFilter = { search: '', priority: '', completed: '', type: '' };
         sessionStorage.setItem('devspace_detail_project', projectId);
         sessionStorage.setItem('devspace_modal', 'projectDetailModal');
 
@@ -168,6 +170,19 @@ var ProjectDetailModule = {
                 '</span>' +
             '</h4>' +
             (isOwner ? '<div id="notesForm">' + NotesModule.renderAddForm() + '</div>' : '') +
+            '<div class="notes-search-toolbar" role="search" aria-label="Поиск и фильтрация заметок">' +
+                '<label class="visually-hidden" for="notesSearch">Поиск по заметкам</label>' +
+                '<input id="notesSearch" type="search" class="form-control" placeholder="Поиск по названию, тексту и тегам" autocomplete="off">' +
+                '<label class="visually-hidden" for="notesPriorityFilter">Приоритет заметок</label>' +
+                '<select id="notesPriorityFilter" class="form-select" aria-label="Приоритет заметок">' +
+                    '<option value="">Все приоритеты</option><option value="critical">Критичный</option><option value="high">Высокий</option><option value="medium">Средний</option><option value="low">Низкий</option>' +
+                '</select>' +
+                '<label class="visually-hidden" for="notesStatusFilter">Статус заметок</label>' +
+                '<select id="notesStatusFilter" class="form-select" aria-label="Статус заметок">' +
+                    '<option value="">Все статусы</option><option value="open">Не завершены</option><option value="done">Выполнены</option>' +
+                '</select>' +
+                (isOwner ? '<button id="notesCompleteVisible" class="btn btn-glass btn-sm" type="button" title="Отметить найденные заметки выполненными"><i class="bi bi-check2-all me-1"></i>Завершить найденные</button>' : '') +
+            '</div>' +
             '<div id="notesContainer">' + NotesModule.renderNotes(project.id) + '</div>' +
         '</div>';
 
@@ -589,13 +604,15 @@ var ProjectDetailModule = {
 
         if (isOwner) {
             var addBtn = document.getElementById('addNoteBtn');
-            if (addBtn) {
+            if (addBtn && !addBtn.dataset.notesBound) {
+                addBtn.dataset.notesBound = 'true';
                 addBtn.addEventListener('click', function() { self._addNote(project.id); });
             }
 
             ['noteTitle', 'noteDescription', 'noteTags'].forEach(function(id) {
                 var el = document.getElementById(id);
-                if (el) {
+                if (el && !el.dataset.notesBound) {
+                    el.dataset.notesBound = 'true';
                     el.addEventListener('keydown', function(e) {
                         if (e.key === 'Enter' && e.ctrlKey) {
                             e.preventDefault();
@@ -639,14 +656,40 @@ var ProjectDetailModule = {
 
         document.querySelectorAll('.notes-filter-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                document.querySelectorAll('.notes-filter-btn').forEach(function(b) { b.classList.remove('active'); });
-                btn.classList.add('active');
                 var filter = btn.dataset.filter;
-                var filterObj = filter === 'all' ? {} : { type: filter };
-                document.getElementById('notesContainer').innerHTML = NotesModule.renderNotes(project.id, filterObj);
-                self._initDetailNotes(project);
+                self._notesFilter.type = filter === 'all' ? '' : filter;
+                self._refreshNotes(project.id);
             });
         });
+
+        var search = document.getElementById('notesSearch');
+        if (search && !search.dataset.notesBound) {
+            search.dataset.notesBound = 'true';
+            search.addEventListener('input', function() {
+                self._notesFilter.search = search.value;
+                self._refreshNotes(project.id);
+            });
+        }
+        [['notesPriorityFilter', 'priority'], ['notesStatusFilter', 'completed']].forEach(function(pair) {
+            var select = document.getElementById(pair[0]);
+            if (select && !select.dataset.notesBound) {
+                select.dataset.notesBound = 'true';
+                select.addEventListener('change', function() {
+                    self._notesFilter[pair[1]] = select.value;
+                    self._refreshNotes(project.id);
+                });
+            }
+        });
+        var bulkBtn = document.getElementById('notesCompleteVisible');
+        if (bulkBtn && !bulkBtn.dataset.notesBound) {
+            bulkBtn.dataset.notesBound = 'true';
+            bulkBtn.addEventListener('click', function() { self._completeVisibleNotes(project.id); });
+        }
+        if (bulkBtn) {
+            var pending = NotesModule.getNotes(project.id, this._getNotesFilter()).filter(function(n) { return !n.completed; });
+            bulkBtn.disabled = pending.length === 0;
+            bulkBtn.title = pending.length ? 'Завершить найденные: ' + pending.length : 'Нет незавершённых заметок в результатах';
+        }
 
         var countEl = document.getElementById('notesCount');
         if (countEl) countEl.textContent = project.notes ? project.notes.length : 0;
@@ -736,10 +779,42 @@ var ProjectDetailModule = {
     _refreshNotes: function(projectId) {
         var project = StateManager.getProject(projectId);
         if (!project) return;
-        document.getElementById('notesContainer').innerHTML = NotesModule.renderNotes(projectId);
+        document.getElementById('notesContainer').innerHTML = NotesModule.renderNotes(projectId, this._getNotesFilter());
         this._initDetailNotes(project);
         var countEl = document.getElementById('notesCount');
         if (countEl) countEl.textContent = project.notes ? project.notes.length : 0;
+    },
+
+    _getNotesFilter: function() {
+        var current = this._notesFilter || {};
+        var filter = {};
+        if (current.type) filter.type = current.type;
+        if (current.priority) filter.priority = current.priority;
+        if (current.search) filter.search = current.search;
+        if (current.completed === 'done') filter.completed = true;
+        if (current.completed === 'open') filter.completed = false;
+        return filter;
+    },
+
+    _completeVisibleNotes: function(projectId) {
+        var project = StateManager.getProject(projectId);
+        if (!project || (typeof AuthService !== 'undefined' && !AuthService.isOwner())) return;
+        var pending = NotesModule.getNotes(projectId, this._getNotesFilter()).filter(function(note) { return !note.completed; });
+        if (!pending.length || !confirm('Отметить выполненными ' + pending.length + ' найденных заметок?')) return;
+        var ids = new Set(pending.map(function(note) { return note.id; }));
+        var timestamp = new Date().toISOString();
+        project.notes.forEach(function(note) {
+            if (ids.has(note.id)) {
+                note.completed = true;
+                note.completedAt = timestamp;
+                note.updatedAt = timestamp;
+            }
+        });
+        StateManager.updateProject(projectId, { notes: project.notes });
+        StateManager.saveProjects();
+        EventBus.emit('notes:bulk-completed', { projectId: projectId, count: pending.length });
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success('Завершено заметок: ' + pending.length);
+        this._refreshNotes(projectId);
     }
 };
 

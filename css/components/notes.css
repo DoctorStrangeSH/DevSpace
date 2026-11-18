@@ -32,6 +32,37 @@
 }
 
 /* Фильтры */
+.notes-search-toolbar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(145px, 180px) minmax(145px, 180px) auto;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.notes-search-toolbar .form-control,
+.notes-search-toolbar .form-select,
+.notes-search-toolbar .btn { min-height: 42px; }
+
+.notes-search-toolbar .btn { white-space: nowrap; }
+
+.notes-results {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: -10px 0 12px;
+}
+
+@media (max-width: 900px) {
+    .notes-search-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .notes-search-toolbar #notesSearch,
+    .notes-search-toolbar #notesCompleteVisible { grid-column: 1 / -1; }
+}
+
+@media (max-width: 420px) {
+    .notes-search-toolbar { gap: 8px; }
+    .notes-search-toolbar .form-select { min-width: 0; font-size: 13px; }
+}
+
 .notes-filters {
     display: flex;
     flex-wrap: wrap;

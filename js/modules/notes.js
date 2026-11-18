@@ -166,11 +166,11 @@ var NotesModule = {
         }
 
         if (filter.search) {
-            var term = filter.search.toLowerCase();
+            var term = String(filter.search).trim().toLowerCase();
             notes = notes.filter(function(n) {
-                return n.title.toLowerCase().indexOf(term) !== -1 ||
-                       n.description.toLowerCase().indexOf(term) !== -1 ||
-                       (n.tags || []).some(function(t) { return t.toLowerCase().indexOf(term) !== -1; });
+                return String(n.title || '').toLowerCase().indexOf(term) !== -1 ||
+                       String(n.description || '').toLowerCase().indexOf(term) !== -1 ||
+                       (n.tags || []).some(function(t) { return String(t).toLowerCase().indexOf(term) !== -1; });
             });
         }
 
@@ -231,22 +231,23 @@ var NotesModule = {
         '</div>';
 
         // Фильтры
-        html += '<div class="notes-filters">' +
-            '<button class="notes-filter-btn active" data-filter="all">Все</button>';
+        html += '<div class="notes-filters" aria-label="Тип заметки">' +
+            '<button class="notes-filter-btn ' + (!filter.type ? 'active' : '') + '" data-filter="all" aria-pressed="' + !filter.type + '">Все</button>';
         
         Object.keys(this.types).forEach(function(key) {
-            html += '<button class="notes-filter-btn" data-filter="' + key + '">' +
+            html += '<button class="notes-filter-btn ' + (filter.type === key ? 'active' : '') + '" data-filter="' + key + '" aria-pressed="' + (filter.type === key) + '">' +
                 '<i class="bi ' + self.types[key].icon + '"></i> ' + self.types[key].label +
             '</button>';
         });
         
-        html += '</div>';
+        html += '</div>' +
+            '<div class="notes-results" role="status">Показано ' + notes.length + ' из ' + stats.total + '</div>';
 
         // Список заметок
         html += '<div class="notes-list">';
 
         if (notes.length === 0) {
-            html += '<div class="notes-empty"><i class="bi bi-journal-text"></i><p>Нет заметок</p></div>';
+            html += '<div class="notes-empty"><i class="bi bi-journal-text"></i><p>' + (stats.total ? 'По выбранным условиям ничего не найдено' : 'Нет заметок') + '</p></div>';
         } else {
             notes.forEach(function(note) {
                 var type = self.types[note.type] || self.types.note;
