@@ -173,6 +173,20 @@ var RendererModule = {
             document.getElementById('quickTaskText').focus();
         });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            if (event.target.closest('#todayGroupsToggleAll')) {
+                var groups = Array.from(todayPanel.querySelectorAll('.today-project-group'));
+                var collapse = groups.some(function(group) { return !group.classList.contains('is-collapsed'); });
+                groups.forEach(function(group) {
+                    var heading = group.querySelector('[data-today-group]');
+                    if (!heading) return;
+                    if (collapse) self._todayCollapsedGroups.add(heading.dataset.todayGroup);
+                    else self._todayCollapsedGroups.delete(heading.dataset.todayGroup);
+                    group.classList.toggle('is-collapsed', collapse);
+                    heading.setAttribute('aria-expanded', String(!collapse));
+                });
+                self._updateTodayGroupsToggle();
+                return;
+            }
             var filterToggle = event.target.closest('#todayMobileFilterToggle');
             if (filterToggle) {
                 var expanded = todayPanel.classList.toggle('is-filters-expanded');
@@ -235,6 +249,7 @@ var RendererModule = {
                 var collapsed = self._todayCollapsedGroups.has(groupId);
                 if (group) group.classList.toggle('is-collapsed', collapsed);
                 groupButton.setAttribute('aria-expanded', String(!collapsed));
+                self._updateTodayGroupsToggle();
                 return;
             }
             var editToggle = event.target.closest('[data-today-edit-toggle]');
@@ -819,6 +834,18 @@ var RendererModule = {
         } else {
             list.innerHTML = rows.length ? rows.join('') : '<p class="today-empty">✨ Всё спокойно! Можно выбрать другой фильтр или назначить сроки в проектах.</p>';
         }
+        this._updateTodayGroupsToggle();
+    },
+
+    _updateTodayGroupsToggle: function() {
+        var button = document.getElementById('todayGroupsToggleAll');
+        var list = document.getElementById('todayList');
+        if (!button || !list) return;
+        var groups = Array.from(list.querySelectorAll('.today-project-group'));
+        button.hidden = groups.length === 0;
+        if (!groups.length) return;
+        var allCollapsed = groups.every(function(group) { return group.classList.contains('is-collapsed'); });
+        button.innerHTML = allCollapsed ? 'Развернуть все проекты <i class="bi bi-chevron-down" aria-hidden="true"></i>' : 'Свернуть все проекты <i class="bi bi-chevron-up" aria-hidden="true"></i>';
     },
 
     _collectInsights: function(projects, now) {

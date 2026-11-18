@@ -198,6 +198,9 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .today-group-switch { display:inline-flex; align-items:center; gap:8px; min-height:42px; padding:7px 12px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-primary); background:rgba(120,100,200,.09); font-size:.76rem; font-weight:700; white-space:nowrap; cursor:pointer; }
 .today-group-switch input { width:16px; height:16px; accent-color:var(--accent); }
 .today-project-group { overflow:hidden; border:1px solid rgba(153,136,222,.25); border-radius:12px; background:rgba(107,90,179,.055); }
+.today-groups-toggle-all { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:39px; margin:0 0 12px; padding:8px 12px; border:1px solid var(--border-color); border-radius:10px; color:var(--text-secondary); background:rgba(110,95,184,.09); font-size:.76rem; font-weight:700; }
+.today-groups-toggle-all[hidden] { display:none; }
+.today-groups-toggle-all:hover,.today-groups-toggle-all:focus-visible { color:var(--text-primary); border-color:var(--accent); }
 .today-project-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:12px 14px; border:0; color:var(--text-primary); background:rgba(104,92,185,.14); text-align:left; }
 .today-project-heading strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.83rem; }
 .today-project-heading span { display:flex; align-items:center; gap:9px; color:var(--text-secondary); white-space:nowrap; font-size:.72rem; }
