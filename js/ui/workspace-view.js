@@ -12,6 +12,19 @@ var WorkspaceViewModule = {
             if (!button) return;
             self.setView(button.dataset.workspaceView);
         });
+        switcher.addEventListener('keydown', function(event) {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            var current = event.target.closest('.workspace-switch');
+            if (!current) return;
+            var buttons = Array.from(switcher.querySelectorAll('.workspace-switch'));
+            var index = buttons.indexOf(current);
+            if (index < 0) return;
+            event.preventDefault();
+            var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 :
+                (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+            buttons[next].focus();
+            self.setView(buttons[next].dataset.workspaceView);
+        });
         document.querySelectorAll('[data-workspace-jump]').forEach(function(button) {
             button.addEventListener('click', function() { self.setView(button.dataset.workspaceJump); });
         });
@@ -59,6 +72,11 @@ var WorkspaceViewModule = {
             button.classList.toggle('active', selected);
             button.setAttribute('aria-pressed', String(selected));
         });
+        var switcher = document.getElementById('workspaceSwitcher');
+        var active = switcher && switcher.querySelector('.workspace-switch.active');
+        if (switcher && active && switcher.scrollWidth > switcher.clientWidth && typeof switcher.scrollTo === 'function') {
+            switcher.scrollTo({ left: active.offsetLeft - switcher.offsetLeft - (switcher.clientWidth - active.offsetWidth) / 2, behavior: 'smooth' });
+        }
         if (typeof RendererModule !== 'undefined' && typeof RendererModule._switchTab === 'function' &&
             sessionStorage.getItem('devspace_tab') !== 'projects') RendererModule._switchTab('projects');
         var filters = document.getElementById('projectsFilters');

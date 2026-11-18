@@ -53,6 +53,12 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #tabProjects .health-history-note { line-height:1.6; }
 @media(max-width:1150px) { #mainNavbar .nav-link { font-size:.81rem; } #mainNavbar .navbar-nav { gap:1px; } }
 @media(max-width:767px) { .workspace-launch { right:15px; bottom:16px; padding:11px 14px; } .workspace-switcher { margin-top:13px; } .workspace-switch { min-height:42px; padding:9px 13px; font-size:.8rem; } .cloud-workspace-panel { padding:18px; border-radius:17px; } .cloud-migration-preview { grid-template-columns:1fr; } .cloud-workspace-heading { align-items:flex-start; gap:11px; } .cloud-workspace-emblem { width:44px;height:44px;font-size:1.2rem; } .cloud-workspace-heading h3 { font-size:1.13rem; } }
+@media(max-width:767px) {
+    .workspace-switcher { gap:6px; padding:7px; scroll-snap-type:x proximity; scroll-padding-inline:7px; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; }
+    .workspace-switch { flex:0 0 auto; scroll-snap-align:center; min-height:44px; padding:10px 14px; }
+    .workspace-switch.active { box-shadow:0 4px 15px rgba(96,74,235,.3); }
+    .workspace-switch:focus-visible { outline:2px solid #c2b5ff; outline-offset:-2px; }
+}
 
 /* Project cards: decision-ready summary first; optional detail on demand. */
 #tabProjects[data-workspace-view="projects"] #projectsContainer:not(.list-view) { row-gap:17px; }
