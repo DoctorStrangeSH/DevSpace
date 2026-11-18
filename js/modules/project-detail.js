@@ -19,7 +19,10 @@ var ProjectDetailModule = {
             self.show(projectId);
         });
         EventBus.on('checklist:changed', function(data) {
-            if (data && String(data.projectId) === String(self._currentProjectId)) self._refreshRoadmap(data.projectId);
+            if (data && String(data.projectId) === String(self._currentProjectId)) {
+                self._refreshRoadmap(data.projectId);
+                if (document.getElementById('notesContainer')) self._refreshNotes(data.projectId);
+            }
         });
         EventBus.on('notes:focus', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) self._focusNote(data.projectId, data.noteId);
@@ -666,6 +669,16 @@ var ProjectDetailModule = {
                             self._refreshNotes(project.id);
                             self._focusTask(task.id);
                         }
+                    });
+                }
+                var linkedTaskToggle = card.querySelector('.note-linked-task-toggle');
+                if (linkedTaskToggle) {
+                    linkedTaskToggle.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        var current = StateManager.getProject(project.id);
+                        var note = (current.notes || []).find(function(item) { return item.id === noteId; });
+                        var task = note && (current.checklist || []).find(function(item) { return item.id === note.linkedTaskId; });
+                        if (task && task.sourceNoteId === noteId) ChecklistModule.toggleItem(project.id, task.id);
                     });
                 }
                 if (pinBtn) {

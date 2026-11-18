@@ -299,6 +299,7 @@ var NotesModule = {
             notes.forEach(function(note) {
                 var type = self.types[note.type] || self.types.note;
                 var priority = self.priorities[note.priority] || self.priorities.medium;
+                var linkedTask = (StateManager.getProject(projectId).checklist || []).find(function(task) { return task.id === note.linkedTaskId && task.sourceNoteId === note.id; });
 
                 html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + (note.pinned ? ' note-pinned' : '') + ' note-priority-' + note.priority + '" data-note-id="' + note.id + '">' +
                     '<div class="note-header">' +
@@ -327,6 +328,12 @@ var NotesModule = {
                             '</button>' +
                         '</div>' +
                     '</div>' +
+                    (linkedTask ? '<div class="note-linked-task-status ' + (linkedTask.completed ? 'is-done' : 'is-open') + '">' +
+                        '<i class="bi ' + (linkedTask.completed ? 'bi-check-circle-fill' : 'bi-hourglass-split') + '" aria-hidden="true"></i>' +
+                        '<span>Задача: ' + (linkedTask.completed ? 'выполнена' : 'в работе') + '</span>' +
+                        ((typeof AuthService === 'undefined' || AuthService.isOwner()) ? '<button type="button" class="note-linked-task-toggle" aria-label="' + (linkedTask.completed ? 'Возобновить связанную задачу' : 'Завершить связанную задачу') + '">' +
+                            (linkedTask.completed ? 'Возобновить' : 'Завершить') + '</button>' : '') +
+                    '</div>' : '') +
                     '<h4 class="note-title ' + (note.completed ? 'text-decoration-line-through' : '') + '">' +
                         (note.title || 'Без названия') +
                     '</h4>' +
