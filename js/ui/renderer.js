@@ -1387,12 +1387,12 @@ var RendererModule = {
         var actions = '';
         if (isOwner) {
             actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
-                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>' +
-                '<button class="project-action-btn edit-project" data-project-id="' + project.id + '"><i class="bi bi-pencil"></i></button>' +
-                '<button class="project-action-btn delete-project" data-project-id="' + project.id + '"><i class="bi bi-trash"></i></button>';
+                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isFav + '" aria-label="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '" title="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>' +
+                '<button class="project-action-btn edit-project" data-project-id="' + project.id + '" aria-label="Редактировать проект" title="Редактировать проект"><i class="bi bi-pencil"></i></button>' +
+                '<button class="project-action-btn delete-project" data-project-id="' + project.id + '" aria-label="Удалить проект" title="Удалить проект"><i class="bi bi-trash"></i></button>';
         } else {
             actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
-                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
+                '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isFav + '" aria-label="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '" title="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
         }
 
         return '<div class="project-card" data-project-id="' + project.id + '"><div class="project-card-inner">' +

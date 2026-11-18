@@ -96,6 +96,19 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .footer .footer-link { display:inline-flex; align-items:center; justify-content:center; width:37px; height:37px; margin:0!important; padding:0; border:1px solid rgba(154,143,218,.22); border-radius:11px; background:rgba(108,98,161,.1); color:#cfc8e7; }
 .footer .footer-link:hover,.footer .footer-link:focus-visible { background:rgba(115,97,221,.3); border-color:#8a78ff; color:#fff; }
 @media(max-width:767px) { .footer { padding:20px 0 78px!important; } .footer-layout > div { text-align:left!important; } .footer-layout { gap:13px; } .footer-actions { justify-content:flex-start; flex-wrap:wrap; } #tabProjects .project-card-inner { padding:16px; } #tabProjects .project-actions { flex-wrap:wrap; } }
+@media(max-width:576px) {
+    #tabProjects .project-header { gap:8px; align-items:flex-start; }
+    #tabProjects .project-status-badge { flex:0 1 auto; min-width:0; }
+    #tabProjects .project-actions { justify-content:flex-end; gap:4px; flex:0 0 auto; }
+    #tabProjects .project-action-btn { width:42px; height:42px; flex:0 0 42px; font-size:16px; }
+    #tabProjects .project-card-snapshot > span { min-height:38px; padding:7px 9px; }
+    #projectModal .modal-dialog { margin:12px; }
+    #projectModal .modal-content { max-height:calc(100dvh - 24px); display:flex; flex-direction:column; }
+    #projectModal .modal-header { flex-shrink:0; padding:16px 16px 0; }
+    #projectModal .modal-body { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:16px; }
+    #projectModal .modal-footer { flex-shrink:0; padding:10px 16px max(16px, env(safe-area-inset-bottom)); background:var(--bg-card); }
+    #projectModal .modal-footer .btn { min-height:44px; }
+}
 @media(prefers-reduced-motion:reduce) { #tabProjects .project-card-extras summary i { transition:none; } }
 [data-bs-theme="light"] #tabProjects .project-card { background:linear-gradient(145deg,#fff,#f5f3ff); border-color:#dcd8ee; }
 [data-bs-theme="light"] #tabProjects .project-card-snapshot > span { background:#f1effb; border-color:#e1dcf4; }
