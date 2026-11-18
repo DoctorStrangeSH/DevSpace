@@ -108,6 +108,22 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
     #projectModal .modal-body { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:16px; }
     #projectModal .modal-footer { flex-shrink:0; padding:10px 16px max(16px, env(safe-area-inset-bottom)); background:var(--bg-card); }
     #projectModal .modal-footer .btn { min-height:44px; }
+    #projectDetailModal .modal-dialog { margin:10px; max-height:calc(100dvh - 20px); }
+    #projectDetailModal .modal-content { max-height:calc(100dvh - 20px); }
+    #projectDetailModal .modal-header { gap:10px; padding:15px 15px 5px; }
+    #projectDetailModal .modal-title { min-width:0; overflow-wrap:anywhere; font-size:1.05rem; }
+    #projectDetailModal .modal-body { min-width:0; padding:14px; overscroll-behavior:contain; }
+    #projectDetailModal .detail-grid { min-width:0; gap:15px; margin-top:15px; }
+    #projectDetailModal .detail-section { min-width:0; margin-bottom:20px; }
+    #projectDetailModal .checklist-item { gap:9px; padding:9px 10px; }
+    #projectDetailModal .checklist-text { min-width:0; overflow-wrap:anywhere; }
+    #projectDetailModal .checklist-delete { opacity:1; width:42px; height:42px; flex:0 0 42px; }
+    #projectDetailModal .add-checklist-form { flex-wrap:wrap; }
+    #projectDetailModal .add-checklist-input { min-width:0; flex:1 1 170px; }
+    #projectDetailModal .add-checklist-btn { min-height:44px; flex:1 1 95px; }
+    #projectDetailModal .note-header { flex-wrap:wrap; }
+    #projectDetailModal .note-actions { opacity:1; margin-left:auto; }
+    #projectDetailModal .note-action-btn { width:42px; height:42px; font-size:15px; }
 }
 @media(prefers-reduced-motion:reduce) { #tabProjects .project-card-extras summary i { transition:none; } }
 [data-bs-theme="light"] #tabProjects .project-card { background:linear-gradient(145deg,#fff,#f5f3ff); border-color:#dcd8ee; }

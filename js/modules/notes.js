@@ -261,13 +261,13 @@ var NotesModule = {
                             '<i class="bi ' + priority.icon + '"></i>' +
                         '</div>' +
                         '<div class="note-actions">' +
-                            '<button class="note-action-btn complete-btn" title="Выполнено">' +
+                            '<button class="note-action-btn complete-btn" title="Выполнено" aria-label="' + (note.completed ? 'Отметить заметку незавершённой' : 'Отметить заметку выполненной') + '" aria-pressed="' + !!note.completed + '">' +
                                 '<i class="bi ' + (note.completed ? 'bi-check-circle-fill' : 'bi-circle') + '"></i>' +
                             '</button>' +
-                            '<button class="note-action-btn edit-btn" title="Редактировать">' +
+                            '<button class="note-action-btn edit-btn" title="Редактировать" aria-label="Редактировать заметку">' +
                                 '<i class="bi bi-pencil"></i>' +
                             '</button>' +
-                            '<button class="note-action-btn delete-btn" title="Удалить">' +
+                            '<button class="note-action-btn delete-btn" title="Удалить" aria-label="Удалить заметку">' +
                                 '<i class="bi bi-trash"></i>' +
                             '</button>' +
                         '</div>' +
