@@ -32,7 +32,7 @@ var ProjectDetailModule = {
         }
 
         this._currentProjectId = projectId;
-        this._notesFilter = { search: '', priority: '', completed: '', type: '' };
+        this._notesFilter = { search: '', priority: '', completed: '', type: '', sort: 'priority' };
         sessionStorage.setItem('devspace_detail_project', projectId);
         sessionStorage.setItem('devspace_modal', 'projectDetailModal');
 
@@ -180,6 +180,10 @@ var ProjectDetailModule = {
                 '<label class="visually-hidden" for="notesStatusFilter">Статус заметок</label>' +
                 '<select id="notesStatusFilter" class="form-select" aria-label="Статус заметок">' +
                     '<option value="">Все статусы</option><option value="open">Не завершены</option><option value="done">Выполнены</option>' +
+                '</select>' +
+                '<label class="visually-hidden" for="notesSort">Сортировка заметок</label>' +
+                '<select id="notesSort" class="form-select" aria-label="Сортировка заметок">' +
+                    '<option value="priority">По приоритету</option><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option>' +
                 '</select>' +
                 (isOwner ? '<button id="notesCompleteVisible" class="btn btn-glass btn-sm" type="button" title="Отметить найденные заметки выполненными"><i class="bi bi-check2-all me-1"></i>Завершить найденные</button>' : '') +
             '</div>' +
@@ -626,6 +630,14 @@ var ProjectDetailModule = {
         document.querySelectorAll('.note-card').forEach(function(card) {
             var noteId = card.dataset.noteId;
             if (isOwner) {
+                var pinBtn = card.querySelector('.pin-btn');
+                if (pinBtn) {
+                    pinBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        NotesModule.togglePin(project.id, noteId);
+                        self._refreshNotes(project.id);
+                    });
+                }
                 var completeBtn = card.querySelector('.complete-btn');
                 if (completeBtn) {
                     completeBtn.addEventListener('click', function(e) {
@@ -670,7 +682,7 @@ var ProjectDetailModule = {
                 self._refreshNotes(project.id);
             });
         }
-        [['notesPriorityFilter', 'priority'], ['notesStatusFilter', 'completed']].forEach(function(pair) {
+        [['notesPriorityFilter', 'priority'], ['notesStatusFilter', 'completed'], ['notesSort', 'sort']].forEach(function(pair) {
             var select = document.getElementById(pair[0]);
             if (select && !select.dataset.notesBound) {
                 select.dataset.notesBound = 'true';
@@ -791,6 +803,7 @@ var ProjectDetailModule = {
         if (current.type) filter.type = current.type;
         if (current.priority) filter.priority = current.priority;
         if (current.search) filter.search = current.search;
+        if (current.sort) filter.sort = current.sort;
         if (current.completed === 'done') filter.completed = true;
         if (current.completed === 'open') filter.completed = false;
         return filter;

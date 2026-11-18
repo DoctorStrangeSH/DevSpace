@@ -146,6 +146,19 @@ var NotesModule = {
         EventBus.emit('notes:toggled', { projectId: projectId, note: note });
     },
 
+    togglePin: function(projectId, noteId) {
+        var project = StateManager.getProject(projectId);
+        if (!project || !project.notes) return false;
+        var note = project.notes.find(function(item) { return item.id === noteId; });
+        if (!note) return false;
+        note.pinned = !note.pinned;
+        note.updatedAt = new Date().toISOString();
+        StateManager.updateProject(projectId, { notes: project.notes });
+        StateManager.saveProjects();
+        EventBus.emit('notes:pinned', { projectId: projectId, note: note });
+        return note.pinned;
+    },
+
     getNotes: function(projectId, filter) {
         var project = StateManager.getProject(projectId);
         if (!project || !project.notes) return [];
@@ -176,9 +189,16 @@ var NotesModule = {
 
         var priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
         notes.sort(function(a, b) {
+            if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
             if (a.completed !== b.completed) return a.completed ? 1 : -1;
-            if (a.priority !== b.priority) return priorityOrder[a.priority] - priorityOrder[b.priority];
-            return new Date(b.updatedAt) - new Date(a.updatedAt);
+            var sort = filter.sort || 'priority';
+            if (sort === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'ru');
+            if (sort === 'newest' || sort === 'oldest') {
+                var dates = new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+                return sort === 'newest' ? dates : -dates;
+            }
+            if (a.priority !== b.priority) return (priorityOrder[a.priority] == null ? 9 : priorityOrder[a.priority]) - (priorityOrder[b.priority] == null ? 9 : priorityOrder[b.priority]);
+            return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
         });
 
         return notes;
@@ -253,7 +273,7 @@ var NotesModule = {
                 var type = self.types[note.type] || self.types.note;
                 var priority = self.priorities[note.priority] || self.priorities.medium;
 
-                html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + ' note-priority-' + note.priority + '" data-note-id="' + note.id + '">' +
+                html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + (note.pinned ? ' note-pinned' : '') + ' note-priority-' + note.priority + '" data-note-id="' + note.id + '">' +
                     '<div class="note-header">' +
                         '<div class="note-type-badge" style="background: ' + type.color + '20; color: ' + type.color + '; border-color: ' + type.color + '40;">' +
                             '<i class="bi ' + type.icon + '"></i> ' + type.label +
@@ -262,6 +282,9 @@ var NotesModule = {
                             '<i class="bi ' + priority.icon + '"></i>' +
                         '</div>' +
                         '<div class="note-actions">' +
+                            '<button class="note-action-btn pin-btn" type="button" title="' + (note.pinned ? 'Открепить' : 'Закрепить') + '" aria-label="' + (note.pinned ? 'Открепить заметку' : 'Закрепить заметку') + '" aria-pressed="' + !!note.pinned + '">' +
+                                '<i class="bi ' + (note.pinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i>' +
+                            '</button>' +
                             '<button class="note-action-btn complete-btn" title="Выполнено" aria-label="' + (note.completed ? 'Отметить заметку незавершённой' : 'Отметить заметку выполненной') + '" aria-pressed="' + !!note.completed + '">' +
                                 '<i class="bi ' + (note.completed ? 'bi-check-circle-fill' : 'bi-circle') + '"></i>' +
                             '</button>' +

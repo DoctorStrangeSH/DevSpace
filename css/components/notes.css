@@ -34,7 +34,7 @@
 /* Фильтры */
 .notes-search-toolbar {
     display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(145px, 180px) minmax(145px, 180px) auto;
+    grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(130px, 165px)) auto;
     gap: 10px;
     align-items: center;
     margin-bottom: 12px;
@@ -51,6 +51,9 @@
     font-size: 12px;
     margin: -10px 0 12px;
 }
+
+.note-card.note-pinned { border-top: 1px solid var(--accent); }
+.note-card .pin-btn[aria-pressed="true"] { color: var(--accent); }
 
 @media (max-width: 900px) {
     .notes-search-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
