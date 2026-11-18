@@ -235,7 +235,11 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #todayPanel .today-list { display:grid; gap:8px; }
 #todayPanel .today-task { border-radius:12px; border-color:rgba(141,129,201,.18); }
 #todayPanel .today-check { flex-shrink:0; border-radius:9px; }
-@media(max-width:600px) { .today-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .today-tab { text-align:center; padding:8px; } }
+@media(max-width:600px) {
+    .today-tabs { display:flex; flex-wrap:nowrap; gap:7px; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; padding:2px 2px 11px; margin-bottom:9px; scrollbar-width:thin; scrollbar-color:var(--border-color) transparent; }
+    .today-tab { flex:0 0 auto; scroll-snap-align:start; min-height:43px; padding:9px 14px; text-align:center; white-space:nowrap; }
+    .today-tab.is-active { box-shadow:0 3px 11px rgba(83,66,194,.28); }
+}
 
 /* Inline task creation: accessible form with no modal or navigation away. */
 .quick-task-form { display:grid; grid-template-columns:minmax(155px,1.1fr) minmax(220px,2fr) minmax(115px,.7fr) minmax(135px,.8fr) auto; gap:9px; align-items:end; margin:0 0 17px; padding:13px; border:1px solid rgba(141,125,226,.2); border-radius:13px; background:rgba(116,99,208,.06); }
