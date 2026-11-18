@@ -78,6 +78,21 @@
 .note-card.note-pinned { border-top: 1px solid var(--accent); }
 .note-card .pin-btn[aria-pressed="true"] { color: var(--accent); }
 
+.task-source-note {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--accent);
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.task-source-note:hover { border-color: var(--accent); }
+.note-linked-highlight { outline: 2px solid var(--accent); outline-offset: 3px; }
+
 @media (max-width: 900px) {
     .notes-search-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .notes-search-toolbar #notesSearch,

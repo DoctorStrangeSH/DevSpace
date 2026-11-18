@@ -138,6 +138,7 @@ var ChecklistModule = {
                 return '<div class="checklist-item ' + (item.completed ? 'completed' : '') + '" data-item-id="' + item.id + '">' +
                     '<div class="checklist-checkbox">' + (item.completed ? '<i class="bi bi-check"></i>' : '') + '</div>' +
                     '<span class="checklist-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                    (item.sourceNoteId ? '<button class="task-source-note" type="button" data-source-note="' + Helpers.escapeHtml(String(item.sourceNoteId)) + '" aria-label="Перейти к исходной заметке" title="Исходная заметка"><i class="bi bi-journal-text"></i></button>' : '') +
                     (isOwner ? '<button class="checklist-delete"><i class="bi bi-x"></i></button>' : '') +
                 '</div>';
             }).join('');
@@ -177,6 +178,12 @@ var ChecklistModule = {
 
         container.querySelectorAll('.checklist-item').forEach(function(item) {
             item.addEventListener('click', function(e) {
+                var sourceNote = e.target.closest('.task-source-note');
+                if (sourceNote) {
+                    e.stopPropagation();
+                    EventBus.emit('notes:focus', { projectId: projectId, noteId: sourceNote.dataset.sourceNote });
+                    return;
+                }
                 if (e.target.closest('.checklist-delete')) return;
                 self.toggleItem(projectId, item.dataset.itemId);
             });

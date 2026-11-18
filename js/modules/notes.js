@@ -84,8 +84,12 @@ var NotesModule = {
         
         if (index === -1) return false;
 
-        project.notes.splice(index, 1);
-        StateManager.updateProject(projectId, { notes: project.notes });
+        var removed = project.notes.splice(index, 1)[0];
+        if (removed.linkedTaskId) {
+            var linkedTask = (project.checklist || []).find(function(item) { return item.id === removed.linkedTaskId; });
+            if (linkedTask && linkedTask.sourceNoteId === removed.id) delete linkedTask.sourceNoteId;
+        }
+        StateManager.updateProject(projectId, { notes: project.notes, checklist: project.checklist });
         StateManager.saveProjects();
 
         EventBus.emit('notes:deleted', { projectId: projectId, noteId: noteId });
@@ -157,6 +161,29 @@ var NotesModule = {
         StateManager.saveProjects();
         EventBus.emit('notes:pinned', { projectId: projectId, note: note });
         return note.pinned;
+    },
+
+    createTaskFromNote: function(projectId, noteId) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return null;
+        var project = StateManager.getProject(projectId);
+        if (!project || !project.notes || typeof ChecklistModule === 'undefined') return null;
+        var note = project.notes.find(function(item) { return item.id === noteId; });
+        if (!note) return null;
+        var oldTask = (project.checklist || []).find(function(item) { return item.id === note.linkedTaskId; });
+        if (oldTask) return oldTask;
+        var title = String(note.title || note.description || 'Задача из заметки').trim().slice(0, 240);
+        if (!title) return null;
+        var task = ChecklistModule.addItem(projectId, title);
+        if (!task) return null;
+        task.sourceNoteId = note.id;
+        note.linkedTaskId = task.id;
+        note.updatedAt = new Date().toISOString();
+        StateManager.updateProject(projectId, { checklist: project.checklist, notes: project.notes });
+        ChecklistModule._updateChecklistDOM(project);
+        if (['critical', 'high'].indexOf(note.priority) !== -1) ChecklistModule.setPriority(projectId, task.id, 'high');
+        else if (note.priority === 'low') ChecklistModule.setPriority(projectId, task.id, 'low');
+        EventBus.emit('notes:task-linked', { projectId: projectId, noteId: note.id, taskId: task.id });
+        return task;
     },
 
     getNotes: function(projectId, filter) {
@@ -283,6 +310,9 @@ var NotesModule = {
                             '<i class="bi ' + priority.icon + '"></i>' +
                         '</div>' +
                         '<div class="note-actions">' +
+                            '<button class="note-action-btn task-from-note-btn" type="button" title="' + (note.linkedTaskId ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '" aria-label="' + (note.linkedTaskId ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '">' +
+                                '<i class="bi ' + (note.linkedTaskId ? 'bi-arrow-up-right-square' : 'bi-list-task') + '"></i>' +
+                            '</button>' +
                             '<button class="note-action-btn pin-btn" type="button" title="' + (note.pinned ? 'Открепить' : 'Закрепить') + '" aria-label="' + (note.pinned ? 'Открепить заметку' : 'Закрепить заметку') + '" aria-pressed="' + !!note.pinned + '">' +
                                 '<i class="bi ' + (note.pinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i>' +
                             '</button>' +

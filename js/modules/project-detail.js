@@ -21,6 +21,9 @@ var ProjectDetailModule = {
         EventBus.on('checklist:changed', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) self._refreshRoadmap(data.projectId);
         });
+        EventBus.on('notes:focus', function(data) {
+            if (data && String(data.projectId) === String(self._currentProjectId)) self._focusNote(data.projectId, data.noteId);
+        });
     },
 
     show: function(projectId) {
@@ -549,6 +552,7 @@ var ProjectDetailModule = {
             return '<div class="checklist-item ' + (item.completed ? 'completed' : '') + '" data-item-id="' + item.id + '">' +
                 '<div class="checklist-checkbox">' + (item.completed ? '<i class="bi bi-check"></i>' : '') + '</div>' +
                 '<span class="checklist-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                (item.sourceNoteId ? '<button class="task-source-note" type="button" data-source-note="' + Helpers.escapeHtml(String(item.sourceNoteId)) + '" aria-label="Перейти к исходной заметке" title="Исходная заметка"><i class="bi bi-journal-text"></i></button>' : '') +
                 (isOwner ? '<button class="checklist-delete" aria-label="Удалить задачу" title="Удалить задачу"><i class="bi bi-x"></i></button>' : '') +
             '</div>';
         }).join('');
@@ -653,6 +657,17 @@ var ProjectDetailModule = {
                     });
                 }
                 var pinBtn = card.querySelector('.pin-btn');
+                var createTaskBtn = card.querySelector('.task-from-note-btn');
+                if (createTaskBtn) {
+                    createTaskBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        var task = NotesModule.createTaskFromNote(project.id, noteId);
+                        if (task) {
+                            self._refreshNotes(project.id);
+                            self._focusTask(task.id);
+                        }
+                    });
+                }
                 if (pinBtn) {
                     pinBtn.addEventListener('click', function(e) {
                         e.stopPropagation();
@@ -852,6 +867,34 @@ var ProjectDetailModule = {
         return filter;
     },
 
+    _focusTask: function(taskId) {
+        var tasks = document.querySelectorAll('.checklist-container .checklist-item');
+        var target = Array.from(tasks).find(function(item) { return item.dataset.itemId === String(taskId); });
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('note-linked-highlight');
+            setTimeout(function() { target.classList.remove('note-linked-highlight'); }, 2200);
+        }
+    },
+
+    _focusNote: function(projectId, noteId) {
+        var project = StateManager.getProject(projectId);
+        if (!project || !(project.notes || []).some(function(note) { return note.id === noteId; })) return;
+        this._notesFilter = { search: '', priority: '', completed: '', type: '', sort: 'priority' };
+        [['notesSearch', ''], ['notesPriorityFilter', ''], ['notesStatusFilter', ''], ['notesSort', 'priority']].forEach(function(pair) {
+            var field = document.getElementById(pair[0]);
+            if (field) field.value = pair[1];
+        });
+        this._refreshNotes(projectId);
+        var cards = document.querySelectorAll('#notesContainer .note-card');
+        var target = Array.from(cards).find(function(card) { return card.dataset.noteId === String(noteId); });
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('note-linked-highlight');
+            setTimeout(function() { target.classList.remove('note-linked-highlight'); }, 2200);
+        }
+    },
+
     _updateNotesSelection: function(projectId) {
         var selected = this._selectedNoteIds || new Set();
         var project = StateManager.getProject(projectId);
@@ -900,9 +943,16 @@ var ProjectDetailModule = {
         var selected = this._selectedNoteIds;
         var moving = (source.notes || []).filter(function(note) { return selected.has(note.id); });
         if (!moving.length || !confirm('Перенести ' + moving.length + ' заметок в проект «' + target.name + '»?')) return;
+        moving.forEach(function(note) {
+            if (note.linkedTaskId) {
+                var task = (source.checklist || []).find(function(item) { return item.id === note.linkedTaskId; });
+                if (task && task.sourceNoteId === note.id) delete task.sourceNoteId;
+                delete note.linkedTaskId;
+            }
+        });
         source.notes = source.notes.filter(function(note) { return !selected.has(note.id); });
         target.notes = (target.notes || []).concat(moving);
-        StateManager.updateProject(projectId, { notes: source.notes });
+        StateManager.updateProject(projectId, { notes: source.notes, checklist: source.checklist });
         StateManager.updateProject(target.id, { notes: target.notes });
         EventBus.emit('notes:bulk-moved', { fromProjectId: projectId, toProjectId: target.id, count: moving.length });
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Перенесено заметок: ' + moving.length);
