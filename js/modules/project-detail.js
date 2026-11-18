@@ -6,6 +6,7 @@
 var ProjectDetailModule = {
     _currentProjectId: null,
     _notesFilter: null,
+    _selectedNoteIds: null,
 
     init: function() {
         this._bindEvents();
@@ -33,6 +34,7 @@ var ProjectDetailModule = {
 
         this._currentProjectId = projectId;
         this._notesFilter = { search: '', priority: '', completed: '', type: '', sort: 'priority' };
+        this._selectedNoteIds = new Set();
         sessionStorage.setItem('devspace_detail_project', projectId);
         sessionStorage.setItem('devspace_modal', 'projectDetailModal');
 
@@ -187,6 +189,17 @@ var ProjectDetailModule = {
                 '</select>' +
                 (isOwner ? '<button id="notesCompleteVisible" class="btn btn-glass btn-sm" type="button" title="Отметить найденные заметки выполненными"><i class="bi bi-check2-all me-1"></i>Завершить найденные</button>' : '') +
             '</div>' +
+            (isOwner ? '<div class="notes-bulk-toolbar" aria-label="Массовые действия с заметками">' +
+                '<button id="notesSelectVisible" class="btn btn-glass btn-sm" type="button">Выбрать найденные</button>' +
+                '<button id="notesClearSelection" class="btn btn-glass btn-sm" type="button">Снять выделение</button>' +
+                '<span id="notesSelectedCount" class="notes-selected-count" role="status">Выбрано: 0</span>' +
+                '<select id="notesBulkPriority" class="form-select form-select-sm" aria-label="Новый приоритет выбранных заметок"><option value="">Изменить приоритет…</option><option value="critical">Критичный</option><option value="high">Высокий</option><option value="medium">Средний</option><option value="low">Низкий</option></select>' +
+                '<button id="notesApplyPriority" class="btn btn-glass btn-sm" type="button">Применить</button>' +
+                '<select id="notesMoveTarget" class="form-select form-select-sm" aria-label="Проект для переноса заметок"><option value="">Перенести в проект…</option>' +
+                    (StateManager.get('projects') || []).filter(function(p) { return p.id !== project.id; }).map(function(p) { return '<option value="' + Helpers.escapeHtml(String(p.id)) + '">' + Helpers.escapeHtml(p.name) + '</option>'; }).join('') +
+                '</select>' +
+                '<button id="notesMoveSelected" class="btn btn-glass btn-sm" type="button">Перенести</button>' +
+            '</div>' : '') +
             '<div id="notesContainer">' + NotesModule.renderNotes(project.id) + '</div>' +
         '</div>';
 
@@ -630,6 +643,15 @@ var ProjectDetailModule = {
         document.querySelectorAll('.note-card').forEach(function(card) {
             var noteId = card.dataset.noteId;
             if (isOwner) {
+                var selectInput = card.querySelector('.note-select-input');
+                if (selectInput) {
+                    selectInput.checked = !!self._selectedNoteIds && self._selectedNoteIds.has(noteId);
+                    selectInput.addEventListener('change', function() {
+                        if (selectInput.checked) self._selectedNoteIds.add(noteId);
+                        else self._selectedNoteIds.delete(noteId);
+                        self._updateNotesSelection(project.id);
+                    });
+                }
                 var pinBtn = card.querySelector('.pin-btn');
                 if (pinBtn) {
                     pinBtn.addEventListener('click', function(e) {
@@ -701,6 +723,27 @@ var ProjectDetailModule = {
             var pending = NotesModule.getNotes(project.id, this._getNotesFilter()).filter(function(n) { return !n.completed; });
             bulkBtn.disabled = pending.length === 0;
             bulkBtn.title = pending.length ? 'Завершить найденные: ' + pending.length : 'Нет незавершённых заметок в результатах';
+        }
+
+        if (isOwner) {
+            var bindAction = function(id, handler) {
+                var button = document.getElementById(id);
+                if (button && !button.dataset.notesBound) {
+                    button.dataset.notesBound = 'true';
+                    button.addEventListener('click', handler);
+                }
+            };
+            bindAction('notesSelectVisible', function() {
+                NotesModule.getNotes(project.id, self._getNotesFilter()).forEach(function(note) { self._selectedNoteIds.add(note.id); });
+                self._refreshNotes(project.id);
+            });
+            bindAction('notesClearSelection', function() {
+                self._selectedNoteIds.clear();
+                self._refreshNotes(project.id);
+            });
+            bindAction('notesApplyPriority', function() { self._applySelectedPriority(project.id); });
+            bindAction('notesMoveSelected', function() { self._moveSelectedNotes(project.id); });
+            this._updateNotesSelection(project.id);
         }
 
         var countEl = document.getElementById('notesCount');
@@ -807,6 +850,64 @@ var ProjectDetailModule = {
         if (current.completed === 'done') filter.completed = true;
         if (current.completed === 'open') filter.completed = false;
         return filter;
+    },
+
+    _updateNotesSelection: function(projectId) {
+        var selected = this._selectedNoteIds || new Set();
+        var project = StateManager.getProject(projectId);
+        if (!project) return;
+        var existing = new Set((project.notes || []).map(function(n) { return n.id; }));
+        selected.forEach(function(id) { if (!existing.has(id)) selected.delete(id); });
+        var count = selected.size;
+        var label = document.getElementById('notesSelectedCount');
+        if (label) label.textContent = 'Выбрано: ' + count;
+        ['notesClearSelection', 'notesApplyPriority', 'notesMoveSelected'].forEach(function(id) {
+            var button = document.getElementById(id);
+            if (button) button.disabled = count === 0;
+        });
+    },
+
+    _applySelectedPriority: function(projectId) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return;
+        var selector = document.getElementById('notesBulkPriority');
+        var priority = selector && selector.value;
+        if (!NotesModule.priorities[priority]) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Выберите приоритет');
+            return;
+        }
+        var project = StateManager.getProject(projectId);
+        if (!project || !this._selectedNoteIds || !this._selectedNoteIds.size) return;
+        var selected = this._selectedNoteIds;
+        var count = (project.notes || []).filter(function(note) { return selected.has(note.id); }).length;
+        if (!count || !confirm('Изменить приоритет у ' + count + ' заметок?')) return;
+        var now = new Date().toISOString();
+        project.notes.forEach(function(note) {
+            if (selected.has(note.id)) { note.priority = priority; note.updatedAt = now; }
+        });
+        StateManager.updateProject(projectId, { notes: project.notes });
+        EventBus.emit('notes:bulk-priority', { projectId: projectId, count: count, priority: priority });
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success('Приоритет изменён: ' + count);
+        this._refreshNotes(projectId);
+    },
+
+    _moveSelectedNotes: function(projectId) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return;
+        var selector = document.getElementById('notesMoveTarget');
+        var targetId = selector && selector.value;
+        var source = StateManager.getProject(projectId);
+        var target = targetId && StateManager.getProject(targetId);
+        if (!source || !target || target.id === source.id || !this._selectedNoteIds || !this._selectedNoteIds.size) return;
+        var selected = this._selectedNoteIds;
+        var moving = (source.notes || []).filter(function(note) { return selected.has(note.id); });
+        if (!moving.length || !confirm('Перенести ' + moving.length + ' заметок в проект «' + target.name + '»?')) return;
+        source.notes = source.notes.filter(function(note) { return !selected.has(note.id); });
+        target.notes = (target.notes || []).concat(moving);
+        StateManager.updateProject(projectId, { notes: source.notes });
+        StateManager.updateProject(target.id, { notes: target.notes });
+        EventBus.emit('notes:bulk-moved', { fromProjectId: projectId, toProjectId: target.id, count: moving.length });
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success('Перенесено заметок: ' + moving.length);
+        selected.clear();
+        this._refreshNotes(projectId);
     },
 
     _completeVisibleNotes: function(projectId) {

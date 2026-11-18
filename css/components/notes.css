@@ -46,6 +46,29 @@
 
 .notes-search-toolbar .btn { white-space: nowrap; }
 
+.notes-bulk-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+}
+
+.notes-bulk-toolbar .form-select { flex: 1 1 150px; width: auto; max-width: 220px; min-height: 40px; }
+.notes-bulk-toolbar .btn { min-height: 40px; }
+.notes-selected-count { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.note-select-label { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; cursor: pointer; }
+.note-select-input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+@media (max-width: 620px) {
+    .notes-bulk-toolbar .form-select { max-width: none; }
+    .notes-bulk-toolbar .btn { flex: 1 1 auto; }
+}
+
 .notes-results {
     color: var(--text-secondary);
     font-size: 12px;

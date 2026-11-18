@@ -275,6 +275,7 @@ var NotesModule = {
 
                 html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + (note.pinned ? ' note-pinned' : '') + ' note-priority-' + note.priority + '" data-note-id="' + note.id + '">' +
                     '<div class="note-header">' +
+                        ((typeof AuthService === 'undefined' || AuthService.isOwner()) ? '<label class="note-select-label" title="Выбрать заметку"><input class="note-select-input" type="checkbox" aria-label="Выбрать заметку"></label>' : '') +
                         '<div class="note-type-badge" style="background: ' + type.color + '20; color: ' + type.color + '; border-color: ' + type.color + '40;">' +
                             '<i class="bi ' + type.icon + '"></i> ' + type.label +
                         '</div>' +
