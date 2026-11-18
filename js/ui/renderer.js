@@ -173,6 +173,12 @@ var RendererModule = {
             document.getElementById('quickTaskText').focus();
         });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            var filterToggle = event.target.closest('#todayMobileFilterToggle');
+            if (filterToggle) {
+                var expanded = todayPanel.classList.toggle('is-filters-expanded');
+                filterToggle.setAttribute('aria-expanded', String(expanded));
+                return;
+            }
             var quick = event.target.closest('[data-today-quick]');
             if (quick) {
                 var action = quick.dataset.todayQuick;
@@ -736,6 +742,13 @@ var RendererModule = {
         var list = document.getElementById('todayList');
         if (!list) return;
         var priority = document.getElementById('todayPriority');
+        var filterLabel = document.getElementById('todayMobileFilterLabel');
+        if (filterLabel) {
+            var sortInput = document.getElementById('todaySort');
+            var groupInput = document.getElementById('todayGroupByProject');
+            var activeFilters = (priority && priority.value !== 'all' ? 1 : 0) + (sortInput && sortInput.value !== 'priority' ? 1 : 0) + (groupInput && groupInput.checked ? 1 : 0);
+            filterLabel.textContent = 'Дополнительные фильтры' + (activeFilters ? ' · ' + activeFilters : '');
+        }
         var scope = document.getElementById('todayScope');
         var projects = StateManager.get('projects') || [];
         var now = new Date();

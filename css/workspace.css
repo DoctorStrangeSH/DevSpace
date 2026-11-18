@@ -145,6 +145,16 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 
 /* Task center: readable time-based lanes without another long calendar. */
 .today-tools { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 14px; }
+.today-mobile-filter-toggle { display:none; }
+@media(max-width:600px) {
+    .today-mobile-filter-toggle { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:40px; margin:0 0 10px; padding:8px 10px; border:1px solid var(--border-color); border-radius:10px; color:var(--text-primary); background:rgba(113,93,208,.1); font-size:.75rem; font-weight:750; }
+    .today-mobile-filter-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .today-mobile-filter-toggle .bi-chevron-down { margin-left:auto; transition:transform .2s; }
+    #todayPanel.is-filters-expanded .today-mobile-filter-toggle .bi-chevron-down { transform:rotate(180deg); }
+    #todayPanel:not(.is-filters-expanded) .today-filters,#todayPanel:not(.is-filters-expanded) .today-sort,#todayPanel:not(.is-filters-expanded) .today-group-switch { display:none; }
+    #todayPanel .today-tools { margin-bottom:12px; }
+    #todayPanel .today-search { flex-basis:100%; }
+}
 .today-search { display:flex; align-items:center; gap:9px; flex:1 1 260px; min-width:0; min-height:42px; padding:0 13px; border:1px solid var(--border-color); border-radius:11px; color:var(--text-secondary); background:var(--bg-primary); }
 .today-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
 .today-search input { flex:1; width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text-primary); font-size:.81rem; }
