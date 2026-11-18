@@ -173,6 +173,26 @@ var RendererModule = {
             document.getElementById('quickTaskText').focus();
         });
         if (todayPanel) todayPanel.addEventListener('click', function(event) {
+            var quick = event.target.closest('[data-today-quick]');
+            if (quick) {
+                var action = quick.dataset.todayQuick;
+                var target = action === 'create' ? document.getElementById('quickTaskText') : action === 'search' ? document.getElementById('todaySearch') : null;
+                if (action === 'create' && (typeof AuthService === 'undefined' || !AuthService.isOwner() || !target || !target.offsetParent)) return;
+                if (action === 'overdue') {
+                    self._todaySelectedTasks.clear();
+                    self._todaySelectedDay = null;
+                    self._todayVisibleCount = 8;
+                    self._todayView = 'overdue';
+                    self._saveTodayPreferences();
+                    self._renderToday();
+                    target = document.getElementById('todayList');
+                }
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (action !== 'overdue') target.focus({ preventScroll: true });
+                }
+                return;
+            }
             var day = event.target.closest('[data-weekly-day]');
             if (day) {
                 self._todaySelectedTasks.clear();
