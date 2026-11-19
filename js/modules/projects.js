@@ -59,6 +59,18 @@ var ProjectsModule = {
 
     _initFilters: function() {
         var self = this;
+        var reset = document.getElementById('projectsClearFilters');
+        if (reset) reset.addEventListener('click', function() {
+            var search = document.getElementById('searchProjects');
+            if (search) search.value = '';
+            StateManager.set('filters.search', '');
+            StateManager.set('filters.status', 'all');
+            self._cache.filteredProjects = null;
+            document.querySelectorAll('.filter-btn').forEach(function(btn) {
+                btn.classList.toggle('active', btn.dataset.filter === 'all');
+            });
+            if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+        });
         document.querySelectorAll('.filter-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });

@@ -1318,6 +1318,9 @@ var RendererModule = {
 
         var countEl = document.getElementById('filteredCount');
         if (countEl) countEl.textContent = projects.length;
+        var hasFilters = !!sq || !!filterStatus && filterStatus !== 'all';
+        var clearFilters = document.getElementById('projectsClearFilters');
+        if (clearFilters) clearFilters.hidden = !hasFilters;
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) {
             var remaining = Math.max(0, projects.length - this._visibleCount);
@@ -1327,6 +1330,10 @@ var RendererModule = {
 
         if (!projects.length) {
             container.innerHTML = '';
+            var emptyTitle = document.getElementById('projectsEmptyTitle');
+            var emptyDescription = document.getElementById('projectsEmptyDescription');
+            if (emptyTitle) emptyTitle.textContent = hasFilters ? 'Ничего не найдено' : 'Нет проектов';
+            if (emptyDescription) emptyDescription.textContent = hasFilters ? 'Попробуй другой запрос или сбрось фильтры.' : 'Создайте первый проект';
             if (emptyState) emptyState.style.display = 'block';
             return;
         }
