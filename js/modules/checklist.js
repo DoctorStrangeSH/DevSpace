@@ -13,6 +13,7 @@ var ChecklistModule = {
         EventBus.on('checklist:toggle', function(data) { self.toggleItem(data.projectId, data.itemId); });
         EventBus.on('checklist:add', function(data) { self.addItem(data.projectId, data.text); });
         EventBus.on('checklist:delete', function(data) { self.deleteItem(data.projectId, data.itemId); });
+        EventBus.on('checklist:update', function(data) { self.updateText(data.projectId, data.itemId, data.text); });
     },
 
     toggleItem: function(projectId, itemId) {
@@ -39,6 +40,22 @@ var ChecklistModule = {
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
     },
 
+    updateText: function(projectId, itemId, text) {
+        if (typeof text !== 'string') return false;
+        var normalized = text.trim();
+        if (!normalized || normalized.length > 240) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.checklist)) return false;
+        var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
+        if (!item) return false;
+        if (item.text === normalized) return true;
+        item.text = normalized;
+        item.updatedAt = new Date().toISOString();
+        StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._updateChecklistDOM(project);
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
+        return true;
+    },
     setPriority: function(projectId, itemId, priority) {
         if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
         var project = StateManager.getProject(projectId);
@@ -148,6 +165,7 @@ var ChecklistModule = {
                 return '<div class="checklist-item ' + (item.completed ? 'completed' : '') + '" data-item-id="' + item.id + '">' +
                     '<div class="checklist-checkbox">' + (item.completed ? '<i class="bi bi-check"></i>' : '') + '</div>' +
                     '<span class="checklist-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                    (isOwner ? '<button class="checklist-edit" type="button" aria-label="Изменить задачу" title="Изменить задачу"><i class="bi bi-pencil"></i></button>' : '') +
                     (item.sourceNoteId ? '<button class="task-source-note" type="button" data-source-note="' + Helpers.escapeHtml(String(item.sourceNoteId)) + '" aria-label="Перейти к исходной заметке" title="Исходная заметка"><i class="bi bi-journal-text"></i></button>' : '') +
                     (isOwner ? '<button class="checklist-delete"><i class="bi bi-x"></i></button>' : '') +
                 '</div>';
@@ -199,6 +217,17 @@ var ChecklistModule = {
             });
         });
 
+        container.querySelectorAll('.checklist-edit').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var row = btn.closest('.checklist-item');
+                var currentProject = StateManager.getProject(projectId);
+                var task = currentProject && (currentProject.checklist || []).find(function(item) { return String(item.id) === String(row.dataset.itemId); });
+                if (!task) return;
+                var nextText = prompt('Изменить задачу', task.text);
+                if (nextText !== null) self.updateText(projectId, row.dataset.itemId, nextText);
+            });
+        });
         container.querySelectorAll('.checklist-delete').forEach(function(btn) {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();

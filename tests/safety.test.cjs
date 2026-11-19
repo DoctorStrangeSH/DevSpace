@@ -2909,6 +2909,34 @@ test('checklist completion timestamps are set on completion and cleared on reope
     assert.equal(events.at(-1).name, 'checklist:changed');
 });
 
+test('editing a checklist task preserves completion history and rejects invalid text', () => {
+    const project = { id: 'p', progress: 100, checklist: [
+        { id: 'task', text: 'Старое название', completed: true, completedAt: '2026-11-19T10:00:00.000Z', sourceNoteId: 'note' }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    checklist._updateChecklistDOM = () => {};
+    const completedAt = project.checklist[0].completedAt;
+    assert.equal(checklist.updateText('p', 'task', '  Новое название  '), true);
+    assert.equal(project.checklist[0].text, 'Новое название');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, completedAt);
+    assert.equal(project.checklist[0].sourceNoteId, 'note');
+    assert.equal(typeof project.checklist[0].updatedAt, 'string');
+    assert.equal(saved.length, 1);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+    assert.equal(checklist.updateText('p', 'task', '   '), false);
+    assert.equal(checklist.updateText('p', 'task', 'x'.repeat(241)), false);
+    assert.equal(checklist.updateText('p', 'missing', 'Другое'), false);
+    assert.equal(saved.length, 1);
+});
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };

@@ -574,6 +574,7 @@ var ProjectDetailModule = {
             return '<div class="checklist-item ' + (item.completed ? 'completed' : '') + '" data-item-id="' + item.id + '">' +
                 '<div class="checklist-checkbox">' + (item.completed ? '<i class="bi bi-check"></i>' : '') + '</div>' +
                 '<span class="checklist-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                (isOwner ? '<button class="checklist-edit" type="button" aria-label="Изменить задачу" title="Изменить задачу"><i class="bi bi-pencil"></i></button>' : '') +
                 (item.sourceNoteId ? '<button class="task-source-note" type="button" data-source-note="' + Helpers.escapeHtml(String(item.sourceNoteId)) + '" aria-label="Перейти к исходной заметке" title="Исходная заметка"><i class="bi bi-journal-text"></i></button>' : '') +
                 (isOwner ? '<button class="checklist-delete" aria-label="Удалить задачу" title="Удалить задачу"><i class="bi bi-x"></i></button>' : '') +
             '</div>';
