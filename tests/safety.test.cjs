@@ -495,12 +495,12 @@ test('workspace next tasks exclude archived projects, prioritize deadlines and k
   const ctx = execute('js/ui/renderer.js');
   const projects = [
     { id: 'active', name: '<script>name</script>', status: 'active', checklist: [
-      { text: '<img src=x onerror=alert(1)>', priority: 'high' },
-      { text: 'Просрочено', deadline: '2026-11-14' },
-      { text: 'Готово', completed: true }
+      { id: 'unsafe-html', text: '<img src=x onerror=alert(1)>', priority: 'high' },
+      { id: 'overdue', text: 'Просрочено', deadline: '2026-11-14' },
+      { id: 'done', text: 'Готово', completed: true }
     ] },
-    { id: 'archived', status: 'archived', checklist: [{ text: 'Скрыто', deadline: '2026-01-01' }] },
-    { id: 'completed', status: 'completed', checklist: [{ text: 'Тоже скрыто' }] }
+    { id: 'archived', status: 'archived', checklist: [{ id: 'archived-task', text: 'Скрыто', deadline: '2026-01-01' }] },
+    { id: 'completed', status: 'completed', checklist: [{ id: 'completed-task', text: 'Тоже скрыто' }] }
   ];
   const before = JSON.stringify(projects);
   const tasks = ctx.RendererModule._getOverviewNextTasks(projects, new Date(2026, 10, 15));
