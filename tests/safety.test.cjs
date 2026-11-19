@@ -2937,6 +2937,37 @@ test('editing a checklist task preserves completion history and rejects invalid 
     assert.equal(checklist.updateText('p', 'missing', 'Другое'), false);
     assert.equal(saved.length, 1);
 });
+test('priority and deadline edits validate values, refresh task UI and preserve completion history', () => {
+    const project = { id: 'p', checklist: [
+        { id: 'task', text: 'Этап', completed: true, completedAt: '2026-11-19T10:00:00.000Z', priority: 'low', deadline: '2026-11-20' }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    let rendered = 0;
+    checklist._updateChecklistDOM = () => { rendered++; };
+    const completedAt = project.checklist[0].completedAt;
+    assert.equal(checklist.setPriority('p', 'task', 'high'), true);
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(typeof project.checklist[0].updatedAt, 'string');
+    assert.equal(checklist.setPriority('p', 'task', 'critical'), false);
+    assert.equal(checklist.setDeadline('p', 'task', '2026-11-22'), true);
+    assert.equal(project.checklist[0].deadline, '2026-11-22');
+    assert.equal(checklist.setDeadline('p', 'task', '2026-02-30'), false);
+    assert.equal(checklist.setDeadline('p', 'task', ''), true);
+    assert.equal(Object.hasOwn(project.checklist[0], 'deadline'), false);
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, completedAt);
+    assert.equal(rendered, 3);
+    assert.equal(saved.length, 3);
+    assert.equal(events.length, 3);
+});
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };

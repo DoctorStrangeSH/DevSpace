@@ -65,7 +65,9 @@ var ChecklistModule = {
         if (item.priority === priority || (priority === 'normal' && !item.priority)) return true;
         if (priority === 'normal') delete item.priority;
         else item.priority = priority;
+        item.updatedAt = new Date().toISOString();
         StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
     },
@@ -79,7 +81,9 @@ var ChecklistModule = {
         if ((task.deadline || '') === deadline) return true;
         if (deadline) task.deadline = deadline;
         else delete task.deadline;
+        task.updatedAt = new Date().toISOString();
         StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
     },
