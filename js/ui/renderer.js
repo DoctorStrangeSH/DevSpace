@@ -1296,7 +1296,9 @@ var RendererModule = {
             projects = ProjectsModule.getFilteredProjects();
         }
 
-        if (sq) {
+        // ProjectsModule already applies search for the regular project collection.
+        // Favorites are sourced separately, so apply the same query only to that view.
+        if (filterStatus === 'favorites' && sq) {
             var t = sq.toLowerCase();
             projects = projects.filter(function(p) {
                 return [p.name, p.description].concat(p.techStack || []).join(' ').toLowerCase().indexOf(t) !== -1;

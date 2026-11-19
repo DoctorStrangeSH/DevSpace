@@ -51,7 +51,7 @@ var ProjectsModule = {
         if (searchInput) {
             var debouncedSearch = Helpers.debounce(function(e) {
                 StateManager.set('filters.search', e.target.value.toLowerCase().trim());
-                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
             }, 300);
             searchInput.addEventListener('input', debouncedSearch);
         }
@@ -70,7 +70,7 @@ var ProjectsModule = {
             document.querySelectorAll('.filter-btn').forEach(function(btn) {
                 btn.classList.toggle('active', btn.dataset.filter === 'all');
             });
-            if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+            if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
         };
         if (reset) reset.addEventListener('click', resetFilters);
         if (emptyReset) emptyReset.addEventListener('click', resetFilters);
@@ -80,7 +80,7 @@ var ProjectsModule = {
                 btn.classList.add('active');
                 StateManager.set('filters.status', btn.dataset.filter);
                 self._cache.filteredProjects = null;
-                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
             });
         });
     },
