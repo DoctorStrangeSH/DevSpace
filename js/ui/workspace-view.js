@@ -7,6 +7,17 @@ var WorkspaceViewModule = {
         if (!switcher) return;
         var saved = sessionStorage.getItem('devspace_workspace_view');
         this.setView(['overview', 'projects', 'planning', 'cloud', 'analytics'].indexOf(saved) >= 0 ? saved : 'overview');
+        var moreToggle = document.getElementById('workspaceMoreToggle');
+        if (moreToggle) {
+            moreToggle.addEventListener('click', function() {
+                var container = document.getElementById('tabProjects');
+                if (!container) return;
+                var expanded = container.classList.toggle('is-overview-expanded');
+                moreToggle.setAttribute('aria-expanded', String(expanded));
+                var label = moreToggle.querySelector('span');
+                if (label) label.textContent = expanded ? 'Скрыть подробности' : 'Показать подробности';
+            });
+        }
         switcher.addEventListener('click', function(event) {
             var button = event.target.closest('[data-workspace-view]');
             if (!button) return;
