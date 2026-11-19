@@ -34,6 +34,20 @@ var WorkspaceViewModule = {
                 document.getElementById('workspaceSwitcher').scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
         });
+        document.querySelectorAll('[data-workspace-focus]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var view = button.dataset.focusView;
+                var id = button.dataset.workspaceFocus;
+                if (!['overview', 'planning'].includes(view) || !['todayPanel', 'scheduleCalendar'].includes(id)) return;
+                self.setView(view);
+                window.requestAnimationFrame(function() {
+                    var target = document.getElementById(id);
+                    if (!target || target.hidden) return;
+                    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    target.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'start' });
+                });
+            });
+        });
         var search = document.getElementById('searchProjects');
         if (search) {
             search.addEventListener('input', function() {

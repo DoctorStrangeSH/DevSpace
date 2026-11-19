@@ -185,6 +185,11 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .workspace-overview-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
 .workspace-overview-heading h3 { margin:4px 0 5px; color:#f9f6ff; font-size:1.3rem; font-weight:760; letter-spacing:-.025em; }
 .workspace-overview-heading p { margin:0; color:#aaa6c0; font-size:.83rem; }
+.workspace-overview-shortcuts { display:flex; flex-wrap:wrap; gap:9px; margin:-4px 0 16px; }
+.workspace-overview-shortcuts button { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:39px; padding:8px 13px; border:1px solid rgba(158,145,234,.3); border-radius:11px; color:#e4dcff; background:rgba(98,85,185,.12); font-size:.8rem; font-weight:700; }
+.workspace-overview-shortcuts button:hover,.workspace-overview-shortcuts button:focus-visible { border-color:#a695ff; color:#fff; background:rgba(112,95,208,.28); }
+.workspace-overview-shortcuts button:focus-visible { outline:2px solid #d4c8ff; outline-offset:2px; }
+#todayPanel,#scheduleCalendar { scroll-margin-top:155px; }
 .workspace-overview-all { display:inline-flex; align-items:center; gap:9px; min-height:39px; padding:8px 14px; border:1px solid rgba(154,139,235,.36); border-radius:11px; color:#e2d9ff; background:rgba(114,100,214,.11); font-size:.8rem; font-weight:700; white-space:nowrap; }
 .workspace-overview-all:hover,.workspace-overview-all:focus-visible { color:#fff; border-color:#9787ff; background:rgba(114,100,214,.25); }
 .workspace-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
