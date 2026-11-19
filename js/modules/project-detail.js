@@ -29,6 +29,25 @@ var ProjectDetailModule = {
         });
     },
 
+    showTask: function(projectId, taskId) {
+        var project = StateManager.getProject(projectId);
+        if (!project) return;
+        if (!Array.isArray(project.checklist) || !project.checklist.some(function(task) {
+            return task && String(task.id) === String(taskId);
+        })) { this.show(projectId); return; }
+        var modal = document.getElementById('projectDetailModal');
+        if (!modal) return;
+        modal.addEventListener('shown.bs.modal', function() {
+            var rows = modal.querySelectorAll('.checklist-container .checklist-item[data-item-id]');
+            var row = Array.from(rows).find(function(item) { return item.dataset.itemId === String(taskId); });
+            if (!row) return;
+            row.setAttribute('tabindex', '-1');
+            row.focus({ preventScroll: true });
+            row.scrollIntoView({ behavior: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+        }, { once: true });
+        this.show(projectId);
+    },
+
     show: function(projectId) {
         var project = StateManager.getProject(projectId);
         if (!project) {

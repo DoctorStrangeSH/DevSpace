@@ -64,6 +64,13 @@ var RendererModule = {
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
         });
+        var nextTasks = document.getElementById('workspaceNextTasks');
+        if (nextTasks) nextTasks.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-next-project][data-next-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.nextProject, button.dataset.nextTask);
+            }
+        });
         var schedule = document.getElementById('scheduleCalendar');
         if (schedule) schedule.addEventListener('click', function(event) {
             var project = event.target.closest('[data-focus-project]');
@@ -1394,6 +1401,12 @@ var RendererModule = {
         nextTasks.slice(0, 3).forEach(function(task) {
             var row = document.createElement('li');
             row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.nextProject = String(task.projectId);
+            button.dataset.nextTask = String(task.id);
+            button.setAttribute('aria-label', 'Открыть задачу: ' + task.text + ' — ' + task.projectName);
             var detail = document.createElement('span');
             detail.className = 'workspace-next-detail';
             var name = document.createElement('strong');
@@ -1413,7 +1426,8 @@ var RendererModule = {
             } else {
                 tag.textContent = task.priority === 'high' ? 'Важно' : 'Без срока';
             }
-            row.append(detail, tag);
+            button.append(detail, tag);
+            row.appendChild(button);
             nextList.appendChild(row);
         });
     },
