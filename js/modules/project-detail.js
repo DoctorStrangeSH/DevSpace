@@ -21,6 +21,7 @@ var ProjectDetailModule = {
         EventBus.on('checklist:changed', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) {
                 self._refreshRoadmap(data.projectId);
+                self._refreshTaskActivity(data.projectId);
                 if (document.getElementById('notesContainer')) self._refreshNotes(data.projectId);
             }
         });
@@ -70,6 +71,7 @@ var ProjectDetailModule = {
         document.getElementById('detailBody').innerHTML = this._renderDetail(project);
 
         this._initDetailChecklist(project);
+        this._initTaskActivity(project);
         this._initRoadmap(project.id);
         this._initDetailUpdates(project);
         this._initDetailNotes(project);
@@ -307,6 +309,7 @@ var ProjectDetailModule = {
                 '<div class="detail-main">' +
                     descriptionHTML +
                     checklistHTML +
+                    this._renderTaskActivity(project) +
                     roadmapHTML +
                     updatesHTML +
                     notesHTML +
@@ -330,6 +333,57 @@ var ProjectDetailModule = {
                 '</div>' +
             '</div>' +
         '</div>';
+    },
+
+    _renderTaskActivity: function(project, filter) {
+        var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice().reverse() : [];
+        var selected = filter || 'all';
+        if (selected !== 'all') entries = entries.filter(function(entry) { return entry.action === selected; });
+        var labels = { updated: 'Изменение задачи', completed: 'Задача завершена', reopened: 'Задача открыта повторно' };
+        var fields = { text: 'Название', priority: 'Приоритет', deadline: 'Срок', completed: 'Статус' };
+        var format = function(value) {
+            if (value === null || value === '') return '—';
+            if (value === true) return 'Выполнено';
+            if (value === false) return 'Не выполнено';
+            if (value === 'high') return 'Высокий';
+            if (value === 'normal') return 'Обычный';
+            if (value === 'low') return 'Низкий';
+            return String(value);
+        };
+        var rows = entries.map(function(entry) {
+            var changes = Array.isArray(entry.changes) ? entry.changes : [];
+            var changeHTML = changes.map(function(change) {
+                var field = fields[change.field] || change.field;
+                return '<div class="task-activity-change"><span>' + Helpers.escapeHtml(field) + '</span><div><del>' + Helpers.escapeHtml(format(change.from)) + '</del><i class="bi bi-arrow-right"></i><strong>' + Helpers.escapeHtml(format(change.to)) + '</strong></div></div>';
+            }).join('');
+            var date = entry.createdAt && Number.isFinite(Date.parse(entry.createdAt)) ? new Date(entry.createdAt).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : 'Дата неизвестна';
+            return '<article class="task-activity-entry"><div class="task-activity-marker"></div><div class="task-activity-card"><div class="task-activity-heading"><strong>' + Helpers.escapeHtml(labels[entry.action] || 'Изменение') + '</strong><time datetime="' + Helpers.escapeHtml(entry.createdAt || '') + '">' + Helpers.escapeHtml(date) + '</time></div><button type="button" class="task-activity-task" data-activity-project="' + Helpers.escapeHtml(String(project.id)) + '" data-activity-task="' + Helpers.escapeHtml(String(entry.taskId || '')) + '">' + Helpers.escapeHtml(entry.taskText || 'Задача без названия') + '</button>' + (changeHTML ? '<div class="task-activity-changes">' + changeHTML + '</div>' : '') + '</div></article>';
+        }).join('');
+        return '<section class="detail-section task-activity-section" id="taskActivitySection"><div class="task-activity-title"><h4><i class="bi bi-clock-history"></i> История действий</h4><span class="task-activity-count">' + (Array.isArray(project.taskActivity) ? project.taskActivity.length : 0) + '</span></div><div class="task-activity-toolbar"><label class="visually-hidden" for="taskActivityFilter">Фильтр истории</label><select id="taskActivityFilter" class="form-select form-select-sm"><option value="all">Все события</option><option value="updated">Изменения</option><option value="completed">Завершения</option><option value="reopened">Повторные открытия</option></select></div><div class="task-activity-list" id="taskActivityList">' + (rows || '<p class="text-muted small mb-0">История пока пуста. Изменения задач появятся здесь.</p>') + '</div></section>';
+    },
+
+    _refreshTaskActivity: function(projectId) {
+        var project = StateManager.getProject(projectId);
+        var list = document.getElementById('taskActivityList');
+        var count = document.querySelector('#taskActivitySection .task-activity-count');
+        var filter = document.getElementById('taskActivityFilter');
+        if (!project || !list) return;
+        var selected = filter ? filter.value : 'all';
+        var rendered = this._renderTaskActivity(project, selected);
+        var temporary = document.createElement('div');
+        temporary.innerHTML = rendered;
+        var nextList = temporary.querySelector('#taskActivityList');
+        if (nextList) list.innerHTML = nextList.innerHTML;
+        if (count) count.textContent = Array.isArray(project.taskActivity) ? project.taskActivity.length : 0;
+    },
+
+    _initTaskActivity: function(project) {
+        var self = this;
+        var filter = document.getElementById('taskActivityFilter');
+        if (filter && !filter.dataset.activityBound) {
+            filter.dataset.activityBound = 'true';
+            filter.addEventListener('change', function() { self._refreshTaskActivity(project.id); });
+        }
     },
 
     _renderRoadmap: function(project) {

@@ -3017,6 +3017,26 @@ test('checklist activity records completion and reopening with a bounded history
     assert.equal(project.taskActivity[0].id, '1');
 });
 
+test('project detail renders escaped task activity and filters event types', () => {
+    const ctx = execute('js/modules/project-detail.js', {
+        Helpers: { escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[char])); } }
+    });
+    const module = ctx.ProjectDetailModule;
+    const project = { id: 'p1', taskActivity: [
+        { id: 'a1', taskId: 't1', taskText: '<script>alert(1)</script>', action: 'updated', createdAt: '2026-11-20T10:00:00Z', changes: [{ field: 'text', from: 'Old', to: 'New' }] },
+        { id: 'a2', taskId: 't1', taskText: 'Task', action: 'completed', createdAt: '2026-11-20T11:00:00Z', changes: [{ field: 'completed', from: false, to: true }] }
+    ] };
+    const all = module._renderTaskActivity(project);
+    assert.match(all, /История действий/);
+    assert.match(all, /&lt;script&gt;/);
+    assert.doesNotMatch(all, /<script>alert/);
+    assert.match(all, /Старое|Old/);
+    const onlyCompleted = module._renderTaskActivity(project, 'completed');
+    assert.match(onlyCompleted, /Задача завершена/);
+    assert.doesNotMatch(onlyCompleted, /Изменение задачи/);
+    assert.match(module._renderTaskActivity({ id: 'p2', taskActivity: [] }), /История пока пуста/);
+});
+
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };
