@@ -200,6 +200,18 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .workspace-metric .metric-complete { color:#8de0bc; background:rgba(64,182,133,.13); }
 .workspace-metric strong { font-size:1.63rem; line-height:1.15; font-weight:800; font-variant-numeric:tabular-nums; }
 .workspace-metric > span:last-child { color:#aaa6bd; font-size:.75rem; font-weight:600; }
+.workspace-next { margin-top:19px; padding-top:17px; border-top:1px solid rgba(158,145,234,.17); }
+.workspace-next-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
+.workspace-next-heading h4 { margin:0; color:#f2edff; font-size:.95rem; }
+.workspace-next-heading span { color:#a9a2c4; font-size:.73rem; }
+.workspace-next-list { display:grid; gap:7px; margin:0; padding:0; list-style:none; }
+.workspace-next-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid rgba(155,143,220,.13); border-radius:11px; background:rgba(10,11,24,.31); }
+.workspace-next-detail { display:grid; gap:3px; min-width:0; }
+.workspace-next-detail strong { overflow-wrap:anywhere; font-size:.83rem; font-weight:650; color:#f1edff; }
+.workspace-next-detail small { overflow-wrap:anywhere; color:#aaa6bd; font-size:.72rem; }
+.workspace-next-tag { flex:none; color:#c0b5ff; font-size:.72rem; font-weight:700; }
+.workspace-next-tag.is-overdue { color:#ffb39d; }
+.workspace-next-empty { color:#aaa6bd; font-size:.82rem; padding:12px 0 2px; }
 @media(max-width:1000px) { .workspace-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:570px) { .workspace-overview { padding:17px; } .workspace-overview-heading { align-items:flex-start; flex-direction:column; } .workspace-overview-heading h3 { font-size:1.1rem; } .workspace-metrics { gap:8px; } .workspace-metric { padding:10px; grid-template-columns:34px 1fr; column-gap:8px; } .workspace-metric-icon { width:34px; height:34px; font-size:1rem; } .workspace-metric strong { font-size:1.36rem; } .workspace-metric > span:last-child { font-size:.66rem; } }
 

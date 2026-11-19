@@ -1351,6 +1351,12 @@ var RendererModule = {
         if (projects.some(function(project) { return project.id === selected; })) select.value = selected;
     },
 
+    _getOverviewNextTasks: function(projects, now) {
+        return this._collectTodayTasks((projects || []).filter(function(project) {
+            return project && project.status !== 'completed' && project.status !== 'archived';
+        }), now, 'all', 'all');
+    },
+
     _renderWorkspaceSummary: function() {
         var projects = StateManager.get('projects') || [];
         var now = new Date();
@@ -1371,6 +1377,44 @@ var RendererModule = {
         [['workspaceActiveProjects', active], ['workspaceOpenTasks', open], ['workspaceOverdueTasks', overdue], ['workspaceDoneTasks', done]].forEach(function(entry) {
             var el = document.getElementById(entry[0]);
             if (el) el.textContent = String(entry[1]);
+        });
+        var nextList = document.getElementById('workspaceNextTasks');
+        var nextCount = document.getElementById('workspaceNextCount');
+        if (!nextList) return;
+        var nextTasks = this._getOverviewNextTasks(projects, now);
+        if (nextCount) nextCount.textContent = nextTasks.length ? nextTasks.length + ' в очереди' : '';
+        nextList.replaceChildren();
+        if (!nextTasks.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'Пока нет открытых задач — можно выдохнуть ✨';
+            nextList.appendChild(empty);
+            return;
+        }
+        nextTasks.slice(0, 3).forEach(function(task) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var name = document.createElement('strong');
+            name.textContent = task.text;
+            var project = document.createElement('small');
+            project.textContent = task.projectName;
+            detail.append(name, project);
+            var tag = document.createElement('span');
+            tag.className = 'workspace-next-tag';
+            if (task.deadline && task.deadline < today) {
+                tag.classList.add('is-overdue');
+                tag.textContent = 'Просрочено';
+            } else if (task.deadline === today) {
+                tag.textContent = 'Сегодня';
+            } else if (task.deadline) {
+                tag.textContent = task.deadline.slice(8, 10) + '.' + task.deadline.slice(5, 7);
+            } else {
+                tag.textContent = task.priority === 'high' ? 'Важно' : 'Без срока';
+            }
+            row.append(detail, tag);
+            nextList.appendChild(row);
         });
     },
 
