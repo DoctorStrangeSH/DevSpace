@@ -107,12 +107,22 @@ var ChecklistModule = {
         var project = StateManager.getProject(projectId);
         if (!project) return false;
 
+        var removed = (project.checklist || []).find(function(item) { return item.id === itemId; });
+        if (!removed) return false;
+        var linkedNote = removed.sourceNoteId && (project.notes || []).find(function(note) {
+            return note.id === removed.sourceNoteId && note.linkedTaskId === removed.id;
+        });
+        if (linkedNote) {
+            delete linkedNote.linkedTaskId;
+            linkedNote.updatedAt = new Date().toISOString();
+        }
         project.checklist = (project.checklist || []).filter(function(i) { return i.id !== itemId; });
 
         this._recalculateProgress(project);
 
         StateManager.updateProject(projectId, {
             checklist: project.checklist,
+            notes: project.notes,
             progress: project.progress
         });
 

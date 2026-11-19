@@ -169,7 +169,7 @@ var NotesModule = {
         if (!project || !project.notes || typeof ChecklistModule === 'undefined') return null;
         var note = project.notes.find(function(item) { return item.id === noteId; });
         if (!note) return null;
-        var oldTask = (project.checklist || []).find(function(item) { return item.id === note.linkedTaskId; });
+        var oldTask = (project.checklist || []).find(function(item) { return item.id === note.linkedTaskId && item.sourceNoteId === note.id; });
         if (oldTask) return oldTask;
         var title = String(note.title || note.description || 'Задача из заметки').trim().slice(0, 240);
         if (!title) return null;
@@ -301,7 +301,7 @@ var NotesModule = {
                 var priority = self.priorities[note.priority] || self.priorities.medium;
                 var linkedTask = (StateManager.getProject(projectId).checklist || []).find(function(task) { return task.id === note.linkedTaskId && task.sourceNoteId === note.id; });
 
-                html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + (note.pinned ? ' note-pinned' : '') + ' note-priority-' + note.priority + '" data-note-id="' + note.id + '">' +
+                html += '<div class="note-card ' + (note.completed ? 'note-completed' : '') + (note.pinned ? ' note-pinned' : '') + ' note-priority-' + (self.priorities[note.priority] ? note.priority : 'medium') + '" data-note-id="' + Helpers.escapeHtml(String(note.id)) + '">' +
                     '<div class="note-header">' +
                         ((typeof AuthService === 'undefined' || AuthService.isOwner()) ? '<label class="note-select-label" title="Выбрать заметку"><input class="note-select-input" type="checkbox" aria-label="Выбрать заметку"></label>' : '') +
                         '<div class="note-type-badge" style="background: ' + type.color + '20; color: ' + type.color + '; border-color: ' + type.color + '40;">' +
@@ -311,8 +311,8 @@ var NotesModule = {
                             '<i class="bi ' + priority.icon + '"></i>' +
                         '</div>' +
                         '<div class="note-actions">' +
-                            '<button class="note-action-btn task-from-note-btn" type="button" title="' + (note.linkedTaskId ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '" aria-label="' + (note.linkedTaskId ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '">' +
-                                '<i class="bi ' + (note.linkedTaskId ? 'bi-arrow-up-right-square' : 'bi-list-task') + '"></i>' +
+                            '<button class="note-action-btn task-from-note-btn" type="button" title="' + (linkedTask ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '" aria-label="' + (linkedTask ? 'Открыть связанную задачу' : 'Создать задачу из заметки') + '">' +
+                                '<i class="bi ' + (linkedTask ? 'bi-arrow-up-right-square' : 'bi-list-task') + '"></i>' +
                             '</button>' +
                             '<button class="note-action-btn pin-btn" type="button" title="' + (note.pinned ? 'Открепить' : 'Закрепить') + '" aria-label="' + (note.pinned ? 'Открепить заметку' : 'Закрепить заметку') + '" aria-pressed="' + !!note.pinned + '">' +
                                 '<i class="bi ' + (note.pinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i>' +
@@ -335,16 +335,16 @@ var NotesModule = {
                             (linkedTask.completed ? 'Возобновить' : 'Завершить') + '</button>' : '') +
                     '</div>' : '') +
                     '<h4 class="note-title ' + (note.completed ? 'text-decoration-line-through' : '') + '">' +
-                        (note.title || 'Без названия') +
+                        Helpers.escapeHtml(note.title || 'Без названия') +
                     '</h4>' +
-                    (note.description ? '<p class="note-description">' + note.description + '</p>' : '') +
+                    (note.description ? '<p class="note-description">' + Helpers.escapeHtml(note.description) + '</p>' : '') +
                     '<div class="note-footer">' +
                         '<div class="note-tags">' +
                             (note.tags || []).map(function(tag) {
-                                return '<span class="note-tag">#' + tag + '</span>';
+                                return '<span class="note-tag">#' + Helpers.escapeHtml(String(tag)) + '</span>';
                             }).join('') +
                         '</div>' +
-                        '<span class="note-date">' + Helpers.formatDate(note.createdAt) + '</span>' +
+                        '<span class="note-date">' + Helpers.escapeHtml(Helpers.formatDate(note.createdAt)) + '</span>' +
                     '</div>' +
                 '</div>';
             });
