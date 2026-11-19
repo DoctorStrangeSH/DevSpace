@@ -1202,6 +1202,17 @@ var RendererModule = {
             btn.addEventListener('click', function() {
                 self._switchTab(btn.dataset.tab);
             });
+            btn.addEventListener('keydown', function(event) {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                var tabs = Array.from(document.querySelectorAll('.tab-btn'));
+                var index = tabs.indexOf(btn);
+                if (index < 0) return;
+                event.preventDefault();
+                var next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+                    (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+                self._switchTab(tabs[next].dataset.tab);
+                tabs[next].focus();
+            });
         });
     },
 
@@ -1209,7 +1220,10 @@ var RendererModule = {
         sessionStorage.setItem('devspace_tab', tab);
 
         document.querySelectorAll('.tab-btn').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.tab === tab);
+            var selected = b.dataset.tab === tab;
+            b.classList.toggle('active', selected);
+            b.setAttribute('aria-selected', String(selected));
+            b.tabIndex = selected ? 0 : -1;
         });
 
         var tp = document.getElementById('tabProjects');
