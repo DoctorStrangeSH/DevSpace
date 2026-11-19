@@ -1002,6 +1002,7 @@ test('checklist deadline validates calendar dates and preserves other task field
     EventBus: { emit(name) { events.push(name); } }
   });
   const module = ctx.ChecklistModule;
+  module._updateChecklistDOM = () => {};
   assert.equal(module.setDeadline('p1', 't1', '2026-02-30'), false);
   assert.equal(module.setDeadline('p1', 't1', '2026-11-17'), true);
   assert.equal(task.deadline, '2026-11-17');
