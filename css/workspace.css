@@ -15,6 +15,10 @@
 #mainNavbar .search-box .search-icon { color:#a5a0ba; }
 #mainNavbar .theme-toggle { width:39px; height:39px; min-width:39px; border-radius:12px; background:rgba(122,113,182,.11); border-color:rgba(148,139,194,.23); }
 #mainNavbar .theme-toggle:hover { transform:none; background:rgba(121,103,221,.25); }
+#mainNavbar .edit-mode-button { width:auto; min-width:86px; padding:0 11px; display:inline-flex; align-items:center; justify-content:center; gap:7px; font-size:.77rem; font-weight:700; white-space:nowrap; }
+#mainNavbar .edit-mode-button.is-editing { border-color:rgba(93,197,147,.65); background:rgba(47,137,101,.19); color:#b7f4d5; }
+#mainNavbar .edit-mode-button:focus-visible { outline:2px solid #d6c3ff; outline-offset:3px; }
+@media(max-width:1250px) { #mainNavbar .edit-mode-button { width:39px; min-width:39px; padding:0; } #mainNavbar .edit-mode-label { display:none; } }
 #cloudIdentityBtn { min-width:98px; border:1px solid rgba(125,109,255,.32)!important; background:rgba(111,91,255,.1)!important; color:#e5deff!important; border-radius:12px!important; font-size:.82rem!important; font-weight:700; white-space:nowrap; }
 #cloudIdentityBtn:hover { border-color:#9586ff!important; background:rgba(111,91,255,.2)!important; }
 .workspace-launch { position:fixed; right:23px; bottom:25px; z-index:1010; display:flex; align-items:center; gap:10px; padding:12px 18px; border:1px solid rgba(190,176,255,.33); border-radius:999px; color:#fff; background:linear-gradient(120deg,#685df1,#8669e9); box-shadow:0 10px 35px rgba(40,24,113,.4); font-size:.86rem; font-weight:750; text-decoration:none; transition:transform .2s,box-shadow .2s; }

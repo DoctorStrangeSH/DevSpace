@@ -47,9 +47,13 @@ var AuthService = {
         var self = this;
         var button = document.getElementById('authBtn');
         if (button) {
-            button.innerHTML = this._isOwner ? '<i class="bi bi-pencil-square"></i>' : '<i class="bi bi-pencil"></i>';
-            button.title = this._isOwner ? 'Выключить локальное редактирование' : 'Включить локальное редактирование';
+            button.innerHTML = this._isOwner
+                ? '<i class="bi bi-pencil-square" aria-hidden="true"></i><span class="edit-mode-label">Правки: вкл.</span>'
+                : '<i class="bi bi-pencil" aria-hidden="true"></i><span class="edit-mode-label">Правки</span>';
+            button.title = this._isOwner ? 'Выключить локальные правки (не выход из Google)' : 'Включить локальные правки (не вход в Google)';
             button.setAttribute('aria-label', button.title);
+            button.setAttribute('aria-pressed', String(this._isOwner));
+            button.classList.toggle('is-editing', this._isOwner);
             button.style.color = this._isOwner ? '#a8d8bd' : '';
             button.onclick = this._isOwner ? function () { self.logout(); } : function () { self._showLoginDialog(); };
         }
