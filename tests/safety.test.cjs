@@ -2876,6 +2876,39 @@ test('note rendering escapes untrusted text, tags, dates and attributes', () => 
     assert.match(html, /data-note-id="bad&quot;/);
 });
 
+test('checklist completion timestamps are set on completion and cleared on reopening', () => {
+    const project = { id: 'p', progress: 0, checklist: [
+        { id: 'task', text: 'Проверяемый этап', completed: false, completedAt: null }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: {
+            getProject: () => project,
+            updateProject: (id, data) => { saved.push({ id, data }); }
+        },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    checklist._updateChecklistDOM = () => {};
+    checklist.toggleItem('p', 'task');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(typeof project.checklist[0].completedAt, 'string');
+    assert.ok(Number.isFinite(Date.parse(project.checklist[0].completedAt)));
+    assert.equal(project.progress, 100);
+    assert.equal(saved.length, 1);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+
+    checklist.toggleItem('p', 'task');
+    assert.equal(project.checklist[0].completed, false);
+    assert.equal(project.checklist[0].completedAt, null);
+    assert.equal(project.progress, 0);
+    assert.equal(saved.length, 2);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+});
+
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };
