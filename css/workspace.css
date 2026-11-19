@@ -175,6 +175,15 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 @media(max-width:1250px) and (min-width:992px) { #mainNavbar .navbar-brand .brand-text { display:none; } #mainNavbar .nav-link { padding:8px 7px!important; font-size:.75rem; } #mainNavbar .search-input { width:135px; } #mainNavbar .search-input:focus { width:160px; } }
 @media(max-width:991px) { #mainNavbar .navbar-nav { align-items:stretch; } #mainNavbar .navbar-brand .brand-text { display:inline; } #mainNavbar .search-input,#mainNavbar .search-input:focus { width:100%; } .workspace-switcher { top:69px; } }
 @media(max-width:767px) { #mainNavbar { min-height:63px; } .workspace-switcher { top:63px; border-radius:12px; } }
+@media(max-height:650px) {
+    .workspace-switcher { position:relative; top:auto; }
+    #projectModal .modal-dialog { max-height:calc(100dvh - 20px); margin-top:10px; margin-bottom:10px; }
+    #projectModal .modal-content { max-height:calc(100dvh - 20px); display:flex; flex-direction:column; }
+    #projectModal .modal-body { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+    #projectModal .modal-header,#projectModal .modal-footer { flex-shrink:0; }
+    #projectDetailModal .modal-dialog,#githubModal .modal-dialog { max-height:calc(100dvh - 20px); margin-top:10px; margin-bottom:10px; }
+    #projectDetailModal .modal-content,#githubModal .modal-content { max-height:calc(100dvh - 20px); }
+}
 
 /* Account menu: one intentional entry point instead of scattered cloud controls. */
 .profile-trigger { display:inline-flex; align-items:center; gap:9px; min-height:40px; padding:4px 11px 4px 5px; border:1px solid rgba(160,146,226,.3); border-radius:13px; background:rgba(116,102,217,.11); color:#eee9ff; font-size:.81rem; font-weight:700; cursor:pointer; white-space:nowrap; }
