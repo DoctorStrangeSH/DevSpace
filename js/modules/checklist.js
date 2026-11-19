@@ -56,6 +56,68 @@ var ChecklistModule = {
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
     },
+    updateDetails: function(projectId, itemId, details) {
+        details = details || {};
+        if (typeof details.text !== 'string') return false;
+        var text = details.text.trim();
+        if (!text || text.length > 240) return false;
+        var priority = details.priority;
+        if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
+        var deadline = details.deadline || '';
+        if (deadline && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.checklist)) return false;
+        var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
+        if (!item) return false;
+        var changed = item.text !== text || (item.priority || 'normal') !== priority || (item.deadline || '') !== deadline;
+        if (!changed) return true;
+        item.text = text;
+        if (priority === 'normal') delete item.priority; else item.priority = priority;
+        if (deadline) item.deadline = deadline; else delete item.deadline;
+        item.updatedAt = new Date().toISOString();
+        StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._updateChecklistDOM(project);
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
+        return true;
+    },
+
+    openEditor: function(projectId, itemId) {
+        var project = StateManager.getProject(projectId);
+        var task = project && (project.checklist || []).find(function(item) { return String(item.id) === String(itemId); });
+        if (!task || typeof document === 'undefined' || !document.body) return false;
+        var existing = document.getElementById('checklistTaskEditor');
+        if (existing) existing.remove();
+        var overlay = document.createElement('div');
+        overlay.id = 'checklistTaskEditor';
+        overlay.className = 'checklist-editor-backdrop';
+        overlay.innerHTML = '<section class="checklist-editor" role="dialog" aria-modal="true" aria-labelledby="checklistEditorTitle">' +
+            '<div class="checklist-editor-heading"><h3 id="checklistEditorTitle">Редактирование задачи</h3><button type="button" class="checklist-editor-close" aria-label="Закрыть">×</button></div>' +
+            '<form class="checklist-editor-form">' +
+            '<label>Название<input name="text" type="text" maxlength="240" required></label>' +
+            '<div class="checklist-editor-fields"><label>Приоритет<select name="priority"><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label>' +
+            '<label>Срок выполнения<input name="deadline" type="date"></label></div>' +
+            '<p class="checklist-editor-error" role="alert" hidden></p>' +
+            '<div class="checklist-editor-actions"><button type="button" class="checklist-editor-cancel">Отмена</button><button type="submit" class="checklist-editor-save">Сохранить</button></div>' +
+            '</form></section>';
+        document.body.appendChild(overlay);
+        var form = overlay.querySelector('form');
+        form.elements.text.value = task.text || '';
+        form.elements.priority.value = task.priority || 'normal';
+        form.elements.deadline.value = task.deadline || '';
+        var close = function() { overlay.remove(); };
+        overlay.querySelector('.checklist-editor-close').addEventListener('click', close);
+        overlay.querySelector('.checklist-editor-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', function(event) { if (event.target === overlay) close(); });
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            var ok = ChecklistModule.updateDetails(projectId, itemId, { text: form.elements.text.value, priority: form.elements.priority.value, deadline: form.elements.deadline.value });
+            var error = form.querySelector('.checklist-editor-error');
+            if (!ok) { error.textContent = 'Проверьте название, приоритет и дату.'; error.hidden = false; return; }
+            close();
+        });
+        form.elements.text.focus();
+        return true;
+    },
     setPriority: function(projectId, itemId, priority) {
         if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
         var project = StateManager.getProject(projectId);
@@ -228,8 +290,7 @@ var ChecklistModule = {
                 var currentProject = StateManager.getProject(projectId);
                 var task = currentProject && (currentProject.checklist || []).find(function(item) { return String(item.id) === String(row.dataset.itemId); });
                 if (!task) return;
-                var nextText = prompt('Изменить задачу', task.text);
-                if (nextText !== null) self.updateText(projectId, row.dataset.itemId, nextText);
+                self.openEditor(projectId, row.dataset.itemId);
             });
         });
         container.querySelectorAll('.checklist-delete').forEach(function(btn) {

@@ -2970,6 +2970,27 @@ test('priority and deadline edits validate values, refresh task UI and preserve 
     assert.equal(saved.length, 3);
     assert.equal(events.length, 3);
 });
+test('unified checklist editor update validates and persists title, priority and deadline atomically', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Старое', completed: true, completedAt: '2026-11-19T10:00:00Z', sourceNoteId: 'note' }] };
+    const saved = []; const events = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: '  Новое  ', priority: 'high', deadline: '2026-11-25' }), true);
+    assert.equal(project.checklist[0].text, 'Новое');
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(project.checklist[0].deadline, '2026-11-25');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, '2026-11-19T10:00:00Z');
+    assert.equal(project.checklist[0].sourceNoteId, 'note');
+    assert.equal(saved.length, 1); assert.equal(events.length, 1);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: '', priority: 'high', deadline: '2026-11-25' }), false);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'urgent', deadline: '' }), false);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'normal', deadline: '2026-02-30' }), false);
+    assert.equal(saved.length, 1);
+});
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };
