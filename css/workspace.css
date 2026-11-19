@@ -51,6 +51,20 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .cloud-migration-preview label { display:block; margin:7px 0 0; color:#bdb9cc; font-size:.8rem; }
 .cloud-migration-preview select { width:100%; min-width:0; min-height:44px; padding:9px 12px; border:1px solid rgba(156,143,213,.34); border-radius:11px; color:#f4efff; background:#222131; }
 .cloud-migration-preview #cloudMigrationPreviewStatus { grid-column:1/-1; padding:12px 15px; margin-top:5px; border-radius:11px; color:#d0c7e5; background:rgba(8,8,18,.35); }
+.cloud-migration-advanced { grid-column:1/-1; border:1px solid rgba(143,129,219,.27); border-radius:14px; background:rgba(11,11,24,.24); }
+.cloud-migration-advanced > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 17px; color:#e8defd; font-size:.86rem; font-weight:700; cursor:pointer; list-style:none; }
+.cloud-migration-advanced > summary::-webkit-details-marker { display:none; }
+.cloud-migration-advanced > summary:hover,.cloud-migration-advanced > summary:focus-visible { background:rgba(112,93,216,.12); border-radius:14px; }
+.cloud-migration-advanced > summary:focus-visible { outline:2px solid #b7a6ff; outline-offset:2px; }
+.cloud-migration-advanced > summary > i { transition:transform .2s; }
+.cloud-migration-advanced[open] > summary > i { transform:rotate(180deg); }
+.cloud-migration-explainer { padding:0 17px; color:#b9b5ce; font-size:.8rem; line-height:1.65; }
+.cloud-migration-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; padding:0 17px 17px; }
+.cloud-migration-action-group { display:flex; flex-direction:column; align-items:stretch; gap:9px; min-width:0; padding:16px; border:1px solid rgba(155,143,212,.2); border-radius:12px; background:rgba(30,27,49,.65); }
+.cloud-migration-action-group h4 { margin:0 0 4px; color:#ece6f9; font-size:.9rem; }
+.cloud-migration-action-group h4 i { margin-right:7px; color:#beaaf4; }
+@media(max-width:767px) { .cloud-migration-actions { grid-template-columns:1fr; padding:0 12px 12px; } .cloud-migration-action-group { padding:12px; } }
+@media(prefers-reduced-motion:reduce) { .cloud-migration-advanced > summary > i { transition:none; } }
 #tabProjects .health-history-note { line-height:1.6; }
 @media(max-width:1150px) { #mainNavbar .nav-link { font-size:.81rem; } #mainNavbar .navbar-nav { gap:1px; } }
 @media(max-width:767px) { .workspace-launch { right:15px; bottom:16px; padding:11px 14px; } .workspace-switcher { margin-top:13px; } .workspace-switch { min-height:42px; padding:9px 13px; font-size:.8rem; } .cloud-workspace-panel { padding:18px; border-radius:17px; } .cloud-migration-preview { grid-template-columns:1fr; } .cloud-workspace-heading { align-items:flex-start; gap:11px; } .cloud-workspace-emblem { width:44px;height:44px;font-size:1.2rem; } .cloud-workspace-heading h3 { font-size:1.13rem; } }
