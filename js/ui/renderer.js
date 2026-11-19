@@ -1400,9 +1400,9 @@ var RendererModule = {
         var start = end - 7 * 86400000;
         var results = [];
         (projects || []).forEach(function(project) {
-            if (!project) return;
+            if (!project || project.id == null) return;
             (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
-                if (!task || !task.completed || typeof task.text !== 'string' || !task.text.trim() || typeof task.completedAt !== 'string') return;
+                if (!task || task.id == null || !task.completed || typeof task.text !== 'string' || !task.text.trim() || typeof task.completedAt !== 'string') return;
                 var timestamp = Date.parse(task.completedAt);
                 if (!Number.isFinite(timestamp) || timestamp < start || timestamp > end) return;
                 results.push({ projectId: project.id, projectName: project.name || 'Без названия', taskId: task.id, text: task.text, timestamp: timestamp });

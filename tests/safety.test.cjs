@@ -274,6 +274,19 @@ test('recent completion feed includes only completed tasks with genuine dates in
   assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /title\.textContent = item\.text/);
 });
 
+test('recent completion feed excludes tasks without stable project and task identifiers', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date('2026-11-19T12:00:00.000Z');
+  const rows = renderer._collectRecentCompletions([
+    { name: 'Без ID проекта', checklist: [{ id: 'task', text: 'Не открывается', completed: true, completedAt: '2026-11-19T11:00:00Z' }] },
+    { id: 'project', name: 'Проект', checklist: [
+      { text: 'Без ID задачи', completed: true, completedAt: '2026-11-19T10:00:00Z' },
+      { id: 'valid', text: 'Корректная задача', completed: true, completedAt: '2026-11-19T09:00:00Z' }
+    ] }
+  ], now);
+  assert.deepEqual(Array.from(rows, row => [row.projectId, row.taskId]), [['project', 'valid']]);
+});
+
 test('deadline alerts show overdue and next two days without duplicate persistent notifications', () => {
   const renderer = execute('js/ui/renderer.js').RendererModule;
   const now = new Date(2026, 10, 19, 12);
