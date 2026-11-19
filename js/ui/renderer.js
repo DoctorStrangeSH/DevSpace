@@ -1419,9 +1419,9 @@ var RendererModule = {
         };
         var start = dayKey(0), end = dayKey(2), alerts = [];
         (projects || []).forEach(function(project) {
-            if (!project || project.status === 'completed' || project.status === 'archived') return;
+            if (!project || project.id == null || project.status === 'completed' || project.status === 'archived') return;
             (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
-                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                if (!task || task.id == null || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
                 var due = task.deadline;
                 if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due) || due > end) return;
                 var parsed = new Date(due + 'T12:00:00');
