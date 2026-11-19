@@ -64,7 +64,7 @@ var ChecklistModule = {
         var priority = details.priority;
         if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
         var deadline = details.deadline || '';
-        if (deadline && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
+        if (deadline && (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
         var project = StateManager.getProject(projectId);
         if (!project || !Array.isArray(project.checklist)) return false;
         var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
