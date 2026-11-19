@@ -1332,12 +1332,16 @@ var RendererModule = {
             container.innerHTML = '';
             var emptyTitle = document.getElementById('projectsEmptyTitle');
             var emptyDescription = document.getElementById('projectsEmptyDescription');
+            var emptyReset = document.getElementById('projectsEmptyReset');
+            var emptyCreate = document.getElementById('projectsEmptyCreate');
             if (emptyTitle) emptyTitle.textContent = hasFilters ? 'Ничего не найдено' : 'Нет проектов';
             if (emptyDescription) emptyDescription.textContent = hasFilters ? 'Попробуй другой запрос или сбрось фильтры.' : 'Создайте первый проект';
-            if (emptyState) emptyState.style.display = 'block';
+            if (emptyReset) emptyReset.hidden = !hasFilters;
+            if (emptyCreate) emptyCreate.hidden = hasFilters;
+            if (emptyState) emptyState.hidden = false;
             return;
         }
-        if (emptyState) emptyState.style.display = 'none';
+        if (emptyState) emptyState.hidden = true;
 
         var self = this;
         container.innerHTML = projects.slice(0, this._visibleCount).map(function(p, i) { return self._renderProjectCard(p, i); }).join('');

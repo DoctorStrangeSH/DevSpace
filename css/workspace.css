@@ -37,6 +37,7 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #tabProjects[data-workspace-view="overview"]:not(.is-overview-expanded) > .focus-panel,#tabProjects[data-workspace-view="overview"]:not(.is-overview-expanded) > .roadmap-overview,#tabProjects[data-workspace-view="overview"]:not(.is-overview-expanded) > .productivity-panel { display:none!important; }
 #tabProjects[data-workspace-view="projects"] > #projectsContainer { display:flex!important; }
 #tabProjects[data-workspace-view="projects"] > .projects-load-more-wrap,#tabProjects[data-workspace-view="projects"] > #emptyState { display:block!important; }
+#tabProjects[data-workspace-view="projects"] > #emptyState[hidden] { display:none!important; }
 #tabProjects[data-workspace-view="planning"] > .schedule-calendar,#tabProjects[data-workspace-view="planning"] > .roadmap-overview { display:block!important; }
 #tabProjects[data-workspace-view="cloud"] > .cloud-workspace-panel { display:block!important; }
 #tabProjects[data-workspace-view="analytics"] > .insights-panel,#tabProjects[data-workspace-view="analytics"] > .productivity-panel { display:block!important; }
@@ -48,6 +49,10 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .projects-clear-filters:hover,.projects-clear-filters:focus-visible { border-color:#aa9bf7; background:rgba(119,98,214,.22); color:#fff; }
 .projects-clear-filters:focus-visible { outline:2px solid #d4c8ff; outline-offset:2px; }
 .projects-clear-filters[hidden] { display:none!important; }
+.projects-empty-reset { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:44px; padding:10px 16px; border:1px solid rgba(167,150,255,.42); border-radius:11px; color:#fff; background:linear-gradient(120deg,#6158df,#7965e7); font-size:.85rem; font-weight:700; }
+.projects-empty-reset:hover,.projects-empty-reset:focus-visible { filter:brightness(1.14); }
+.projects-empty-reset:focus-visible { outline:2px solid #d4c8ff; outline-offset:3px; }
+.projects-empty-reset[hidden],#projectsEmptyCreate[hidden] { display:none!important; }
 .cloud-workspace-panel { padding:28px; border:1px solid rgba(137,117,255,.3); border-radius:21px; background:radial-gradient(circle at 100% 0%,rgba(116,78,210,.13),transparent 37%),linear-gradient(145deg,#1d1c2d,#141520); box-shadow:0 18px 48px rgba(0,0,0,.15); }
 .cloud-workspace-heading { display:flex; align-items:center; gap:17px; padding-bottom:21px; margin-bottom:19px; border-bottom:1px solid rgba(197,188,255,.13); }
 .cloud-workspace-emblem { display:grid; place-items:center; width:58px; height:58px; border-radius:17px; color:#b5a6ff; background:rgba(119,98,237,.15); font-size:1.65rem; flex-shrink:0; }

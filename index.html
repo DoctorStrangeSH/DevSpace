@@ -21,20 +21,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- App CSS -->
-    <link href="css/theme.css?v=3.66.12" rel="stylesheet">
-    <link href="css/main.css?v=3.66.12" rel="stylesheet">
-    <link href="css/animations.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/navbar.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/hero.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/cards.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/checklist.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/modal.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/buttons.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/project-detail.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/notes.css?v=3.66.12" rel="stylesheet">
-    <link href="css/components/widgets.css?v=3.66.12" rel="stylesheet">
-    <link href="css/portfolio.css?v=3.66.12" rel="stylesheet">
-    <link href="css/workspace.css?v=3.66.12" rel="stylesheet">
+    <link href="css/theme.css?v=3.66.13" rel="stylesheet">
+    <link href="css/main.css?v=3.66.13" rel="stylesheet">
+    <link href="css/animations.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/navbar.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/hero.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/cards.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/checklist.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/modal.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/buttons.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/project-detail.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/notes.css?v=3.66.13" rel="stylesheet">
+    <link href="css/components/widgets.css?v=3.66.13" rel="stylesheet">
+    <link href="css/portfolio.css?v=3.66.13" rel="stylesheet">
+    <link href="css/workspace.css?v=3.66.13" rel="stylesheet">
 </head>
 <body>
     <!-- Particles Background -->
@@ -373,11 +373,12 @@
                     </section>
                     <div id="projectsContainer" class="row"></div>
                     <div class="projects-load-more-wrap"><button type="button" class="btn btn-glass" id="projectsLoadMore" aria-controls="projectsContainer" hidden>Показать ещё</button></div>
-                    <div id="emptyState" class="empty-state" style="display:none;">
+                    <div id="emptyState" class="empty-state" hidden>
                         <i class="bi bi-folder2-open empty-icon"></i>
                         <h3 id="projectsEmptyTitle">Нет проектов</h3>
                         <p id="projectsEmptyDescription">Создайте первый проект</p>
-                        <button class="btn btn-gradient owner-only" data-bs-toggle="modal" data-bs-target="#projectModal" style="display:none;">
+                        <button type="button" class="projects-empty-reset" id="projectsEmptyReset" hidden><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Показать все проекты</button>
+                        <button class="btn btn-gradient owner-only" id="projectsEmptyCreate" data-bs-toggle="modal" data-bs-target="#projectModal" style="display:none;">
                             <i class="bi bi-plus-lg me-2"></i>Создать
                         </button>
                     </div>
@@ -437,7 +438,7 @@
                         </span>
                     </div>
                     <div class="col-md-4 text-md-end footer-actions">
-                        <span class="footer-version" id="appVersion">v3.66.12</span>
+                        <span class="footer-version" id="appVersion">v3.66.13</span>
                         <button class="footer-link ms-3 owner-only" id="footerExportBtn" title="Экспорт проектов" style="display:none;">
                             <i class="bi bi-download"></i>
                         </button>
@@ -605,52 +606,52 @@
     <!-- Firebase SDK is loaded after the interface becomes interactive. -->
     
     <!-- App JS - Core -->
-    <script src="js/core/events.js?v=3.66.12" defer></script>
-    <script src="js/core/storage.js?v=3.66.12" defer></script>
-    <script src="js/core/state.js?v=3.66.12" defer></script>
+    <script src="js/core/events.js?v=3.66.13" defer></script>
+    <script src="js/core/storage.js?v=3.66.13" defer></script>
+    <script src="js/core/state.js?v=3.66.13" defer></script>
     
     <!-- Services -->
-    <script src="js/services/localStorage.js?v=3.66.12" defer></script>
-    <script src="js/services/firebase.js?v=3.66.12" defer></script>
-    <script src="js/services/firebase-identity.js?v=3.66.12" defer></script>
-    <script src="js/services/auth.js?v=3.66.12" defer></script>
-    <script src="js/services/github.js?v=3.66.12" defer></script>
-    <script src="js/services/supabase.js?v=3.66.12" defer></script>
+    <script src="js/services/localStorage.js?v=3.66.13" defer></script>
+    <script src="js/services/firebase.js?v=3.66.13" defer></script>
+    <script src="js/services/firebase-identity.js?v=3.66.13" defer></script>
+    <script src="js/services/auth.js?v=3.66.13" defer></script>
+    <script src="js/services/github.js?v=3.66.13" defer></script>
+    <script src="js/services/supabase.js?v=3.66.13" defer></script>
     
     <!-- Sync -->
-    <script src="js/core/sync.js?v=3.66.12" defer></script>
+    <script src="js/core/sync.js?v=3.66.13" defer></script>
     
     <!-- Utils -->
-    <script src="js/utils/helpers.js?v=3.66.12" defer></script>
-    <script src="js/utils/validators.js?v=3.66.12" defer></script>
+    <script src="js/utils/helpers.js?v=3.66.13" defer></script>
+    <script src="js/utils/validators.js?v=3.66.13" defer></script>
     
     <!-- UI -->
-    <script src="js/ui/notifications.js?v=3.66.12" defer></script>
-    <script src="js/ui/renderer.js?v=3.66.12" defer></script>
-    <script src="js/ui/workspace-view.js?v=3.66.12" defer></script>
+    <script src="js/ui/notifications.js?v=3.66.13" defer></script>
+    <script src="js/ui/renderer.js?v=3.66.13" defer></script>
+    <script src="js/ui/workspace-view.js?v=3.66.13" defer></script>
     
     <!-- Modules -->
-    <script src="js/modules/theme.js?v=3.66.12" defer></script>
-    <script src="js/modules/projects.js?v=3.66.12" defer></script>
-    <script src="js/modules/checklist.js?v=3.66.12" defer></script>
-    <script src="js/modules/updates.js?v=3.66.12" defer></script>
-    <script src="js/modules/stats.js?v=3.66.12" defer></script>
-    <script src="js/modules/notes.js?v=3.66.12" defer></script>
-    <script src="js/modules/tags.js?v=3.66.12" defer></script>
-    <script src="js/modules/favorites.js?v=3.66.12" defer></script>
-    <script src="js/modules/gallery.js?v=3.66.12" defer></script>
-    <script src="js/modules/project-detail.js?v=3.66.12" defer></script>
-    <script src="js/modules/export.js?v=3.66.12" defer></script>
-    <script src="js/modules/share.js?v=3.66.12" defer></script>
-    <script src="js/modules/achievements.js?v=3.66.12" defer></script>
-    <script src="js/modules/timetracker.js?v=3.66.12" defer></script>
+    <script src="js/modules/theme.js?v=3.66.13" defer></script>
+    <script src="js/modules/projects.js?v=3.66.13" defer></script>
+    <script src="js/modules/checklist.js?v=3.66.13" defer></script>
+    <script src="js/modules/updates.js?v=3.66.13" defer></script>
+    <script src="js/modules/stats.js?v=3.66.13" defer></script>
+    <script src="js/modules/notes.js?v=3.66.13" defer></script>
+    <script src="js/modules/tags.js?v=3.66.13" defer></script>
+    <script src="js/modules/favorites.js?v=3.66.13" defer></script>
+    <script src="js/modules/gallery.js?v=3.66.13" defer></script>
+    <script src="js/modules/project-detail.js?v=3.66.13" defer></script>
+    <script src="js/modules/export.js?v=3.66.13" defer></script>
+    <script src="js/modules/share.js?v=3.66.13" defer></script>
+    <script src="js/modules/achievements.js?v=3.66.13" defer></script>
+    <script src="js/modules/timetracker.js?v=3.66.13" defer></script>
     
     <!-- App Entry -->
-    <script src="js/portfolio.js?v=3.66.12" defer></script>
-    <script src="js/github-metadata.js?v=3.66.12" defer></script>
-    <script src="js/portfolio-gallery.js?v=3.66.12" defer></script>
-    <script src="js/portfolio-nav.js?v=3.66.12" defer></script>
-    <script src="js/portfolio-search.js?v=3.66.12" defer></script>
-    <script src="js/app.js?v=3.66.12" defer></script>
+    <script src="js/portfolio.js?v=3.66.13" defer></script>
+    <script src="js/github-metadata.js?v=3.66.13" defer></script>
+    <script src="js/portfolio-gallery.js?v=3.66.13" defer></script>
+    <script src="js/portfolio-nav.js?v=3.66.13" defer></script>
+    <script src="js/portfolio-search.js?v=3.66.13" defer></script>
+    <script src="js/app.js?v=3.66.13" defer></script>
 </body>
 </html>
