@@ -2725,3 +2725,11 @@ test('workspace tabs expose selected state and arrow-key navigation', () => {
     assert.match(renderer, /b\.setAttribute\('aria-selected', String\(selected\)\)/);
     assert.match(app, /b\.setAttribute\('aria-selected', String\(selected\)\)/);
 });
+
+test('CI validates stacked pull requests targeting non-main branches', () => {
+    const workflow = fs.readFileSync(path.join(root, '.github/workflows/tests.yml'), 'utf8');
+    assert.match(workflow, /pull_request:\s*\n/);
+    assert.doesNotMatch(workflow, /pull_request:\s*\n\s+branches:/);
+    assert.match(workflow, /node --test tests\/safety\.test\.cjs/);
+    assert.match(workflow, /firebase emulators:exec/);
+});
