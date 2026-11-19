@@ -332,7 +332,7 @@ var RendererModule = {
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) loadMore.addEventListener('click', function() {
             self._visibleCount += self._pageSize;
-            self.renderProjects();
+            self.renderProjects({ listOnly: true });
         });
         var sort = document.getElementById('projectsSort');
         if (sort) {
@@ -342,7 +342,7 @@ var RendererModule = {
             sort.addEventListener('change', function() {
                 self._sortMode = ['updated', 'name', 'status'].indexOf(sort.value) !== -1 ? sort.value : 'updated';
                 if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('devspace_sort', self._sortMode);
-                self.renderProjects();
+                self.renderProjects({ listOnly: true });
             });
         }
         var savedView = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('devspace_view') : null;
@@ -1267,15 +1267,17 @@ var RendererModule = {
 
     // ========== РЕНДЕР ==========
 
-    renderProjects: function() {
-        this._renderQuickTaskProjects();
-        this._renderWorkspaceSummary();
-        this._renderInsights();
-        this._renderToday();
-        this._renderFocus();
-        this._renderProductivity();
-        this._renderRoadmapOverview();
-        this._renderSchedule();
+    renderProjects: function(options) {
+        if (!options || !options.listOnly) {
+            this._renderQuickTaskProjects();
+            this._renderWorkspaceSummary();
+            this._renderInsights();
+            this._renderToday();
+            this._renderFocus();
+            this._renderProductivity();
+            this._renderRoadmapOverview();
+            this._renderSchedule();
+        }
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
