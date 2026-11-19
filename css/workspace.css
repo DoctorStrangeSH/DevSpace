@@ -248,6 +248,15 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .workspace-next-tag { flex:none; color:#c0b5ff; font-size:.72rem; font-weight:700; }
 .workspace-next-tag.is-overdue { color:#ffb39d; }
 .workspace-next-empty { color:#aaa6bd; font-size:.82rem; padding:12px 0 2px; }
+.workspace-activity { margin-top:12px; border:1px solid rgba(158,145,234,.17); border-radius:11px; background:rgba(9,10,23,.18); }
+.workspace-activity > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; list-style:none; min-height:42px; padding:10px 12px; color:#dcd4ff; font-size:.81rem; font-weight:700; }
+.workspace-activity > summary::-webkit-details-marker { display:none; }
+.workspace-activity > summary span { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.workspace-activity > summary small { font-size:.72rem; color:#aaa6c0; font-weight:500; }
+.workspace-activity > summary:focus-visible { outline:2px solid #c3b6ff; outline-offset:2px; border-radius:11px; }
+.workspace-activity > summary > .bi-chevron-down { transition:transform .2s; }
+.workspace-activity[open] > summary > .bi-chevron-down { transform:rotate(180deg); }
+.workspace-activity > .workspace-next-list { padding:0 10px 10px; }
 .workspace-more-toggle { display:flex; align-items:center; justify-content:center; gap:9px; width:100%; min-height:43px; margin-top:16px; padding:9px 13px; border:1px solid rgba(158,145,234,.25); border-radius:11px; color:#d9d0fa; background:rgba(98,85,185,.1); font-size:.8rem; font-weight:700; }
 .workspace-more-toggle:hover,.workspace-more-toggle:focus-visible { border-color:#a695ff; background:rgba(112,95,208,.22); color:#fff; }
 .workspace-more-toggle:focus-visible { outline:2px solid #d4c8ff; outline-offset:2px; }

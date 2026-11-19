@@ -146,7 +146,7 @@ var ExportModule = {
             favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
             achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
             healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
-            version: '3.66.18',
+            version: '3.66.19',
             timestamp: new Date().toISOString()
         };
         var json = JSON.stringify(data, null, 2);

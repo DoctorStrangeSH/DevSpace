@@ -71,6 +71,13 @@ var RendererModule = {
                 ProjectDetailModule.showTask(button.dataset.nextProject, button.dataset.nextTask);
             }
         });
+        var recentActivity = document.getElementById('workspaceActivityList');
+        if (recentActivity) recentActivity.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-activity-project][data-activity-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.activityProject, button.dataset.activityTask);
+            }
+        });
         var schedule = document.getElementById('scheduleCalendar');
         if (schedule) schedule.addEventListener('click', function(event) {
             var project = event.target.closest('[data-focus-project]');
@@ -1381,6 +1388,61 @@ var RendererModule = {
         }), now, 'all', 'all');
     },
 
+    _collectRecentCompletions: function(projects, now) {
+        var end = now.getTime();
+        var start = end - 7 * 86400000;
+        var results = [];
+        (projects || []).forEach(function(project) {
+            if (!project) return;
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || !task.completed || typeof task.text !== 'string' || !task.text.trim() || typeof task.completedAt !== 'string') return;
+                var timestamp = Date.parse(task.completedAt);
+                if (!Number.isFinite(timestamp) || timestamp < start || timestamp > end) return;
+                results.push({ projectId: project.id, projectName: project.name || 'Без названия', taskId: task.id, text: task.text, timestamp: timestamp });
+            });
+        });
+        return results.sort(function(a, b) { return b.timestamp - a.timestamp; });
+    },
+
+    _renderRecentCompletions: function(projects, now) {
+        var list = document.getElementById('workspaceActivityList');
+        if (!list) return;
+        var rows = this._collectRecentCompletions(projects, now);
+        var count = document.getElementById('workspaceActivityCount');
+        if (count) count.textContent = rows.length ? '· ' + rows.length + ' за 7 дней' : '';
+        list.replaceChildren();
+        if (!rows.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'За последние 7 дней завершённых задач нет';
+            list.appendChild(empty);
+            return;
+        }
+        rows.slice(0, 5).forEach(function(item) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.activityProject = String(item.projectId);
+            button.dataset.activityTask = String(item.taskId);
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var title = document.createElement('strong');
+            title.textContent = item.text;
+            var project = document.createElement('small');
+            project.textContent = item.projectName;
+            detail.append(title, project);
+            var date = document.createElement('time');
+            date.className = 'workspace-next-tag';
+            date.dateTime = new Date(item.timestamp).toISOString();
+            date.textContent = new Date(item.timestamp).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+            button.append(detail, date);
+            row.appendChild(button);
+            list.appendChild(row);
+        });
+    },
+
     _renderWorkspaceSummary: function() {
         var projects = StateManager.get('projects') || [];
         var now = new Date();
@@ -1402,6 +1464,7 @@ var RendererModule = {
             var el = document.getElementById(entry[0]);
             if (el) el.textContent = String(entry[1]);
         });
+        this._renderRecentCompletions(projects, now);
         var nextList = document.getElementById('workspaceNextTasks');
         var nextCount = document.getElementById('workspaceNextCount');
         if (!nextList) return;
