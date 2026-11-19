@@ -20,7 +20,7 @@ var ChecklistModule = {
         if (!project || !task || !Array.isArray(changes) || !changes.length) return;
         var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice() : [];
         entries.push({
-            id: Helpers.generateId(),
+            id: typeof Helpers !== 'undefined' && Helpers.generateId ? Helpers.generateId() : 'activity-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
             taskId: String(task.id),
             taskText: String(task.text || '').slice(0, 240),
             action: action,

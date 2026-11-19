@@ -2985,12 +2985,38 @@ test('unified checklist editor update validates and persists title, priority and
     assert.equal(project.checklist[0].completed, true);
     assert.equal(project.checklist[0].completedAt, '2026-11-19T10:00:00Z');
     assert.equal(project.checklist[0].sourceNoteId, 'note');
+    assert.equal(project.taskActivity.length, 1);
+    assert.deepEqual(Array.from(project.taskActivity[0].changes, change => [change.field, change.from, change.to]), [['text', 'Старое', 'Новое'], ['priority', 'normal', 'high'], ['deadline', '', '2026-11-25']]);
+    assert.equal(project.taskActivity[0].action, 'updated');
     assert.equal(saved.length, 1); assert.equal(events.length, 1);
     assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: '', priority: 'high', deadline: '2026-11-25' }), false);
     assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'urgent', deadline: '' }), false);
     assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'normal', deadline: '2026-02-30' }), false);
     assert.equal(saved.length, 1);
 });
+test('checklist activity records completion and reopening with a bounded history', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Этап', completed: false }] };
+    const saved = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push(data) },
+        EventBus: { emit() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    ctx.ChecklistModule.toggleItem('p', 'task');
+    ctx.ChecklistModule.toggleItem('p', 'task');
+    assert.deepEqual(Array.from(project.taskActivity, event => event.action), ['completed', 'reopened']);
+    assert.deepEqual(Array.from(project.taskActivity, event => event.changes[0].field), ['completed', 'completed']);
+    assert.equal(project.taskActivity[0].changes[0].from, false);
+    assert.equal(project.taskActivity[0].changes[0].to, true);
+    assert.equal(project.taskActivity[1].changes[0].from, true);
+    assert.equal(project.taskActivity[1].changes[0].to, false);
+    assert.equal(saved.length, 2);
+    project.taskActivity = Array.from({ length: 200 }, (_, i) => ({ id: String(i) }));
+    ctx.ChecklistModule._recordTaskActivity(project, project.checklist[0], 'updated', [{ field: 'text', from: 'A', to: 'B' }]);
+    assert.equal(project.taskActivity.length, 200);
+    assert.equal(project.taskActivity[0].id, '1');
+});
+
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };
