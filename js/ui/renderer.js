@@ -1318,6 +1318,8 @@ var RendererModule = {
 
         var countEl = document.getElementById('filteredCount');
         if (countEl) countEl.textContent = projects.length;
+        var resultsStatus = document.getElementById('projectsResultsStatus');
+        if (resultsStatus) resultsStatus.textContent = projects.length ? 'Найдено: ' + projects.length : 'Совпадений нет';
         var hasFilters = !!sq || !!filterStatus && filterStatus !== 'all';
         var clearFilters = document.getElementById('projectsClearFilters');
         if (clearFilters) clearFilters.hidden = !hasFilters;

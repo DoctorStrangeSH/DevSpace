@@ -49,6 +49,8 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .projects-clear-filters:hover,.projects-clear-filters:focus-visible { border-color:#aa9bf7; background:rgba(119,98,214,.22); color:#fff; }
 .projects-clear-filters:focus-visible { outline:2px solid #d4c8ff; outline-offset:2px; }
 .projects-clear-filters[hidden] { display:none!important; }
+.projects-results-status { display:inline-flex; align-items:center; margin-left:auto; min-height:38px; color:var(--text-secondary); font-size:.77rem; font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
+@media(max-width:700px) { .projects-results-status { width:100%; margin-left:0; min-height:22px; } }
 .projects-empty-reset { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-height:44px; padding:10px 16px; border:1px solid rgba(167,150,255,.42); border-radius:11px; color:#fff; background:linear-gradient(120deg,#6158df,#7965e7); font-size:.85rem; font-weight:700; }
 .projects-empty-reset:hover,.projects-empty-reset:focus-visible { filter:brightness(1.14); }
 .projects-empty-reset:focus-visible { outline:2px solid #d4c8ff; outline-offset:3px; }
