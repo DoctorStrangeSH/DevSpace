@@ -19,6 +19,11 @@ var ChecklistModule = {
     _recordTaskActivity: function(project, task, action, changes) {
         if (!project || !task || !Array.isArray(changes) || !changes.length) return;
         var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice() : [];
+        if (action !== 'undone' && action !== 'redone') {
+            entries.forEach(function(entry) {
+                if (entry.undoneAt && !entry.redoneAt && !entry.redoInvalidatedAt) entry.redoInvalidatedAt = new Date().toISOString();
+            });
+        }
         entries.push({
             id: typeof Helpers !== 'undefined' && Helpers.generateId ? Helpers.generateId() : 'activity-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
             taskId: String(task.id),
@@ -179,6 +184,86 @@ var ChecklistModule = {
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
+    },
+
+    _getActivityFieldValue: function(task, field) {
+        if (field === 'priority') return task.priority || 'normal';
+        if (field === 'deadline') return task.deadline || '';
+        if (field === 'completed') return !!task.completed;
+        return task[field] == null ? null : task[field];
+    },
+
+    _applyActivityFieldValue: function(task, field, value) {
+        if (field === 'priority') {
+            if (value === 'normal' || value == null || value === '') delete task.priority;
+            else task.priority = value;
+        } else if (field === 'deadline') {
+            if (!value) delete task.deadline;
+            else task.deadline = value;
+        } else if (field === 'completed') {
+            task.completed = !!value;
+            task.completedAt = task.completed ? new Date().toISOString() : null;
+        } else if (field === 'text') {
+            task.text = String(value == null ? '' : value);
+        }
+    },
+
+    _restoreActivityEvent: function(projectId, event, direction) {
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.checklist) || !Array.isArray(project.taskActivity)) return false;
+        var task = project.checklist.find(function(item) { return String(item.id) === String(event.taskId); });
+        if (!task || !Array.isArray(event.changes) || !event.changes.length) return false;
+        var isUndo = direction === 'undo';
+        var expectedKey = isUndo ? 'to' : 'from';
+        var targetKey = isUndo ? 'from' : 'to';
+        var valid = event.changes.every(function(change) {
+            return this._getActivityFieldValue(task, change.field) === change[expectedKey];
+        }, this);
+        if (!valid) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Задача уже изменилась. Отмена или повтор недоступны.');
+            return false;
+        }
+        var inverseChanges = [];
+        event.changes.forEach(function(change) {
+            var current = this._getActivityFieldValue(task, change.field);
+            this._applyActivityFieldValue(task, change.field, change[targetKey]);
+            inverseChanges.push({ field: change.field, from: current, to: change[targetKey] });
+        }, this);
+        if (isUndo) event.undoneAt = new Date().toISOString();
+        else {
+            event.redoneAt = new Date().toISOString();
+            delete event.undoneAt;
+        }
+        task.updatedAt = new Date().toISOString();
+        this._recordTaskActivity(project, task, isUndo ? 'undone' : 'redone', inverseChanges);
+        this._recalculateProgress(project);
+        StateManager.updateProject(projectId, {
+            checklist: project.checklist,
+            progress: project.progress,
+            taskActivity: project.taskActivity
+        });
+        this._updateChecklistDOM(project);
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: task.id });
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success(isUndo ? 'Последнее изменение отменено' : 'Изменение восстановлено');
+        return true;
+    },
+
+    undoLastChange: function(projectId) {
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.taskActivity)) return false;
+        var event = project.taskActivity.slice().reverse().find(function(entry) {
+            return ['updated', 'completed', 'reopened'].indexOf(entry.action) !== -1 && !entry.undoneAt;
+        });
+        return event ? this._restoreActivityEvent(projectId, event, 'undo') : false;
+    },
+
+    redoLastChange: function(projectId) {
+        var project = StateManager.getProject(projectId);
+        if (!project || !Array.isArray(project.taskActivity)) return false;
+        var event = project.taskActivity.slice().reverse().find(function(entry) {
+            return entry.undoneAt && !entry.redoneAt && !entry.redoInvalidatedAt && ['updated', 'completed', 'reopened'].indexOf(entry.action) !== -1;
+        });
+        return event ? this._restoreActivityEvent(projectId, event, 'redo') : false;
     },
 
     addItem: function(projectId, text) {

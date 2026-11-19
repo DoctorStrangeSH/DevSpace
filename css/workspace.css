@@ -466,3 +466,11 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .task-activity-change strong { color:var(--text-primary); font-weight:700; }
 .task-activity-change i { color:var(--accent); }
 @media(max-width:600px) { .task-activity-toolbar select { width:100%; } .task-activity-change { align-items:flex-start; flex-direction:column; gap:4px; } .task-activity-card { padding:10px; } }
+
+
+.task-activity-toolbar { align-items:center; flex-wrap:wrap; gap:10px; }
+.task-activity-history-actions { display:flex; gap:7px; }
+.task-activity-history-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; padding:6px 10px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-card); color:var(--text-primary); font-size:.75rem; font-weight:650; }
+.task-activity-history-actions button:hover:not(:disabled),.task-activity-history-actions button:focus-visible { border-color:var(--accent); background:var(--accent-light); }
+.task-activity-history-actions button:disabled { opacity:.42; cursor:not-allowed; }
+@media(max-width:600px) { .task-activity-history-actions { width:100%; } .task-activity-history-actions button { flex:1; min-height:40px; } }

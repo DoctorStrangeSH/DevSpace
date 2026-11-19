@@ -3037,6 +3037,49 @@ test('project detail renders escaped task activity and filters event types', () 
     assert.match(module._renderTaskActivity({ id: 'p2', taskActivity: [] }), /История пока пуста/);
 });
 
+test('checklist undo and redo restore fields only when current values match', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Before', completed: false }] };
+    const saved = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push(data) },
+        EventBus: { emit() {} },
+        Helpers: { generateId: (() => { let id = 0; return () => 'event-' + (++id); })() },
+        NotificationModule: { success() {}, warning() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'After', priority: 'high', deadline: '2026-11-25' }), true);
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), true);
+    assert.equal(project.checklist[0].text, 'Before');
+    assert.equal(project.checklist[0].priority, undefined);
+    assert.equal(project.checklist[0].deadline, undefined);
+    assert.equal(ctx.ChecklistModule.redoLastChange('p'), true);
+    assert.equal(project.checklist[0].text, 'After');
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(project.checklist[0].deadline, '2026-11-25');
+    assert.equal(project.taskActivity.filter(entry => entry.action === 'undone').length, 1);
+    assert.equal(project.taskActivity.filter(entry => entry.action === 'redone').length, 1);
+    assert.ok(saved.length >= 3);
+});
+
+test('checklist undo refuses stale values and a new edit invalidates redo', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Before', completed: false }] };
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject() {} },
+        EventBus: { emit() {} },
+        Helpers: { generateId: (() => { let id = 0; return () => 'event-' + (++id); })() },
+        NotificationModule: { success() {}, warning() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    ctx.ChecklistModule.updateText('p', 'task', 'After');
+    project.checklist[0].text = 'Changed elsewhere';
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), false);
+    project.checklist[0].text = 'After';
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), true);
+    ctx.ChecklistModule.updateText('p', 'task', 'Branch');
+    assert.equal(ctx.ChecklistModule.redoLastChange('p'), false);
+    assert.equal(project.checklist[0].text, 'Branch');
+});
+
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };

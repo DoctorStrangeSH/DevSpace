@@ -339,7 +339,7 @@ var ProjectDetailModule = {
         var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice().reverse() : [];
         var selected = filter || 'all';
         if (selected !== 'all') entries = entries.filter(function(entry) { return entry.action === selected; });
-        var labels = { updated: 'Изменение задачи', completed: 'Задача завершена', reopened: 'Задача открыта повторно' };
+        var labels = { updated: 'Изменение задачи', completed: 'Задача завершена', reopened: 'Задача открыта повторно', undone: 'Изменение отменено', redone: 'Изменение восстановлено' };
         var fields = { text: 'Название', priority: 'Приоритет', deadline: 'Срок', completed: 'Статус' };
         var format = function(value) {
             if (value === null || value === '') return '—';
@@ -359,7 +359,9 @@ var ProjectDetailModule = {
             var date = entry.createdAt && Number.isFinite(Date.parse(entry.createdAt)) ? new Date(entry.createdAt).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : 'Дата неизвестна';
             return '<article class="task-activity-entry"><div class="task-activity-marker"></div><div class="task-activity-card"><div class="task-activity-heading"><strong>' + Helpers.escapeHtml(labels[entry.action] || 'Изменение') + '</strong><time datetime="' + Helpers.escapeHtml(entry.createdAt || '') + '">' + Helpers.escapeHtml(date) + '</time></div><button type="button" class="task-activity-task" data-activity-project="' + Helpers.escapeHtml(String(project.id)) + '" data-activity-task="' + Helpers.escapeHtml(String(entry.taskId || '')) + '">' + Helpers.escapeHtml(entry.taskText || 'Задача без названия') + '</button>' + (changeHTML ? '<div class="task-activity-changes">' + changeHTML + '</div>' : '') + '</div></article>';
         }).join('');
-        return '<section class="detail-section task-activity-section" id="taskActivitySection"><div class="task-activity-title"><h4><i class="bi bi-clock-history"></i> История действий</h4><span class="task-activity-count">' + (Array.isArray(project.taskActivity) ? project.taskActivity.length : 0) + '</span></div><div class="task-activity-toolbar"><label class="visually-hidden" for="taskActivityFilter">Фильтр истории</label><select id="taskActivityFilter" class="form-select form-select-sm"><option value="all">Все события</option><option value="updated">Изменения</option><option value="completed">Завершения</option><option value="reopened">Повторные открытия</option></select></div><div class="task-activity-list" id="taskActivityList">' + (rows || '<p class="text-muted small mb-0">История пока пуста. Изменения задач появятся здесь.</p>') + '</div></section>';
+        var hasUndo = entries.some(function(entry) { return ['updated', 'completed', 'reopened'].indexOf(entry.action) !== -1 && !entry.undoneAt; });
+        var hasRedo = entries.some(function(entry) { return entry.undoneAt && !entry.redoneAt && !entry.redoInvalidatedAt; });
+        return '<section class="detail-section task-activity-section" id="taskActivitySection"><div class="task-activity-title"><h4><i class="bi bi-clock-history"></i> История действий</h4><span class="task-activity-count">' + (Array.isArray(project.taskActivity) ? project.taskActivity.length : 0) + '</span></div><div class="task-activity-toolbar"><label class="visually-hidden" for="taskActivityFilter">Фильтр истории</label><select id="taskActivityFilter" class="form-select form-select-sm"><option value="all">Все события</option><option value="updated">Изменения</option><option value="completed">Завершения</option><option value="reopened">Повторные открытия</option><option value="undone">Отменённые</option><option value="redone">Восстановленные</option></select><div class="task-activity-history-actions"><button type="button" class="task-activity-undo" data-task-history-action="undo" ${hasUndo ? '' : 'disabled'}><i class="bi bi-arrow-counterclockwise"></i> Отменить</button><button type="button" class="task-activity-redo" data-task-history-action="redo" ${hasRedo ? '' : 'disabled'}><i class="bi bi-arrow-clockwise"></i> Повторить</button></div></div><div class="task-activity-list" id="taskActivityList">' + (rows || '<p class="text-muted small mb-0">История пока пуста. Изменения задач появятся здесь.</p>') + '</div></section>';
     },
 
     _refreshTaskActivity: function(projectId) {
@@ -375,6 +377,9 @@ var ProjectDetailModule = {
         var nextList = temporary.querySelector('#taskActivityList');
         if (nextList) list.innerHTML = nextList.innerHTML;
         if (count) count.textContent = Array.isArray(project.taskActivity) ? project.taskActivity.length : 0;
+        var refreshed = temporary.querySelector('.task-activity-history-actions');
+        var current = document.querySelector('#taskActivitySection .task-activity-history-actions');
+        if (refreshed && current) current.innerHTML = refreshed.innerHTML;
     },
 
     _initTaskActivity: function(project) {
@@ -383,6 +388,17 @@ var ProjectDetailModule = {
         if (filter && !filter.dataset.activityBound) {
             filter.dataset.activityBound = 'true';
             filter.addEventListener('change', function() { self._refreshTaskActivity(project.id); });
+        }
+        var section = document.getElementById('taskActivitySection');
+        if (section && !section.dataset.historyBound) {
+            section.dataset.historyBound = 'true';
+            section.addEventListener('click', function(event) {
+                var button = event.target.closest('[data-task-history-action]');
+                if (!button || button.disabled) return;
+                var action = button.dataset.taskHistoryAction;
+                var ok = action === 'undo' ? ChecklistModule.undoLastChange(project.id) : ChecklistModule.redoLastChange(project.id);
+                if (ok) self._refreshTaskActivity(project.id);
+            });
         }
     },
 
