@@ -100,6 +100,10 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #tabProjects .project-card-extras[open] summary i { transform:rotate(180deg); }
 #tabProjects .project-card-extras .card-mini-sections { margin-top:9px; }
 #tabProjects .project-card-extras .roadmap-card-summary { margin-top:12px; }
+#tabProjects .project-card-danger { display:flex; justify-content:flex-end; margin-top:13px; padding-top:12px; border-top:1px solid rgba(146,135,200,.15); }
+#tabProjects .project-card-danger .delete-project { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:38px; padding:8px 11px; border:1px solid rgba(210,118,123,.25); border-radius:9px; color:#e2a0a8; background:rgba(180,65,80,.07); font-size:.76rem; font-weight:650; }
+#tabProjects .project-card-danger .delete-project:hover,#tabProjects .project-card-danger .delete-project:focus-visible { border-color:#e99a9e; background:rgba(180,65,80,.17); color:#ffced1; }
+#tabProjects .project-card-danger .delete-project:focus-visible { outline:2px solid #ffc2c6; outline-offset:2px; }
 #tabProjects .project-actions { opacity:1; }
 #tabProjects .project-action-btn { border-radius:9px; background:rgba(125,117,174,.08); }
 #tabProjects .project-action-btn:hover,#tabProjects .project-action-btn:focus-visible { background:rgba(124,106,235,.2); }
