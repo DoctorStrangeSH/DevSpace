@@ -943,6 +943,7 @@ test('priority changes persist in checklist without changing completion', () => 
     StateManager: { getProject(id) { return id === 'p1' ? project : null; }, updateProject(id, changes) { updates.push([id, changes]); } },
     EventBus: { emit(name, data) { events.push([name, data]); } }
   });
+  ctx.ChecklistModule._updateChecklistDOM = () => {};
   assert.equal(ctx.ChecklistModule.setPriority('p1', 't1', 'high'), true);
   assert.equal(task.priority, 'high');
   assert.equal(task.completed, false);
