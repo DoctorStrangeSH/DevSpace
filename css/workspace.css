@@ -85,6 +85,13 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #tabProjects[data-workspace-view="projects"] #projectsContainer:not(.list-view) { row-gap:17px; }
 #tabProjects .project-card { background:linear-gradient(145deg,rgba(29,29,44,.96),rgba(19,20,32,.97)); border:1px solid rgba(149,137,215,.22); border-radius:18px; box-shadow:0 9px 30px rgba(0,0,0,.08); }
 #tabProjects .project-card:hover,#tabProjects .project-card:focus-within { border-color:rgba(147,127,255,.7); box-shadow:0 13px 35px rgba(52,35,130,.16); }
+#tabProjects .project-card:focus-visible { outline:2px solid #c3b6ff; outline-offset:3px; }
+#projectsContainer.list-view .project-card-inner { grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; padding:12px 16px; }
+#projectsContainer.list-view .project-card { cursor:pointer; }
+#projectsContainer.list-view .project-description-wrapper,#projectsContainer.list-view .project-tech,#projectsContainer.list-view .project-links,#projectsContainer.list-view .project-card-extras,#projectsContainer.list-view .project-footer { display:none; }
+#projectsContainer.list-view .project-card-snapshot { grid-column:1/-1; margin:0; gap:7px; }
+#projectsContainer.list-view .project-card-snapshot > span { padding:5px 9px; font-size:.71rem; }
+#projectsContainer.list-view .project-header { align-items:center; }
 #tabProjects .project-card-inner { padding:19px 20px; }
 #tabProjects .project-header { margin-bottom:9px; }
 #tabProjects .project-name { font-size:1.22rem; line-height:1.3; letter-spacing:-.025em; }
@@ -121,6 +128,7 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .footer .footer-link { display:inline-flex; align-items:center; justify-content:center; width:37px; height:37px; margin:0!important; padding:0; border:1px solid rgba(154,143,218,.22); border-radius:11px; background:rgba(108,98,161,.1); color:#cfc8e7; }
 .footer .footer-link:hover,.footer .footer-link:focus-visible { background:rgba(115,97,221,.3); border-color:#8a78ff; color:#fff; }
 @media(max-width:767px) { .footer { padding:20px 0 78px!important; } .footer-layout > div { text-align:left!important; } .footer-layout { gap:13px; } .footer-actions { justify-content:flex-start; flex-wrap:wrap; } #tabProjects .project-card-inner { padding:16px; } #tabProjects .project-actions { flex-wrap:wrap; } }
+@media(max-width:600px) { #projectsContainer.list-view .project-header { grid-column:1/-1; grid-row:2; } #projectsContainer.list-view .project-card-snapshot { grid-row:3; } }
 @media(max-width:576px) {
     #tabProjects .project-header { gap:8px; align-items:flex-start; }
     #tabProjects .project-status-badge { flex:0 1 auto; min-width:0; }

@@ -1493,7 +1493,7 @@ var RendererModule = {
                 '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isFav + '" aria-label="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '" title="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
         }
 
-        return '<div class="project-card" data-project-id="' + project.id + '"><div class="project-card-inner">' +
+        return '<div class="project-card" data-project-id="' + project.id + '" tabindex="0" role="group" aria-label="Проект: ' + Helpers.escapeHtml(String(project.name || 'Без названия')).replace(/"/g, '&quot;') + '. Enter — открыть подробности"><div class="project-card-inner">' +
             '<div class="project-header"><span class="project-status-badge ' + sc + '"><i class="bi ' + si + '"></i> ' + st + '</span><div class="project-actions">' + actions + '</div></div>' +
             '<h3 class="project-name">' + Helpers.escapeHtml(project.name) + '</h3>' +
             (project.description ? '<div class="project-description-wrapper"><p class="project-description" data-full="' + Helpers.escapeHtml(project.description).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(Helpers.truncateText(project.description, 150)) + '</p>' + (project.description.length > 150 ? '<button class="btn-show-more" onclick="event.stopPropagation(); RendererModule._toggleDescription(this)"><i class="bi bi-chevron-down me-1"></i>Показать полностью</button>' : '') + '</div>' : '') +
@@ -1648,6 +1648,11 @@ var RendererModule = {
                 ProjectDetailModule.show(card.dataset.projectId);
             };
             card.addEventListener('click', card._h);
+            card.addEventListener('keydown', function(event) {
+                if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                ProjectDetailModule.show(card.dataset.projectId);
+            });
         });
     },
 
