@@ -2960,3 +2960,25 @@ test('project search and filters refresh only the project list and avoid duplica
     assert.doesNotMatch(renderer, /if \(sq\) \{\s*var t = sq\.toLowerCase\(\);\s*projects = projects\.filter/);
     assert.match(renderer, /if \(!options \|\| !options\.listOnly\) \{/);
 });
+
+
+test('deadline alerts keep upcoming tasks visible when overdue backlog is large and require stable task links', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date(2026, 10, 19, 12);
+  const project = { id: 'p', name: 'Проект', status: 'active', checklist: [
+    { id: 'oldest', text: 'Старая просрочка', deadline: '2026-10-01' },
+    { id: 'recent', text: 'Вчерашняя просрочка', deadline: '2026-11-18' },
+    { id: 'older2', text: 'Позавчерашняя просрочка', deadline: '2026-11-17' },
+    { id: 'today', text: 'Срок сегодня', deadline: '2026-11-19' },
+    { id: 'tomorrow', text: 'Срок завтра', deadline: '2026-11-20' },
+    { id: 'soon', text: 'Срок послезавтра', deadline: '2026-11-21' },
+    { text: 'Без ID не должна вести в задачу', deadline: '2026-11-19' }
+  ] };
+  const alerts = renderer._collectDeadlineAlerts([project], now);
+  assert.deepEqual(Array.from(alerts, item => item.taskId), ['recent', 'older2', 'oldest', 'today', 'tomorrow', 'soon']);
+  const overdue = alerts.filter(item => item.overdue);
+  const upcoming = alerts.filter(item => !item.overdue);
+  const visible = Array.from(overdue.slice(0, 3)).concat(Array.from(upcoming.slice(0, 2)));
+  assert.deepEqual(visible.map(item => item.taskId), ['recent', 'older2', 'oldest', 'today', 'tomorrow']);
+  assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /Ещё '\s*\+/);
+});

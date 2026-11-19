@@ -1432,7 +1432,12 @@ var RendererModule = {
         function dayKeyForAlert(date) {
             return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
         }
-        return alerts.sort(function(a, b) { return a.due.localeCompare(b.due) || a.projectName.localeCompare(b.projectName, 'ru'); });
+        // Keep the most recently overdue items first so an old backlog cannot hide today's deadlines.
+        return alerts.sort(function(a, b) {
+            if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+            return (a.overdue ? b.due.localeCompare(a.due) : a.due.localeCompare(b.due)) ||
+                a.projectName.localeCompare(b.projectName, 'ru');
+        });
     },
 
     _renderDeadlineAlerts: function(projects, now) {
@@ -1450,7 +1455,14 @@ var RendererModule = {
             return;
         }
         var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        alerts.slice(0, 5).forEach(function(item) {
+        // Reserve room for upcoming deadlines even when many tasks are overdue.
+        var overdueAlerts = alerts.filter(function(item) { return item.overdue; });
+        var upcomingAlerts = alerts.filter(function(item) { return !item.overdue; });
+        var visibleAlerts = overdueAlerts.slice(0, 3).concat(upcomingAlerts.slice(0, 2));
+        if (visibleAlerts.length < 5) {
+            visibleAlerts = visibleAlerts.concat(overdueAlerts.slice(3, 3 + (5 - visibleAlerts.length)));
+        }
+        visibleAlerts.forEach(function(item) {
             var row = document.createElement('li');
             row.className = 'workspace-next-item';
             var button = document.createElement('button');
@@ -1473,6 +1485,12 @@ var RendererModule = {
             row.appendChild(button);
             list.appendChild(row);
         });
+        if (alerts.length > visibleAlerts.length) {
+            var remainder = document.createElement('li');
+            remainder.className = 'workspace-next-empty';
+            remainder.textContent = 'Ещё ' + (alerts.length - visibleAlerts.length) + ' задач требуют внимания';
+            list.appendChild(remainder);
+        }
     },
 
     _renderRecentCompletions: function(projects, now) {
