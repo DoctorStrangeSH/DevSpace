@@ -78,6 +78,13 @@ var RendererModule = {
                 ProjectDetailModule.showTask(button.dataset.activityProject, button.dataset.activityTask);
             }
         });
+        var deadlineAlerts = document.getElementById('workspaceDeadlineList');
+        if (deadlineAlerts) deadlineAlerts.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-alert-project][data-alert-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.alertProject, button.dataset.alertTask);
+            }
+        });
         var schedule = document.getElementById('scheduleCalendar');
         if (schedule) schedule.addEventListener('click', function(event) {
             var project = event.target.closest('[data-focus-project]');
@@ -1404,6 +1411,70 @@ var RendererModule = {
         return results.sort(function(a, b) { return b.timestamp - a.timestamp; });
     },
 
+    _collectDeadlineAlerts: function(projects, now) {
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var dayKey = function(offset) {
+            var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        };
+        var start = dayKey(0), end = dayKey(2), alerts = [];
+        (projects || []).forEach(function(project) {
+            if (!project || project.status === 'completed' || project.status === 'archived') return;
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                var due = task.deadline;
+                if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due) || due > end) return;
+                var parsed = new Date(due + 'T12:00:00');
+                if (Number.isNaN(parsed.getTime()) || dayKeyForAlert(parsed) !== due) return;
+                alerts.push({ projectId: project.id, projectName: project.name || 'Без названия', taskId: task.id, text: task.text, due: due, overdue: due < start });
+            });
+        });
+        function dayKeyForAlert(date) {
+            return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        }
+        return alerts.sort(function(a, b) { return a.due.localeCompare(b.due) || a.projectName.localeCompare(b.projectName, 'ru'); });
+    },
+
+    _renderDeadlineAlerts: function(projects, now) {
+        var list = document.getElementById('workspaceDeadlineList');
+        if (!list) return;
+        var alerts = this._collectDeadlineAlerts(projects, now);
+        var count = document.getElementById('workspaceDeadlineCount');
+        if (count) count.textContent = alerts.length ? '· ' + alerts.length + ' требуют внимания' : '· всё спокойно';
+        list.replaceChildren();
+        if (!alerts.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'Просроченных задач и сроков на ближайшие 2 дня нет';
+            list.appendChild(empty);
+            return;
+        }
+        var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        alerts.slice(0, 5).forEach(function(item) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.alertProject = String(item.projectId);
+            button.dataset.alertTask = String(item.taskId);
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var title = document.createElement('strong');
+            title.textContent = item.text;
+            var project = document.createElement('small');
+            project.textContent = item.projectName;
+            detail.append(title, project);
+            var tag = document.createElement('span');
+            tag.className = 'workspace-next-tag';
+            if (item.overdue) tag.classList.add('is-overdue');
+            tag.textContent = item.overdue ? 'Просрочено · ' + item.due.slice(8, 10) + '.' + item.due.slice(5, 7) : item.due === today ? 'Сегодня' : item.due.slice(8, 10) + '.' + item.due.slice(5, 7);
+            button.append(detail, tag);
+            row.appendChild(button);
+            list.appendChild(row);
+        });
+    },
+
     _renderRecentCompletions: function(projects, now) {
         var list = document.getElementById('workspaceActivityList');
         if (!list) return;
@@ -1465,6 +1536,7 @@ var RendererModule = {
             if (el) el.textContent = String(entry[1]);
         });
         this._renderRecentCompletions(projects, now);
+        this._renderDeadlineAlerts(projects, now);
         var nextList = document.getElementById('workspaceNextTasks');
         var nextCount = document.getElementById('workspaceNextCount');
         if (!nextList) return;
