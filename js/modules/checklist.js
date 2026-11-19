@@ -24,8 +24,18 @@ var ChecklistModule = {
                 if (entry.undoneAt && !entry.redoneAt && !entry.redoInvalidatedAt) entry.redoInvalidatedAt = new Date().toISOString();
             });
         }
+        var actor = typeof AuthService !== 'undefined' && typeof AuthService.getActivityActor === 'function'
+            ? AuthService.getActivityActor()
+            : { id: 'unknown', name: 'Неизвестный автор', email: '', photoURL: '', type: 'unknown' };
         entries.push({
             id: typeof Helpers !== 'undefined' && Helpers.generateId ? Helpers.generateId() : 'activity-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+            actor: {
+                id: String(actor.id || 'unknown').slice(0, 120),
+                name: String(actor.name || 'Неизвестный автор').slice(0, 100),
+                email: String(actor.email || '').slice(0, 160),
+                photoURL: String(actor.photoURL || '').slice(0, 1000),
+                type: ['google', 'local-editor', 'anonymous'].indexOf(actor.type) !== -1 ? actor.type : 'unknown'
+            },
             taskId: String(task.id),
             taskText: String(task.text || '').slice(0, 240),
             action: action,

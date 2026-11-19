@@ -474,3 +474,9 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .task-activity-history-actions button:hover:not(:disabled),.task-activity-history-actions button:focus-visible { border-color:var(--accent); background:var(--accent-light); }
 .task-activity-history-actions button:disabled { opacity:.42; cursor:not-allowed; }
 @media(max-width:600px) { .task-activity-history-actions { width:100%; } .task-activity-history-actions button { flex:1; min-height:40px; } }
+
+
+.task-activity-actor { display:flex; align-items:center; gap:8px; margin:7px 0 3px; color:var(--text-secondary); font-size:.75rem; }
+.task-activity-actor > span:last-child { display:grid; gap:1px; }
+.task-activity-actor small { color:var(--text-secondary); font-size:.65rem; }
+.task-activity-avatar { display:inline-flex; align-items:center; justify-content:center; width:25px; height:25px; flex:0 0 25px; border-radius:50%; background:var(--accent-light); color:var(--accent); font-size:.7rem; font-weight:750; }

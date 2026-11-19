@@ -1603,6 +1603,61 @@ test('legacy password is discarded and editing is explicitly browser-local', () 
   assert.doesNotMatch(source, /_secretKey\s*:/);
 });
 
+test('activity actor distinguishes Google identity from local browser editing', () => {
+  const values = new Map();
+  const localStorage = {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key)
+  };
+  const ctx = execute('js/services/auth.js', {
+    localStorage,
+    window: { crypto: { randomUUID: () => '12345678-1234-1234-1234-123456789abc' } },
+    document: { getElementById: () => null, querySelectorAll: () => [] }
+  });
+  const service = ctx.AuthService;
+  service.init();
+  const guest = service.getActivityActor();
+  assert.equal(guest.type, 'anonymous');
+  assert.equal(guest.name, 'Гость (локально)');
+  service.login();
+  const local = service.getActivityActor();
+  assert.equal(local.type, 'local-editor');
+  assert.equal(local.id, guest.id);
+  assert.equal(local.name, 'Локальный редактор');
+  ctx.FirebaseIdentityModule = { _user: { uid: 'uid-1', displayName: '<Admin>', email: 'admin@example.com', photoURL: 'https://example.com/avatar.png' } };
+  const google = service.getActivityActor();
+  assert.equal(google.id, 'google:uid-1');
+  assert.equal(google.name, '<Admin>');
+  assert.equal(google.email, 'admin@example.com');
+  assert.equal(google.type, 'google');
+});
+
+test('task activity stores an immutable actor snapshot and escapes actor display', () => {
+  const project = { id: 'p', checklist: [{ id: 't', text: 'Task', completed: false }] };
+  const actor = { id: 'google:uid-1', name: '<Admin>', email: 'admin@example.com', photoURL: '', type: 'google' };
+  const ctx = execute('js/modules/checklist.js', {
+    StateManager: { getProject: () => project, updateProject() {} },
+    EventBus: { emit() {} },
+    Helpers: { generateId: () => 'event-1', escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
+    AuthService: { isOwner: () => true, getActivityActor: () => actor },
+    NotificationModule: { success() {}, warning() {} }
+  });
+  ctx.ChecklistModule._updateChecklistDOM = () => {};
+  assert.equal(ctx.ChecklistModule.updateText('p', 't', 'Changed'), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(project.taskActivity[0].actor)), actor);
+  actor.name = 'Changed after the event';
+  assert.equal(project.taskActivity[0].actor.name, '<Admin>');
+  const detail = execute('js/modules/project-detail.js', {
+    Helpers: { escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+  }).ProjectDetailModule;
+  const html = detail._renderTaskActivity(project);
+  assert.match(html, /&lt;Admin&gt;/);
+  assert.match(html, /admin@example\.com/);
+  assert.match(html, /Google/);
+  assert.doesNotMatch(html, /<Admin>/);
+});
+
 test('mobile navigation is labelled and collapses after in-page navigation', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
