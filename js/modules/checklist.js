@@ -16,6 +16,22 @@ var ChecklistModule = {
         EventBus.on('checklist:update', function(data) { self.updateText(data.projectId, data.itemId, data.text); });
     },
 
+    _recordTaskActivity: function(project, task, action, changes) {
+        if (!project || !task || !Array.isArray(changes) || !changes.length) return;
+        var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice() : [];
+        entries.push({
+            id: Helpers.generateId(),
+            taskId: String(task.id),
+            taskText: String(task.text || '').slice(0, 240),
+            action: action,
+            changes: changes.map(function(change) {
+                return { field: change.field, from: change.from == null ? null : change.from, to: change.to == null ? null : change.to };
+            }),
+            createdAt: new Date().toISOString()
+        });
+        project.taskActivity = entries.slice(-200);
+    },
+
     toggleItem: function(projectId, itemId) {
         var project = StateManager.getProject(projectId);
         if (!project) return;
@@ -23,14 +39,17 @@ var ChecklistModule = {
         var item = (project.checklist || []).find(function(i) { return i.id === itemId; });
         if (!item) return;
 
+        var previousCompleted = !!item.completed;
         item.completed = !item.completed;
         item.completedAt = item.completed ? new Date().toISOString() : null;
+        this._recordTaskActivity(project, item, item.completed ? 'completed' : 'reopened', [{ field: 'completed', from: previousCompleted, to: item.completed }]);
 
         this._recalculateProgress(project);
 
         StateManager.updateProject(projectId, {
             checklist: project.checklist,
-            progress: project.progress
+            progress: project.progress,
+            taskActivity: project.taskActivity
         });
 
         // Обновляем ТОЛЬКО чек-лист в DOM, не перерисовывая всю модалку
@@ -49,9 +68,11 @@ var ChecklistModule = {
         var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
         if (item.text === normalized) return true;
+        var previousText = item.text;
         item.text = normalized;
+        this._recordTaskActivity(project, item, 'updated', [{ field: 'text', from: previousText, to: normalized }]);
         item.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist });
+        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -69,13 +90,19 @@ var ChecklistModule = {
         if (!project || !Array.isArray(project.checklist)) return false;
         var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
-        var changed = item.text !== text || (item.priority || 'normal') !== priority || (item.deadline || '') !== deadline;
+        var previous = { text: item.text, priority: item.priority || 'normal', deadline: item.deadline || '' };
+        var changed = item.text !== text || previous.priority !== priority || previous.deadline !== deadline;
         if (!changed) return true;
         item.text = text;
         if (priority === 'normal') delete item.priority; else item.priority = priority;
         if (deadline) item.deadline = deadline; else delete item.deadline;
         item.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist });
+        var changes = [];
+        [['text', previous.text, text], ['priority', previous.priority, priority], ['deadline', previous.deadline, deadline]].forEach(function(entry) {
+            if (entry[1] !== entry[2]) changes.push({ field: entry[0], from: entry[1], to: entry[2] });
+        });
+        this._recordTaskActivity(project, item, 'updated', changes);
+        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -125,10 +152,12 @@ var ChecklistModule = {
         var item = (project.checklist || []).find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
         if (item.priority === priority || (priority === 'normal' && !item.priority)) return true;
+        var previousPriority = item.priority || 'normal';
         if (priority === 'normal') delete item.priority;
         else item.priority = priority;
         item.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._recordTaskActivity(project, item, 'updated', [{ field: 'priority', from: previousPriority, to: priority }]);
+        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -141,10 +170,12 @@ var ChecklistModule = {
         var task = (project.checklist || []).find(function(item) { return String(item.id) === String(itemId); });
         if (!task) return false;
         if ((task.deadline || '') === deadline) return true;
+        var previousDeadline = task.deadline || '';
         if (deadline) task.deadline = deadline;
         else delete task.deadline;
         task.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist });
+        this._recordTaskActivity(project, task, 'updated', [{ field: 'deadline', from: previousDeadline, to: deadline || '' }]);
+        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
