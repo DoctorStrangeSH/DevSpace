@@ -20,6 +20,7 @@
 .workspace-launch { position:fixed; right:23px; bottom:25px; z-index:1010; display:flex; align-items:center; gap:10px; padding:12px 18px; border:1px solid rgba(190,176,255,.33); border-radius:999px; color:#fff; background:linear-gradient(120deg,#685df1,#8669e9); box-shadow:0 10px 35px rgba(40,24,113,.4); font-size:.86rem; font-weight:750; text-decoration:none; transition:transform .2s,box-shadow .2s; }
 .workspace-launch:hover,.workspace-launch:focus-visible { color:#fff; transform:translateY(-3px); box-shadow:0 15px 45px rgba(65,45,165,.5); }
 body:has(#projects:target) .workspace-launch { opacity:.3; }
+.content-wrapper:has(.section-dock.is-visible) > .workspace-launch { opacity:0; pointer-events:none; }
 .workspace-switcher { display:flex; align-items:center; gap:7px; padding:8px; margin-top:20px; margin-bottom:22px; overflow-x:auto; border:1px solid rgba(149,139,197,.18); border-radius:17px; background:rgba(21,21,33,.9); scrollbar-width:thin; }
 .workspace-switcher { position:sticky; top:73px; z-index:60; backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); box-shadow:0 10px 24px rgba(0,0,0,.15); }
 .workspace-switch { display:inline-flex; justify-content:center; align-items:center; gap:9px; min-height:43px; padding:10px 18px; border:1px solid transparent; border-radius:11px; background:transparent; color:#aaa9bc; font-size:.88rem; font-weight:650; white-space:nowrap; cursor:pointer; transition:background .2s,color .2s; }
