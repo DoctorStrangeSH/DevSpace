@@ -620,7 +620,7 @@ var RendererModule = {
         var tasks = [];
         (projects || []).forEach(function(project) {
             (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
-                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                if (!project.id || !task || task.id == null || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
                 var level = Object.hasOwn(rank, task.priority) ? task.priority : 'normal';
                 var due = typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) ? task.deadline : '';
                 if (priority !== 'all' && level !== priority) return;
