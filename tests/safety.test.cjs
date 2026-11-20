@@ -583,7 +583,7 @@ test('backup importer warns when rollback itself cannot restore every storage ke
 
   assert.match(errors[0], /автоматическое восстановление завершилось не полностью/);
   assert.equal(state.projects[0].id, 'old_project');
-  assert.deepEqual(values.get('settings'), { compactMode: true });
+  assert.equal(JSON.stringify(values.get('settings')), JSON.stringify({ compactMode: true }));
 });
 
 test('backup importer rejects invalid settings before writing any project data', async () => {
