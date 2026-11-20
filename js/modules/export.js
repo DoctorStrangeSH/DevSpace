@@ -298,23 +298,36 @@ var ExportModule = {
                     return p;
                 });
 
+                var previousProjects = StateManager.get('projects') || [];
                 StateManager.set('projects', projects);
-                StateManager.saveProjects();
+                if (StateManager.saveProjects() === false) {
+                    StateManager.set('projects', previousProjects);
+                    if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
+                    if (typeof RendererModule !== 'undefined' && typeof RendererModule.renderProjects === 'function') RendererModule.renderProjects();
+                    throw new Error('Не удалось сохранить проекты. Проверьте свободное место в хранилище; прежние данные восстановлены.');
+                }
 
                 if (data && data.theme) {
                     if (typeof ThemeModule !== 'undefined' && typeof ThemeModule.setTheme === 'function') {
                         ThemeModule.setTheme(data.theme, true);
                     } else {
                         StateManager.set('theme', data.theme);
-                        StorageService.set('theme', data.theme);
+                        if (!StorageService.set('theme', data.theme)) {
+                            throw new Error('Проекты импортированы, но тему не удалось сохранить');
+                        }
                         if (typeof document !== 'undefined' && document.documentElement) {
                             document.documentElement.setAttribute('data-bs-theme', data.theme);
                         }
                     }
+                    if (StorageService.get('theme') !== data.theme) {
+                        throw new Error('Проекты импортированы, но выбранную тему не удалось сохранить');
+                    }
                 }
 
                 if (data && data.favorites) {
-                    StorageService.set('favorites', importedFavorites);
+                    if (!StorageService.set('favorites', importedFavorites)) {
+                        throw new Error('Проекты импортированы, но избранное не удалось сохранить');
+                    }
                     if (typeof FavoritesModule !== 'undefined') {
                         FavoritesModule.favorites = importedFavorites;
                         if (typeof RendererModule !== 'undefined' && typeof RendererModule._updateQuickAccess === 'function') {
@@ -323,17 +336,21 @@ var ExportModule = {
                     }
                 }
                 if (data && data.achievements) {
-                    StorageService.set('achievements', importedAchievements);
+                    if (!StorageService.set('achievements', importedAchievements)) {
+                        throw new Error('Проекты импортированы, но достижения не удалось сохранить');
+                    }
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = importedAchievements;
                 }
-                if (data && data.settings !== undefined) {
-                    StorageService.set(StorageService.KEYS.SETTINGS, importedSettings);
+                if (data && data.settings !== undefined &&
+                    !StorageService.set(StorageService.KEYS.SETTINGS, importedSettings)) {
+                    throw new Error('Проекты импортированы, но настройки не удалось сохранить');
                 }
-                if (data && data.activity !== undefined) {
-                    StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity);
+                if (data && data.activity !== undefined &&
+                    !StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity)) {
+                    throw new Error('Проекты импортированы, но журнал активности не удалось сохранить');
                 }
                 if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
-                    if (typeof NotificationModule !== 'undefined') NotificationModule.error('Проекты загружены, но историю оценок сохранить не удалось');
+                    throw new Error('Проекты импортированы, но историю оценок не удалось сохранить');
                 }
                 
                 if (typeof RendererModule !== 'undefined') {

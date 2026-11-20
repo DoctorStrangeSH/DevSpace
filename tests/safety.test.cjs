@@ -398,12 +398,13 @@ test('backup importer validates payload before confirmation and restores a valid
     })) },
     confirm: () => true,
     StateManager: {
+      get() { return []; },
       set(path, value) { writes.push([path, value]); },
-      saveProjects() { writes.push(['saveProjects']); }
+      saveProjects() { writes.push(['saveProjects']); return true; }
     },
     StorageService: {
       KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
-      get() { return []; },
+      get(key) { return key === 'theme' ? 'light' : []; },
       set(key, value) { writes.push([key, value]); return true; }
     },
     ThemeModule: { setTheme(theme, persist) { writes.push(['theme-module', theme, persist]); writes.push(['theme', theme]); } },
@@ -425,6 +426,40 @@ test('backup importer validates payload before confirmation and restores a valid
   assert.ok(writes.some(([key, value]) => key === 'settings' && value.compactMode === true));
   assert.ok(writes.some(([key, value]) => key === 'activity' && value[0].type === 'project-created'));
   assert.equal(errors.length, 0);
+});
+
+test('backup importer reports storage quota failures instead of claiming a full restore', async () => {
+  const writes = [];
+  const errors = [];
+  let successes = 0;
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'p1', name: 'Valid project' }],
+      settings: { compactMode: true },
+      activity: [{ type: 'created' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get() { return []; },
+      set(path, value) { writes.push([path, value]); },
+      saveProjects() { return true; }
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get() { return []; },
+      set(key, value) {
+        writes.push([key, value]);
+        return key !== 'activity';
+      }
+    },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: { success() { successes++; }, error(message) { errors.push(message); } }
+  }).ExportModule;
+  service._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(successes, 0);
+  assert.match(errors[0], /журнал активности не удалось сохранить/);
 });
 
 test('backup importer rejects invalid settings before writing any project data', async () => {
@@ -860,6 +895,21 @@ function execute(file, context = {}) {
   vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
   return sandbox;
 }
+
+test('StateManager reports project persistence failures and only emits saved after success', () => {
+  let allowSave = false;
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return allowSave; } },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  ctx.StateManager._state.projects = [{ id: 'p1', name: 'Project' }];
+  assert.equal(ctx.StateManager.saveProjects(), false);
+  assert.equal(events.includes('projects:saved'), false);
+  allowSave = true;
+  assert.equal(ctx.StateManager.saveProjects(), true);
+  assert.equal(events.includes('projects:saved'), true);
+});
 
 test('public Firebase client rejects writes before touching a database', async () => {
   const ctx = execute('js/services/firebase.js');

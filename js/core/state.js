@@ -157,9 +157,11 @@ const StateManager = {
     },
 
     saveProjects() {
-        StorageService.set(StorageService.KEYS.PROJECTS, this._state.projects);
+        const saved = StorageService.set(StorageService.KEYS.PROJECTS, this._state.projects);
+        if (!saved) return false;
         this._updateStats();
         EventBus.emit('projects:saved', this._state.projects);
+        return true;
     },
 
     addProject(project) {
