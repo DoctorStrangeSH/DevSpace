@@ -166,40 +166,50 @@ const StateManager = {
 
     addProject(project) {
         this._state.projects.unshift(project);
-        this.saveProjects();
+        if (!this.saveProjects()) {
+            this._state.projects.shift();
+            this._updateStats();
+            return null;
+        }
         EventBus.emit('project:added', project);
         return project;
     },
 
     updateProject(projectId, updates) {
         const index = this._state.projects.findIndex(p => p.id === projectId);
-        
         if (index === -1) {
             console.warn('StateManager: project not found:', projectId);
             return null;
         }
-        
-        this._state.projects[index] = {
-            ...this._state.projects[index],
+
+        const previousProject = this._state.projects[index];
+        const updatedProject = {
+            ...previousProject,
             ...updates,
             updatedAt: new Date().toISOString()
         };
-        
-        this.saveProjects();
-        EventBus.emit('project:updated', this._state.projects[index]);
-        
-        return this._state.projects[index];
+        this._state.projects[index] = updatedProject;
+
+        if (!this.saveProjects()) {
+            this._state.projects[index] = previousProject;
+            this._updateStats();
+            return null;
+        }
+        EventBus.emit('project:updated', updatedProject);
+        return updatedProject;
     },
 
     removeProject(projectId) {
         const index = this._state.projects.findIndex(p => p.id === projectId);
-        
         if (index === -1) return false;
-        
+
         const removed = this._state.projects.splice(index, 1)[0];
-        this.saveProjects();
+        if (!this.saveProjects()) {
+            this._state.projects.splice(index, 0, removed);
+            this._updateStats();
+            return false;
+        }
         EventBus.emit('project:removed', removed);
-        
         return true;
     },
 

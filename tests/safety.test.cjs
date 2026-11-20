@@ -1098,6 +1098,31 @@ test('StateManager reports project persistence failures and only emits saved aft
   assert.equal(events.includes('projects:saved'), true);
 });
 
+test('project create, update and delete roll back in-memory state when storage is full', () => {
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return false; } },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  const state = ctx.StateManager;
+  const original = [{ id: 'p1', name: 'Original', status: 'development' }];
+  state._state.projects = original.slice();
+
+  assert.equal(state.addProject({ id: 'p2', name: 'New' }), null);
+  assert.equal(JSON.stringify(state.get('projects')), JSON.stringify(original));
+
+  assert.equal(state.updateProject('p1', { name: 'Changed' }), null);
+  assert.equal(JSON.stringify(state.get('projects')), JSON.stringify(original));
+
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(JSON.stringify(state.get('projects')), JSON.stringify(original));
+
+  assert.equal(events.includes('project:added'), false);
+  assert.equal(events.includes('project:updated'), false);
+  assert.equal(events.includes('project:removed'), false);
+  assert.equal(events.includes('projects:saved'), false);
+});
+
 test('active service worker precaches every first-party stylesheet and script', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
