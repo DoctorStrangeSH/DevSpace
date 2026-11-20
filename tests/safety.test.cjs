@@ -1424,6 +1424,35 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
   assert.equal(local.SyncModule._sdkPromise, null);
 });
 
+test('sync binds one online reconnect handler during initialization', async () => {
+  const listeners = {};
+  const idle = [];
+  const ctx = execute('js/core/sync.js', {
+    window: {
+      addEventListener(name, callback) {
+        listeners[name] = listeners[name] || [];
+        listeners[name].push(callback);
+      },
+      requestIdleCallback(callback) { idle.push(callback); }
+    },
+    document: { getElementById() { return null; } },
+    LocalStorageService: {
+      get(key, fallback) {
+        return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback);
+      }
+    },
+    FirebaseService: { _initialized: false }
+  });
+  let syncCalls = 0;
+  ctx.SyncModule._syncFromCloud = () => { syncCalls++; return Promise.resolve(); };
+
+  await ctx.SyncModule.init();
+  await ctx.SyncModule.init();
+  assert.equal(listeners.online.length, 1);
+  listeners.online[0]();
+  assert.equal(syncCalls, 1);
+});
+
 test('local storage getAll resolves values instead of returning nested promises', async () => {
   const values = new Map();
   const ctx = execute('js/services/localStorage.js', {
