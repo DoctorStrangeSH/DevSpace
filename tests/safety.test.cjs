@@ -230,6 +230,85 @@ test('Google login errors show actionable Firebase codes', () => {
   assert.match(identity._describeAuthError({ code: 'auth/unknown' }), /\[auth\/unknown\]/);
 });
 
+test('task CSV export preserves rows, escapes punctuation and neutralizes spreadsheet formulas', () => {
+  const module = execute('js/modules/export.js').ExportModule;
+  const result = module._tasksCsv([
+    { name: 'Проект; "один"', status: 'active', checklist: [
+      { text: '=HYPERLINK("evil")', priority: 'high', deadline: '2026-11-21' },
+      { text: 'Обычная; задача\nв две строки', completed: true, priority: 'other', deadline: 'bad' }
+    ] },
+    { name: '+опасное имя', checklist: [{ text: ' @SUM(1)', completed: false }] }
+  ]);
+  assert.equal(result.count, 3);
+  assert.ok(result.csv.startsWith('\uFEFF"Проект";'));
+  assert.ok(result.csv.includes('"Проект; ""один"""'));
+  assert.ok(result.csv.includes('"\'=HYPERLINK(""evil"")"'));
+  assert.ok(result.csv.includes('"\'+опасное имя"'));
+  assert.ok(result.csv.includes('"\' @SUM(1)"'));
+  assert.ok(result.csv.includes('"Обычная; задача\nв две строки"'));
+  assert.ok(result.csv.includes('"Выполнена";"normal";""'));
+  assert.ok(result.csv.endsWith('\r\n'));
+  assert.match(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), /id="footerTasksExportBtn"/);
+});
+
+test('recent completion feed includes only completed tasks with genuine dates in the last week', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date('2026-11-19T12:00:00.000Z');
+  const projects = [
+    { id: 'p1', name: 'Проект', checklist: [
+      { id: 'fresh', text: '<b>Готово</b>', completed: true, completedAt: '2026-11-19T11:00:00Z' },
+      { id: 'older', text: 'Старое', completed: true, completedAt: '2026-11-10T11:00:00Z' },
+      { id: 'undated', text: 'Без даты', completed: true },
+      { id: 'pending', text: 'В работе', completed: false, completedAt: '2026-11-19T10:00:00Z' },
+      { id: 'future', text: 'Будущее', completed: true, completedAt: '2026-11-20T10:00:00Z' }
+    ] },
+    { id: 'p2', name: 'Другой', checklist: [{ id: 'yesterday', text: 'Вчера', completed: true, completedAt: '2026-11-18T11:00:00Z' }] }
+  ];
+  const result = renderer._collectRecentCompletions(projects, now);
+  assert.deepEqual(Array.from(result, row => row.taskId), ['fresh', 'yesterday']);
+  assert.equal(result[0].text, '<b>Готово</b>');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(html, /<details class="workspace-activity" id="workspaceActivity">/);
+  assert.match(html, /id="workspaceActivityList"/);
+  assert.match(fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8'), /\.workspace-activity > summary:focus-visible/);
+  assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /title\.textContent = item\.text/);
+});
+
+test('recent completion feed excludes tasks without stable project and task identifiers', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date('2026-11-19T12:00:00.000Z');
+  const rows = renderer._collectRecentCompletions([
+    { name: 'Без ID проекта', checklist: [{ id: 'task', text: 'Не открывается', completed: true, completedAt: '2026-11-19T11:00:00Z' }] },
+    { id: 'project', name: 'Проект', checklist: [
+      { text: 'Без ID задачи', completed: true, completedAt: '2026-11-19T10:00:00Z' },
+      { id: 'valid', text: 'Корректная задача', completed: true, completedAt: '2026-11-19T09:00:00Z' }
+    ] }
+  ], now);
+  assert.deepEqual(Array.from(rows, row => [row.projectId, row.taskId]), [['project', 'valid']]);
+});
+
+test('deadline alerts show overdue and next two days without duplicate persistent notifications', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date(2026, 10, 19, 12);
+  const data = [
+    { id: 'active', status: 'active', name: 'Работа', checklist: [
+      { id: 'old', text: 'Просрочена', deadline: '2026-11-18' },
+      { id: 'today', text: 'Сегодня', deadline: '2026-11-19' },
+      { id: 'soon', text: 'Скоро', deadline: '2026-11-21' },
+      { id: 'later', text: 'Позже', deadline: '2026-11-22' },
+      { id: 'done', text: 'Готово', deadline: '2026-11-18', completed: true },
+      { id: 'bad', text: 'Неверная дата', deadline: '2026-02-30' }
+    ] },
+    { id: 'archived', status: 'archived', checklist: [{ id: 'skip', text: 'Архив', deadline: '2026-11-18' }] }
+  ];
+  assert.deepEqual(Array.from(renderer._collectDeadlineAlerts(data, now), item => item.taskId), ['old', 'today', 'soon']);
+  assert.deepEqual(Array.from(renderer._collectDeadlineAlerts(data, now), item => item.taskId), ['old', 'today', 'soon']);
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(html, /id="workspaceDeadlineAlerts"/);
+  assert.match(html, /id="workspaceDeadlineList"/);
+  assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /title\.textContent = item\.text/);
+});
+
 test('health history transfer validates and merges daily readings without overwriting local scores', () => {
   const exportModule = execute('js/modules/export.js').ExportModule;
   const incoming = [{ date: '2026-11-14', scores: { a: 70, b: 60 } }, { date: '2026-11-15', scores: { a: 80, __proto__: 10 } }];
@@ -410,6 +489,142 @@ test('today dashboard filters weekly due tasks and ignores completed entries', (
   const result = ctx.RendererModule._collectTodayTasks([{ id: 'p', checklist: tasks }], new Date(2026, 10, 15), 'all', 'week');
   assert.deepEqual(Array.from(result, task => task.text), ['Успеть']);
   assert.equal(tasks.length, 3);
+});
+
+test('workspace next tasks exclude archived projects, prioritize deadlines and keep input unchanged', () => {
+  const ctx = execute('js/ui/renderer.js');
+  const projects = [
+    { id: 'active', name: '<script>name</script>', status: 'active', checklist: [
+      { id: 'unsafe-html', text: '<img src=x onerror=alert(1)>', priority: 'high' },
+      { id: 'overdue', text: 'Просрочено', deadline: '2026-11-14' },
+      { id: 'done', text: 'Готово', completed: true }
+    ] },
+    { id: 'archived', status: 'archived', checklist: [{ id: 'archived-task', text: 'Скрыто', deadline: '2026-01-01' }] },
+    { id: 'completed', status: 'completed', checklist: [{ id: 'completed-task', text: 'Тоже скрыто' }] }
+  ];
+  const before = JSON.stringify(projects);
+  const tasks = ctx.RendererModule._getOverviewNextTasks(projects, new Date(2026, 10, 15));
+  assert.deepEqual(Array.from(tasks, task => task.text), ['Просрочено', '<img src=x onerror=alert(1)>']);
+  assert.equal(tasks[0].projectName, '<script>name</script>');
+  assert.equal(JSON.stringify(projects), before);
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  assert.match(renderer, /name\.textContent = task\.text/);
+  assert.match(renderer, /project\.textContent = task\.projectName/);
+});
+
+test('workspace task shortcuts open the specific checklist item with keyboard focus', () => {
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  const detail = fs.readFileSync(path.join(root, 'js/modules/project-detail.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(renderer, /button\.dataset\.nextProject = String\(task\.projectId\)/);
+  assert.match(renderer, /button\.dataset\.nextTask = String\(task\.id\)/);
+  assert.match(renderer, /ProjectDetailModule\.showTask\(button\.dataset\.nextProject, button\.dataset\.nextTask\)/);
+  assert.match(detail, /showTask: function\(projectId, taskId\)/);
+  assert.match(detail, /item\.dataset\.itemId === String\(taskId\)/);
+  assert.match(detail, /row\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(detail, /\{ once: true \}/);
+  assert.match(css, /\.workspace-next-open:focus-visible/);
+});
+
+test('overview keeps secondary panels available but collapsed until explicitly expanded', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const view = fs.readFileSync(path.join(root, 'js/ui/workspace-view.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(html, /id="workspaceMoreToggle" aria-expanded="false" aria-controls="focusPanel roadmapOverview productivityPanel"/);
+  assert.match(view, /classList\.toggle\('is-overview-expanded'\)/);
+  assert.match(view, /moreToggle\.setAttribute\('aria-expanded', String\(expanded\)\)/);
+  assert.match(css, /:not\(\.is-overview-expanded\) > \.focus-panel/);
+  assert.match(css, /:not\(\.is-overview-expanded\) > \.roadmap-overview/);
+  assert.match(css, /:not\(\.is-overview-expanded\) > \.productivity-panel/);
+});
+
+test('project cards keep deletion out of the primary action row and inside owner-only details', () => {
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  const start = renderer.indexOf("var actions = '';", renderer.indexOf('_renderProjectCard:'));
+  const end = renderer.indexOf("return '<div class=\"project-card\"", start);
+  const actions = renderer.slice(start, end);
+  assert.doesNotMatch(actions, /delete-project/);
+  assert.match(renderer, /mHTML \+ \(isOwner \? '<div class="project-card-danger"><button type="button" class="delete-project"/);
+  assert.match(css, /\.project-card-danger \.delete-project:focus-visible/);
+});
+
+test('project cards support keyboard opening while list view shows a compact summary', () => {
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(renderer, /tabindex="0" role="group" aria-label=/);
+  assert.match(renderer, /event\.target !== card \|\| !\['Enter', ' '\]\.includes\(event\.key\)/);
+  assert.match(renderer, /ProjectDetailModule\.show\(card\.dataset\.projectId\)/);
+  assert.match(css, /\.project-card:focus-visible/);
+  assert.match(css, /#projectsContainer\.list-view \.project-card-extras[^\n]*display:none/);
+  assert.match(css, /#projectsContainer\.list-view \.project-card-snapshot \{ grid-column:1\/-1/);
+});
+
+test('project filters have a reset action and distinguish empty results from an empty collection', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  assert.match(html, /id="projectsClearFilters" hidden/);
+  assert.match(html, /id="projectsEmptyTitle"/);
+  assert.match(projects, /search\.value = ''/);
+  assert.match(projects, /StateManager\.set\('filters\.search', ''\)/);
+  assert.match(projects, /StateManager\.set\('filters\.status', 'all'\)/);
+  assert.match(renderer, /clearFilters\.hidden = !hasFilters/);
+  assert.match(renderer, /hasFilters \? 'Ничего не найдено' : 'Нет проектов'/);
+});
+
+test('empty project search has a nearby reset and never suggests creation for filter-only emptiness', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(html, /id="projectsEmptyReset" hidden/);
+  assert.match(html, /id="projectsEmptyCreate"/);
+  assert.match(projects, /emptyReset\.addEventListener\('click', resetFilters\)/);
+  assert.match(renderer, /emptyReset\.hidden = !hasFilters/);
+  assert.match(renderer, /emptyCreate\.hidden = hasFilters/);
+  assert.match(css, /#projectsEmptyCreate\[hidden\] \{ display:none!important/);
+  assert.match(html, /id="emptyState" class="empty-state" hidden/);
+  assert.match(renderer, /emptyState\.hidden = false/);
+  assert.match(renderer, /emptyState\.hidden = true/);
+  assert.match(css, /#tabProjects\[data-workspace-view="projects"\] > #emptyState\[hidden\] \{ display:none!important/);
+});
+
+test('short screens keep project forms scrollable and release sticky workspace navigation', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(html, /modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg/);
+  assert.match(css, /@media\(max-height:650px\)/);
+  assert.match(css, /\.workspace-switcher \{ position:relative; top:auto; \}/);
+  assert.match(css, /#projectModal \.modal-body \{ min-height:0; overflow-y:auto; overscroll-behavior:contain; \}/);
+  assert.match(css, /#projectDetailModal \.modal-content,#githubModal \.modal-content \{ max-height:calc\(100dvh - 20px\); \}/);
+});
+
+test('project filters announce the visible result count near the controls', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.match(html, /id="projectsResultsStatus" class="projects-results-status" role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(renderer, /resultsStatus\.textContent = projects\.length \? 'Найдено: ' \+ projects\.length : 'Совпадений нет'/);
+  assert.match(css, /\.projects-results-status \{/);
+});
+
+test('pagination and sorting can refresh cards without recomputing dashboard panels', () => {
+  const ctx = execute('js/ui/renderer.js', {
+    document: { getElementById() { return null; } },
+    StateManager: { get() { return ''; } }
+  });
+  const renderer = ctx.RendererModule;
+  let refreshes = 0;
+  renderer._renderWorkspaceSummary = () => { refreshes++; };
+  renderer.containers = { projects: null, emptyState: null };
+  renderer.renderProjects({ listOnly: true });
+  assert.equal(refreshes, 0);
+  renderer.renderProjects();
+  assert.equal(refreshes, 1);
+  const source = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+  assert.match(source, /_visibleCount \+= self\._pageSize;\s*self\.renderProjects\(\{ listOnly: true \}\)/);
+  assert.match(source, /_sortMode = \['updated', 'name', 'status'\][^\n]+[\s\S]*?self\.renderProjects\(\{ listOnly: true \}\)/);
 });
 
 test('calendar filters by project and event type without mutating events', () => {
@@ -728,6 +943,7 @@ test('priority changes persist in checklist without changing completion', () => 
     StateManager: { getProject(id) { return id === 'p1' ? project : null; }, updateProject(id, changes) { updates.push([id, changes]); } },
     EventBus: { emit(name, data) { events.push([name, data]); } }
   });
+  ctx.ChecklistModule._updateChecklistDOM = () => {};
   assert.equal(ctx.ChecklistModule.setPriority('p1', 't1', 'high'), true);
   assert.equal(task.priority, 'high');
   assert.equal(task.completed, false);
@@ -787,6 +1003,7 @@ test('checklist deadline validates calendar dates and preserves other task field
     EventBus: { emit(name) { events.push(name); } }
   });
   const module = ctx.ChecklistModule;
+  module._updateChecklistDOM = () => {};
   assert.equal(module.setDeadline('p1', 't1', '2026-02-30'), false);
   assert.equal(module.setDeadline('p1', 't1', '2026-11-17'), true);
   assert.equal(task.deadline, '2026-11-17');
@@ -1164,8 +1381,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.65.9') < sources.indexOf('js/app.js?v=3.65.9'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.65.9') < sources.indexOf('js/app.js?v=3.65.9'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.20') < sources.indexOf('js/app.js?v=3.66.20'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.20') < sources.indexOf('js/app.js?v=3.66.20'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -1290,7 +1507,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.65.9" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.20" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -1320,7 +1537,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.65.9"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.20"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -1347,7 +1564,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.65.9"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.20"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -1361,7 +1578,8 @@ test('legacy password is discarded and editing is explicitly browser-local', () 
     setItem: (key, val) => storage.set(key, val),
     removeItem: key => storage.delete(key)
   };
-  const button = { style: {}, setAttribute() {} };
+  const attributes = {};
+  const button = { style: {}, setAttribute(name, value) { attributes[name] = value; }, classList: { toggle() {} } };
   const document = {
     getElementById: id => id === 'authBtn' ? button : null,
     querySelectorAll: () => []
@@ -1370,15 +1588,74 @@ test('legacy password is discarded and editing is explicitly browser-local', () 
   ctx.AuthService.init();
   assert.equal(storage.has('devspace_auth_key'), false);
   assert.equal(ctx.AuthService.isOwner(), false);
+  assert.equal(attributes['aria-pressed'], 'false');
   ctx.AuthService._showLoginDialog();
   assert.equal(ctx.AuthService.isOwner(), true);
   assert.equal(storage.get('devspace_local_edit_mode'), 'enabled');
-  assert.match(button.title, /локальное редактирование/);
+  assert.match(button.title, /локальные правки/);
+  assert.equal(attributes['aria-pressed'], 'true');
+  assert.match(button.innerHTML, /Правки: вкл\./);
   ctx.AuthService.logout();
   assert.equal(ctx.AuthService.isOwner(), false);
+  assert.equal(attributes['aria-pressed'], 'false');
   assert.equal(storage.has('devspace_local_edit_mode'), false);
   const source = fs.readFileSync(path.join(root, 'js/services/auth.js'), 'utf8');
   assert.doesNotMatch(source, /_secretKey\s*:/);
+});
+
+test('activity actor distinguishes Google identity from local browser editing', () => {
+  const values = new Map();
+  const localStorage = {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: key => values.delete(key)
+  };
+  const ctx = execute('js/services/auth.js', {
+    localStorage,
+    window: { crypto: { randomUUID: () => '12345678-1234-1234-1234-123456789abc' } },
+    document: { getElementById: () => null, querySelectorAll: () => [] }
+  });
+  const service = ctx.AuthService;
+  service.init();
+  const guest = service.getActivityActor();
+  assert.equal(guest.type, 'anonymous');
+  assert.equal(guest.name, 'Гость (локально)');
+  service.login();
+  const local = service.getActivityActor();
+  assert.equal(local.type, 'local-editor');
+  assert.equal(local.id, guest.id);
+  assert.equal(local.name, 'Локальный редактор');
+  ctx.FirebaseIdentityModule = { _user: { uid: 'uid-1', displayName: '<Admin>', email: 'admin@example.com', photoURL: 'https://example.com/avatar.png' } };
+  const google = service.getActivityActor();
+  assert.equal(google.id, 'google:uid-1');
+  assert.equal(google.name, '<Admin>');
+  assert.equal(google.email, 'admin@example.com');
+  assert.equal(google.type, 'google');
+});
+
+test('task activity stores an immutable actor snapshot and escapes actor display', () => {
+  const project = { id: 'p', checklist: [{ id: 't', text: 'Task', completed: false }] };
+  const actor = { id: 'google:uid-1', name: '<Admin>', email: 'admin@example.com', photoURL: '', type: 'google' };
+  const ctx = execute('js/modules/checklist.js', {
+    StateManager: { getProject: () => project, updateProject() {} },
+    EventBus: { emit() {} },
+    Helpers: { generateId: () => 'event-1', escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
+    AuthService: { isOwner: () => true, getActivityActor: () => actor },
+    NotificationModule: { success() {}, warning() {} }
+  });
+  ctx.ChecklistModule._updateChecklistDOM = () => {};
+  assert.equal(ctx.ChecklistModule.updateText('p', 't', 'Changed'), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(project.taskActivity[0].actor)), actor);
+  actor.name = 'Changed after the event';
+  assert.equal(project.taskActivity[0].actor.name, '<Admin>');
+  const detail = execute('js/modules/project-detail.js', {
+    Helpers: { escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+  }).ProjectDetailModule;
+  const html = detail._renderTaskActivity(project);
+  assert.match(html, /&lt;Admin&gt;/);
+  assert.match(html, /admin@example\.com/);
+  assert.match(html, /Google/);
+  assert.doesNotMatch(html, /<Admin>/);
 });
 
 test('mobile navigation is labelled and collapses after in-page navigation', () => {
@@ -1387,7 +1664,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.65.9"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.20"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -1677,13 +1954,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.65.9 cache, HTML fallback and visible application version are aligned', () => {
+test('3.66.20 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.65.9'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.65.9'"));
-  assert.ok(html.includes('id="appVersion">v3.65.9</span>'));
+  assert.ok(app.includes("version: '3.66.20'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.20'"));
+  assert.ok(html.includes('id="appVersion">v3.66.20</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -1693,10 +1970,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.65.9', `${file} is not versioned`);
+    assert.equal(version, '?v=3.66.20', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.65.9'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.66.20'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
@@ -2092,7 +2369,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.65\.9/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.20/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
@@ -2342,7 +2619,8 @@ test('mobile task cards collapse inline controls but keep editing available', ()
     assert.match(renderer, /editToggle\.setAttribute\('aria-expanded'/);
     assert.match(renderer, /AuthService\.isOwner\(\)/);
     assert.match(css, /\.today-task:not\(\.is-editing\) \.today-inline-edit \{ display:none; \}/);
-    assert.match(css, /\.today-edit-toggle \{ display:none;/);
+    assert.match(css, /\.today-edit-toggle \{ display:inline-flex;/);
+    assert.match(css, /#todayPanel \.today-task:not\(\.is-editing\) \.today-inline-edit \{ display:none; \}/);
     assert.match(css, /@media\(max-width:600px\)/);
 });
 
@@ -2655,6 +2933,208 @@ test('note rendering escapes untrusted text, tags, dates and attributes', () => 
     assert.match(html, /data-note-id="bad&quot;/);
 });
 
+test('checklist completion timestamps are set on completion and cleared on reopening', () => {
+    const project = { id: 'p', progress: 0, checklist: [
+        { id: 'task', text: 'Проверяемый этап', completed: false, completedAt: null }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: {
+            getProject: () => project,
+            updateProject: (id, data) => { saved.push({ id, data }); }
+        },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    checklist._updateChecklistDOM = () => {};
+    checklist.toggleItem('p', 'task');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(typeof project.checklist[0].completedAt, 'string');
+    assert.ok(Number.isFinite(Date.parse(project.checklist[0].completedAt)));
+    assert.equal(project.progress, 100);
+    assert.equal(saved.length, 1);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+
+    checklist.toggleItem('p', 'task');
+    assert.equal(project.checklist[0].completed, false);
+    assert.equal(project.checklist[0].completedAt, null);
+    assert.equal(project.progress, 0);
+    assert.equal(saved.length, 2);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+});
+
+test('editing a checklist task preserves completion history and rejects invalid text', () => {
+    const project = { id: 'p', progress: 100, checklist: [
+        { id: 'task', text: 'Старое название', completed: true, completedAt: '2026-11-19T10:00:00.000Z', sourceNoteId: 'note' }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    checklist._updateChecklistDOM = () => {};
+    const completedAt = project.checklist[0].completedAt;
+    assert.equal(checklist.updateText('p', 'task', '  Новое название  '), true);
+    assert.equal(project.checklist[0].text, 'Новое название');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, completedAt);
+    assert.equal(project.checklist[0].sourceNoteId, 'note');
+    assert.equal(typeof project.checklist[0].updatedAt, 'string');
+    assert.equal(saved.length, 1);
+    assert.equal(events.at(-1).name, 'checklist:changed');
+    assert.equal(checklist.updateText('p', 'task', '   '), false);
+    assert.equal(checklist.updateText('p', 'task', 'x'.repeat(241)), false);
+    assert.equal(checklist.updateText('p', 'missing', 'Другое'), false);
+    assert.equal(saved.length, 1);
+});
+test('priority and deadline edits validate values, refresh task UI and preserve completion history', () => {
+    const project = { id: 'p', checklist: [
+        { id: 'task', text: 'Этап', completed: true, completedAt: '2026-11-19T10:00:00.000Z', priority: 'low', deadline: '2026-11-20' }
+    ] };
+    const saved = [];
+    const events = [];
+    const sandbox = {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/checklist.js'), 'utf8'), sandbox);
+    const checklist = sandbox.window.ChecklistModule;
+    let rendered = 0;
+    checklist._updateChecklistDOM = () => { rendered++; };
+    const completedAt = project.checklist[0].completedAt;
+    assert.equal(checklist.setPriority('p', 'task', 'high'), true);
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(typeof project.checklist[0].updatedAt, 'string');
+    assert.equal(checklist.setPriority('p', 'task', 'critical'), false);
+    assert.equal(checklist.setDeadline('p', 'task', '2026-11-22'), true);
+    assert.equal(project.checklist[0].deadline, '2026-11-22');
+    assert.equal(checklist.setDeadline('p', 'task', '2026-02-30'), false);
+    assert.equal(checklist.setDeadline('p', 'task', ''), true);
+    assert.equal(Object.hasOwn(project.checklist[0], 'deadline'), false);
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, completedAt);
+    assert.equal(rendered, 3);
+    assert.equal(saved.length, 3);
+    assert.equal(events.length, 3);
+});
+test('unified checklist editor update validates and persists title, priority and deadline atomically', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Старое', completed: true, completedAt: '2026-11-19T10:00:00Z', sourceNoteId: 'note' }] };
+    const saved = []; const events = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push({ id, data }) },
+        EventBus: { emit: (name, data) => events.push({ name, data }) }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: '  Новое  ', priority: 'high', deadline: '2026-11-25' }), true);
+    assert.equal(project.checklist[0].text, 'Новое');
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(project.checklist[0].deadline, '2026-11-25');
+    assert.equal(project.checklist[0].completed, true);
+    assert.equal(project.checklist[0].completedAt, '2026-11-19T10:00:00Z');
+    assert.equal(project.checklist[0].sourceNoteId, 'note');
+    assert.equal(project.taskActivity.length, 1);
+    assert.deepEqual(Array.from(project.taskActivity[0].changes, change => [change.field, change.from, change.to]), [['text', 'Старое', 'Новое'], ['priority', 'normal', 'high'], ['deadline', '', '2026-11-25']]);
+    assert.equal(project.taskActivity[0].action, 'updated');
+    assert.equal(saved.length, 1); assert.equal(events.length, 1);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: '', priority: 'high', deadline: '2026-11-25' }), false);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'urgent', deadline: '' }), false);
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'OK', priority: 'normal', deadline: '2026-02-30' }), false);
+    assert.equal(saved.length, 1);
+});
+test('checklist activity records completion and reopening with a bounded history', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Этап', completed: false }] };
+    const saved = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push(data) },
+        EventBus: { emit() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    ctx.ChecklistModule.toggleItem('p', 'task');
+    ctx.ChecklistModule.toggleItem('p', 'task');
+    assert.deepEqual(Array.from(project.taskActivity, event => event.action), ['completed', 'reopened']);
+    assert.deepEqual(Array.from(project.taskActivity, event => event.changes[0].field), ['completed', 'completed']);
+    assert.equal(project.taskActivity[0].changes[0].from, false);
+    assert.equal(project.taskActivity[0].changes[0].to, true);
+    assert.equal(project.taskActivity[1].changes[0].from, true);
+    assert.equal(project.taskActivity[1].changes[0].to, false);
+    assert.equal(saved.length, 2);
+    project.taskActivity = Array.from({ length: 200 }, (_, i) => ({ id: String(i) }));
+    ctx.ChecklistModule._recordTaskActivity(project, project.checklist[0], 'updated', [{ field: 'text', from: 'A', to: 'B' }]);
+    assert.equal(project.taskActivity.length, 200);
+    assert.equal(project.taskActivity[0].id, '1');
+});
+
+test('project detail renders escaped task activity and filters event types', () => {
+    const ctx = execute('js/modules/project-detail.js', {
+        Helpers: { escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[char])); } }
+    });
+    const module = ctx.ProjectDetailModule;
+    const project = { id: 'p1', taskActivity: [
+        { id: 'a1', taskId: 't1', taskText: '<script>alert(1)</script>', action: 'updated', createdAt: '2026-11-20T10:00:00Z', changes: [{ field: 'text', from: 'Old', to: 'New' }] },
+        { id: 'a2', taskId: 't1', taskText: 'Task', action: 'completed', createdAt: '2026-11-20T11:00:00Z', changes: [{ field: 'completed', from: false, to: true }] }
+    ] };
+    const all = module._renderTaskActivity(project);
+    assert.match(all, /История действий/);
+    assert.match(all, /&lt;script&gt;/);
+    assert.doesNotMatch(all, /<script>alert/);
+    assert.match(all, /Старое|Old/);
+    const onlyCompleted = module._renderTaskActivity(project, 'completed');
+    assert.match(onlyCompleted, /Задача завершена/);
+    assert.doesNotMatch(onlyCompleted, /Изменение задачи/);
+    assert.match(module._renderTaskActivity({ id: 'p2', taskActivity: [] }), /История пока пуста/);
+});
+
+test('checklist undo and redo restore fields only when current values match', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Before', completed: false }] };
+    const saved = [];
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject: (id, data) => saved.push(data) },
+        EventBus: { emit() {} },
+        Helpers: { generateId: (() => { let id = 0; return () => 'event-' + (++id); })() },
+        NotificationModule: { success() {}, warning() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    assert.equal(ctx.ChecklistModule.updateDetails('p', 'task', { text: 'After', priority: 'high', deadline: '2026-11-25' }), true);
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), true);
+    assert.equal(project.checklist[0].text, 'Before');
+    assert.equal(project.checklist[0].priority, undefined);
+    assert.equal(project.checklist[0].deadline, undefined);
+    assert.equal(ctx.ChecklistModule.redoLastChange('p'), true);
+    assert.equal(project.checklist[0].text, 'After');
+    assert.equal(project.checklist[0].priority, 'high');
+    assert.equal(project.checklist[0].deadline, '2026-11-25');
+    assert.equal(project.taskActivity.filter(entry => entry.action === 'undone').length, 1);
+    assert.equal(project.taskActivity.filter(entry => entry.action === 'redone').length, 1);
+    assert.ok(saved.length >= 3);
+});
+
+test('checklist undo refuses stale values and a new edit invalidates redo', () => {
+    const project = { id: 'p', checklist: [{ id: 'task', text: 'Before', completed: false }] };
+    const ctx = execute('js/modules/checklist.js', {
+        StateManager: { getProject: () => project, updateProject() {} },
+        EventBus: { emit() {} },
+        Helpers: { generateId: (() => { let id = 0; return () => 'event-' + (++id); })() },
+        NotificationModule: { success() {}, warning() {} }
+    });
+    ctx.ChecklistModule._updateChecklistDOM = () => {};
+    ctx.ChecklistModule.updateText('p', 'task', 'After');
+    project.checklist[0].text = 'Changed elsewhere';
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), false);
+    project.checklist[0].text = 'After';
+    assert.equal(ctx.ChecklistModule.undoLastChange('p'), true);
+    ctx.ChecklistModule.updateText('p', 'task', 'Branch');
+    assert.equal(ctx.ChecklistModule.redoLastChange('p'), false);
+    assert.equal(project.checklist[0].text, 'Branch');
+});
+
 test('deleting a linked checklist task clears its note link', () => {
     const project = { id: 'p', progress: 0, notes: [{ id: 'n', linkedTaskId: 't' }],
         checklist: [{ id: 't', sourceNoteId: 'n', completed: false }] };
@@ -2671,4 +3151,106 @@ test('deleting a linked checklist task clears its note link', () => {
     assert.equal(project.notes[0].linkedTaskId, undefined);
     assert.equal(saved.notes, project.notes);
     assert.equal(project.checklist.length, 0);
+});
+
+test('long-page section dock has working targets and stays keyboard inaccessible while hidden', () => {
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const script = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
+    const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+    assert.match(html, /id="sectionDock"[^>]*aria-hidden="true" inert/);
+    for (const anchor of ['featured', 'web-projects', 'projects', 'hero']) {
+        assert.match(html, new RegExp('href="#' + anchor + '"'));
+        assert.match(html, new RegExp('id="' + anchor + '"'));
+    }
+    assert.match(script, /dock\.removeAttribute\('inert'\)/);
+    assert.match(script, /dock\.setAttribute\('inert', ''\)/);
+    assert.match(script, /window\.addEventListener\('scroll', updateDock, \{ passive: true \}\)/);
+    assert.match(css, /\.section-dock\.is-visible/);
+    assert.match(css, /\.portfolio-viewer-open \.section-dock/);
+    assert.match(html, /href="#projects" data-workspace-jump="overview" aria-label="К обзору мастерской"/);
+    const workspaceCss = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+    assert.match(workspaceCss, /\.content-wrapper:has\(\.section-dock\.is-visible\) > \.workspace-launch/);
+});
+
+test('cloud migration keeps all controls accessible inside a progressive disclosure', () => {
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+    const advanced = html.match(/<details class="cloud-migration-advanced"[\s\S]*?<\/details>/);
+    assert.ok(advanced);
+    assert.match(advanced[0], /<summary>/);
+    for (const id of ['cloudMigrationProjectSelect', 'cloudMigrationUploadBtn', 'cloudMigrationBatchBtn', 'cloudMigrationDownloadSelect', 'cloudMigrationDownloadBtn']) {
+        assert.match(advanced[0], new RegExp('id="' + id + '"'));
+    }
+    assert.ok(html.indexOf('id="cloudMigrationPreviewStatus"') < html.indexOf('<details class="cloud-migration-advanced"'));
+    assert.match(css, /\.cloud-migration-actions \{ display:grid/);
+    assert.match(css, /\.cloud-migration-advanced > summary:focus-visible/);
+});
+
+test('workspace tabs expose selected state and arrow-key navigation', () => {
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+    const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+    assert.match(html, /class="tab-nav mt-3" role="tablist"/);
+    for (const [name, panel] of [['Projects', 'tabProjects'], ['Stats', 'tabStats'], ['Achievements', 'tabAchievements']]) {
+        assert.match(html, new RegExp('id="tabButton' + name + '" role="tab" aria-controls="' + panel + '"'));
+        assert.match(html, new RegExp('id="' + panel + '" role="tabpanel" aria-labelledby="tabButton' + name + '"'));
+    }
+    assert.match(renderer, /event\.key === 'ArrowRight'/);
+    assert.match(renderer, /tabs\[next\]\.focus\(\)/);
+    assert.match(renderer, /b\.setAttribute\('aria-selected', String\(selected\)\)/);
+    assert.match(app, /b\.setAttribute\('aria-selected', String\(selected\)\)/);
+});
+
+test('CI validates stacked pull requests targeting non-main branches', () => {
+    const workflow = fs.readFileSync(path.join(root, '.github/workflows/tests.yml'), 'utf8');
+    assert.match(workflow, /pull_request:\s*\n/);
+    assert.doesNotMatch(workflow, /pull_request:\s*\n\s+branches:/);
+    assert.match(workflow, /node --test tests\/safety\.test\.cjs/);
+    assert.match(workflow, /firebase emulators:exec/);
+});
+
+test('workspace overview shortcuts focus task list and calendar without mutating data', () => {
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const view = fs.readFileSync(path.join(root, 'js/ui/workspace-view.js'), 'utf8');
+    const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+    assert.match(html, /data-workspace-focus="todayPanel" data-focus-view="overview"/);
+    assert.match(html, /data-workspace-focus="scheduleCalendar" data-focus-view="planning"/);
+    assert.match(view, /document\.querySelectorAll\('\[data-workspace-focus\]'\)/);
+    assert.match(view, /self\.setView\(view\)/);
+    assert.match(view, /target\.scrollIntoView\(/);
+    assert.match(css, /#todayPanel,#scheduleCalendar \{ scroll-margin-top:155px; \}/);
+});
+
+ 
+test('project search and filters refresh only the project list and avoid duplicate search scans', () => {
+    const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
+    const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+    assert.match(projects, /StateManager\.set\('filters\.search',[\s\S]*?RendererModule\.renderProjects\(\{ listOnly: true \}\)/);
+    assert.match(projects, /StateManager\.set\('filters\.status', 'all'\)[\s\S]*?RendererModule\.renderProjects\(\{ listOnly: true \}\)/);
+    assert.match(projects, /StateManager\.set\('filters\.status', btn\.dataset\.filter\)[\s\S]*?RendererModule\.renderProjects\(\{ listOnly: true \}\)/);
+    assert.match(renderer, /if \(filterStatus === 'favorites' && sq\)/);
+    assert.doesNotMatch(renderer, /if \(sq\) \{\s*var t = sq\.toLowerCase\(\);\s*projects = projects\.filter/);
+    assert.match(renderer, /if \(!options \|\| !options\.listOnly\) \{/);
+});
+
+
+test('deadline alerts keep upcoming tasks visible when overdue backlog is large and require stable task links', () => {
+  const renderer = execute('js/ui/renderer.js').RendererModule;
+  const now = new Date(2026, 10, 19, 12);
+  const project = { id: 'p', name: 'Проект', status: 'active', checklist: [
+    { id: 'oldest', text: 'Старая просрочка', deadline: '2026-10-01' },
+    { id: 'recent', text: 'Вчерашняя просрочка', deadline: '2026-11-18' },
+    { id: 'older2', text: 'Позавчерашняя просрочка', deadline: '2026-11-17' },
+    { id: 'today', text: 'Срок сегодня', deadline: '2026-11-19' },
+    { id: 'tomorrow', text: 'Срок завтра', deadline: '2026-11-20' },
+    { id: 'soon', text: 'Срок послезавтра', deadline: '2026-11-21' },
+    { text: 'Без ID не должна вести в задачу', deadline: '2026-11-19' }
+  ] };
+  const alerts = renderer._collectDeadlineAlerts([project], now);
+  assert.deepEqual(Array.from(alerts, item => item.taskId), ['recent', 'older2', 'oldest', 'today', 'tomorrow', 'soon']);
+  const overdue = alerts.filter(item => item.overdue);
+  const upcoming = alerts.filter(item => !item.overdue);
+  const visible = Array.from(overdue.slice(0, 3)).concat(Array.from(upcoming.slice(0, 2)));
+  assert.deepEqual(visible.map(item => item.taskId), ['recent', 'older2', 'oldest', 'today', 'tomorrow']);
+  assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /Ещё '\s*\+/);
 });
