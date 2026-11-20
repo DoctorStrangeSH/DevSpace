@@ -406,7 +406,7 @@ test('backup importer validates payload before confirmation and restores a valid
       get() { return []; },
       set(key, value) { writes.push([key, value]); return true; }
     },
-    ThemeModule: { setTheme(theme, persist) { writes.push(['theme-module', theme, persist]); } },
+    ThemeModule: { setTheme(theme, persist) { writes.push(['theme-module', theme, persist]); writes.push(['theme', theme]); } },
     RendererModule: { _updateQuickAccess() { writes.push(['quick-access-refresh']); } },
     NotificationModule: { success() {}, error(message) { errors.push(message); } }
   }).ExportModule;
