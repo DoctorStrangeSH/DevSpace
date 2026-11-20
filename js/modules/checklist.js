@@ -49,13 +49,17 @@ var ChecklistModule = {
 
     _persistMutation: function(projectId, project, snapshot, updates) {
         var saved = StateManager.updateProject(projectId, updates);
-        if (saved) return true;
+        // Older integrations may return undefined on success; only explicit
+        // false/null from StateManager indicate a rejected persistence operation.
+        if (saved !== false && saved !== null) return true;
         Object.keys(project).forEach(function(key) { delete project[key]; });
         Object.assign(project, snapshot);
         if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
         this._updateChecklistDOM(project);
         if (typeof NotificationModule !== 'undefined') {
-            NotificationModule.error('Не удалось сохранить изменения. Проверьте свободное место в хранилище.');
+            var message = 'Не удалось сохранить изменения. Проверьте свободное место в хранилище.';
+            if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+            else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
         }
         return false;
     },
