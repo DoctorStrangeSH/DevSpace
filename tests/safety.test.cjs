@@ -1394,6 +1394,7 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
       createElement() { return {}; },
       head: { appendChild(script) { injected.push(script); } }
     },
+    addEventListener() {},
     requestIdleCallback(callback) { idle.push(callback); },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback); } },
     FirebaseService: { _initialized: false, init() { this._initialized = true; return Promise.resolve(); } }
@@ -1415,6 +1416,7 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
   assert.equal(cloudReads, 1);
 
   const local = execute('js/core/sync.js', {
+    addEventListener() {},
     document: { getElementById() { return null; } },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback); } },
     FirebaseService: { init() { throw Error('Local mode should never fetch SDK'); } }
@@ -1422,6 +1424,33 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
   await local.SyncModule.init();
   assert.equal(local.SyncModule._mode, 'local');
   assert.equal(local.SyncModule._sdkPromise, null);
+});
+
+test('sync binds one online reconnect handler during initialization', async () => {
+  const listeners = {};
+  const idle = [];
+  const ctx = execute('js/core/sync.js', {
+    addEventListener(name, callback) {
+      listeners[name] = listeners[name] || [];
+      listeners[name].push(callback);
+    },
+    requestIdleCallback(callback) { idle.push(callback); },
+    document: { getElementById() { return null; } },
+    LocalStorageService: {
+      get(key, fallback) {
+        return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback);
+      }
+    },
+    FirebaseService: { _initialized: false }
+  });
+  let syncCalls = 0;
+  ctx.SyncModule._syncFromCloud = () => { syncCalls++; return Promise.resolve(); };
+
+  await ctx.SyncModule.init();
+  await ctx.SyncModule.init();
+  assert.equal(listeners.online.length, 1);
+  listeners.online[0]();
+  assert.equal(syncCalls, 1);
 });
 
 test('local storage getAll resolves values instead of returning nested promises', async () => {
