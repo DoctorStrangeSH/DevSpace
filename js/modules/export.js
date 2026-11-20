@@ -145,6 +145,8 @@ var ExportModule = {
             theme: StateManager.get('theme') || 'dark',
             favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
             achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
+            settings: StorageService.get(StorageService.KEYS.SETTINGS, {}) || {},
+            activity: StorageService.get(StorageService.KEYS.ACTIVITY, []) || [],
             healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
             version: '3.66.20',
             timestamp: new Date().toISOString()
@@ -237,6 +239,14 @@ var ExportModule = {
                     (!Array.isArray(data.achievements) || data.achievements.length > 5000)) {
                     throw new Error('Некорректный список достижений в бэкапе');
                 }
+                if (data && data.settings !== undefined &&
+                    (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings))) {
+                    throw new Error('Некорректные настройки в бэкапе');
+                }
+                if (data && data.activity !== undefined &&
+                    (!Array.isArray(data.activity) || data.activity.length > 10000)) {
+                    throw new Error('Некорректная история активности в бэкапе');
+                }
                 if (data && data.theme !== undefined && !['dark', 'light'].includes(data.theme)) {
                     throw new Error('Некорректная тема в бэкапе');
                 }
@@ -273,6 +283,12 @@ var ExportModule = {
                 if (data && data.achievements) {
                     StorageService.set('achievements', data.achievements);
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
+                }
+                if (data && data.settings !== undefined) {
+                    StorageService.set(StorageService.KEYS.SETTINGS, data.settings);
+                }
+                if (data && data.activity !== undefined) {
+                    StorageService.set(StorageService.KEYS.ACTIVITY, data.activity);
                 }
                 if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
                     if (typeof NotificationModule !== 'undefined') NotificationModule.error('Проекты загружены, но историю оценок сохранить не удалось');
