@@ -1123,6 +1123,36 @@ test('project create, update and delete roll back in-memory state when storage i
   assert.equal(events.includes('projects:saved'), false);
 });
 
+test('StateManager updates multiple projects in one storage write and rolls all of them back on failure', () => {
+  const events = [];
+  let allowSave = false;
+  const ctx = execute('js/core/state.js', {
+    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return allowSave; } },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  const state = ctx.StateManager;
+  const original = [{ id: 'a', name: 'A', notes: [{ id: 'n1' }] }, { id: 'b', name: 'B', notes: [] }];
+  state._state.projects = original;
+  assert.equal(state.updateProjects([
+    { projectId: 'a', updates: { notes: [] } },
+    { projectId: 'b', updates: { notes: [{ id: 'n1' }] } }
+  ]), null);
+  assert.equal(state._state.projects, original);
+  assert.equal(state.getProject('a'), original[0]);
+  assert.equal(state.getProject('b'), original[1]);
+  assert.equal(events.includes('project:updated'), false);
+
+  allowSave = true;
+  const updated = state.updateProjects([
+    { projectId: 'a', updates: { name: 'A2' } },
+    { projectId: 'b', updates: { name: 'B2' } }
+  ]);
+  assert.equal(updated.length, 2);
+  assert.equal(state.getProject('a').name, 'A2');
+  assert.equal(state.getProject('b').name, 'B2');
+  assert.equal(events.filter(name => name === 'project:updated').length, 2);
+});
+
 test('active service worker precaches every first-party stylesheet and script', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
@@ -3395,7 +3425,7 @@ test('project notes support multi-selection, bulk priority and cross-project tra
     assert.match(detail, /_moveSelectedNotes: function\(projectId\)/);
     assert.match(detail, /target\.id === source\.id/);
     assert.match(detail, /!confirm\('Перенести '/);
-    assert.match(detail, /StateManager\.updateProject\(target\.id, \{ notes: target\.notes \}\)/);
+    assert.match(detail, /StateManager\.updateProjects\(\[/);
     assert.match(css, /\.notes-bulk-toolbar \{/);
     assert.match(css, /\.note-select-input \{/);
 });
@@ -3410,7 +3440,15 @@ test('bulk note transfer changes only selected notes and respects cancellation',
     const updates = [];
     let shouldConfirm = false;
     const sandbox = {
-        StateManager: { getProject: id => projects[id], updateProject: (id, patch) => updates.push([id, patch]) },
+        StateManager: {
+            getProject: id => projects[id],
+            updateProject: (id, patch) => { updates.push([id, patch]); Object.assign(projects[id], patch); return projects[id]; },
+            updateProjects: entries => {
+                updates.push(['transaction', entries]);
+                entries.forEach(entry => Object.assign(projects[entry.projectId], entry.updates));
+                return entries.map(entry => projects[entry.projectId]);
+            }
+        },
         AuthService: { isOwner: () => true },
         document: { getElementById: id => ({ value: id === 'notesMoveTarget' ? 'b' : 'high' }) },
         NotesModule: { priorities: { high: true } },
@@ -3432,8 +3470,51 @@ test('bulk note transfer changes only selected notes and respects cancellation',
     detail._moveSelectedNotes('a');
     assert.deepEqual(from.notes.map(n => n.id), ['two']);
     assert.deepEqual(to.notes.map(n => n.id), ['one']);
-    assert.deepEqual(updates.map(update => update[0]), ['a', 'a', 'b']);
+    assert.deepEqual(updates.map(update => update[0]), ['a', 'transaction']);
+    assert.equal(updates[1][1].length, 2);
     assert.equal(detail._selectedNoteIds.size, 0);
+});
+
+test('bulk note actions do not mutate or report success when persistence fails', () => {
+    const source = fs.readFileSync(path.join(root, 'js/modules/project-detail.js'), 'utf8');
+    const from = { id: 'a', name: 'Источник', notes: [
+        { id: 'one', priority: 'low', completed: false },
+        { id: 'two', priority: 'medium', completed: false }
+    ], checklist: [] };
+    const to = { id: 'b', name: 'Назначение', notes: [] };
+    const projects = { a: from, b: to };
+    const errors = [];
+    const events = [];
+    const sandbox = {
+        StateManager: {
+            getProject: id => projects[id],
+            updateProject: () => null,
+            updateProjects: () => null
+        },
+        AuthService: { isOwner: () => true },
+        document: { getElementById: id => ({ value: id === 'notesMoveTarget' ? 'b' : 'high' }) },
+        NotesModule: { priorities: { high: true }, getNotes: () => [from.notes[0]] },
+        NotificationModule: { error: message => errors.push(message), warning() {}, success() {} },
+        EventBus: { emit: name => events.push(name) },
+        confirm: () => true,
+        window: {}, Set, Date, console
+    };
+    vm.runInNewContext(source, sandbox);
+    const detail = sandbox.window.ProjectDetailModule;
+    detail._selectedNoteIds = new Set(['one']);
+    detail._refreshNotes = () => {};
+    detail._getNotesFilter = () => ({});
+    detail._applySelectedPriority('a');
+    assert.equal(from.notes[0].priority, 'low');
+    assert.equal(events.length, 0);
+    detail._moveSelectedNotes('a');
+    assert.deepEqual(from.notes.map(note => note.id), ['one', 'two']);
+    assert.equal(to.notes.length, 0);
+    assert.equal(detail._selectedNoteIds.has('one'), true);
+    detail._completeVisibleNotes('a');
+    assert.equal(from.notes[0].completed, false);
+    assert.equal(events.length, 0);
+    assert.equal(errors.length, 3);
 });
 
 test('note-to-task conversion retains links and prevents duplicate tasks', () => {
