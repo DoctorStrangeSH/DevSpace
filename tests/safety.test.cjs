@@ -935,6 +935,19 @@ test('active service worker precaches every first-party stylesheet and script', 
   assert.deepEqual(missing, [], 'all first-party scripts and stylesheets must be available to the offline shell');
 });
 
+test('service worker keeps the previous version when a required offline asset fails', () => {
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const installStart = worker.indexOf("self.addEventListener('install'");
+  const activateStart = worker.indexOf("self.addEventListener('activate'");
+  assert.ok(installStart >= 0 && activateStart > installStart, 'worker install handler must exist');
+  const installHandler = worker.slice(installStart, activateStart);
+  assert.match(installHandler, /Promise\.all\s*\(/, 'required assets must all succeed before activation');
+  assert.doesNotMatch(installHandler, /Promise\.allSettled/, 'failed required assets must not be silently ignored');
+  assert.match(installHandler, /!response\s*\|\|\s*!response\.ok/, 'non-success responses must abort installation');
+  assert.match(installHandler, /caches\.delete\(STATIC_CACHE\)/, 'partial static cache must be removed after failure');
+  assert.match(installHandler, /throw error/, 'install failure must reject and preserve the active worker');
+});
+
 test('public Firebase client rejects writes before touching a database', async () => {
   const ctx = execute('js/services/firebase.js');
   const firebase = ctx.FirebaseService;
