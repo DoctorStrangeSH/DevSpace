@@ -3322,7 +3322,7 @@ test('pinned project notes sort ahead of ordinary notes and keep filter matches'
     ] };
     let saves = 0;
     const sandbox = {
-        StateManager: { getProject: () => project, updateProject: () => {}, saveProjects: () => { saves++; } },
+        StateManager: { getProject: () => project, updateProject: () => { saves++; return project; }, saveProjects: () => { throw new Error('NotesModule must not save the same project twice'); } },
         EventBus: { emit: () => {} },
         window: {}, console
     };
