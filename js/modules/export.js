@@ -148,7 +148,7 @@ var ExportModule = {
             settings: StorageService.get(StorageService.KEYS.SETTINGS, {}) || {},
             activity: StorageService.get(StorageService.KEYS.ACTIVITY, []) || [],
             healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
-            version: '3.66.22',
+            version: typeof App !== 'undefined' && App.config ? App.config.version : null,
             timestamp: new Date().toISOString()
         };
         var json = JSON.stringify(data, null, 2);
