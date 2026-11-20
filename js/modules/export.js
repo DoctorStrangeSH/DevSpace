@@ -303,7 +303,7 @@ var ExportModule = {
                 if (StateManager.saveProjects() === false) {
                     StateManager.set('projects', previousProjects);
                     if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
-                    if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+                    if (typeof RendererModule !== 'undefined' && typeof RendererModule.renderProjects === 'function') RendererModule.renderProjects();
                     throw new Error('Не удалось сохранить проекты. Проверьте свободное место в хранилище; прежние данные восстановлены.');
                 }
 
