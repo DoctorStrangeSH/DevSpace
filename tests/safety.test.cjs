@@ -366,7 +366,7 @@ test('full backup with malformed health history is rejected before replacing pro
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(writes.length, 0);
-  assert.match(errors[0], /некорректная дата истории|некорректная запись истории/);
+  assert.match(errors[0], /некорректная или повторная дата истории|некорректная запись истории/);
 });
 
 test('createBackup serializes every supported workspace data section', () => {
@@ -758,7 +758,7 @@ test('theme remains unchanged and reports an error when preference persistence f
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
-  assert.match(source, /Array\.isArray\(data\.healthHistory\)/);
+  assert.match(source, /_validateImportedHealthHistory\(data\.healthHistory\)/);
   assert.match(source, /data\.healthHistory !== undefined/);
   assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
 });
