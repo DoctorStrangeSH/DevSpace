@@ -3,33 +3,20 @@
    ============================================ */
 
 var GitHubService = {
-    _token: null,
     _username: 'DoctorStrangeSH',
 
     init: function() {
-        this._token = localStorage.getItem('github_token');
-        console.log('GitHubService: username =', this._username);
-    },
-
-    setToken: function(token) {
-        this._token = token;
-        localStorage.setItem('github_token', token);
-    },
-
-    isConnected: function() {
-        return !!this._token;
+        // Remove the legacy plaintext PAT. Public repository import uses no credentials.
+        try { localStorage.removeItem('github_token'); } catch (_) {}
+        console.log('GitHubService: public repositories only; no token stored');
     },
 
     getRepos: function() {
         if (!this._username) return Promise.resolve([]);
-        
+
         var url = 'https://api.github.com/users/' + this._username + '/repos?sort=updated&per_page=30';
-        var headers = {};
-        if (this._token) {
-            headers['Authorization'] = 'token ' + this._token;
-        }
-        
-        return fetch(url, { headers: headers })
+
+        return fetch(url)
             .then(function(res) {
                 if (!res.ok) throw new Error('GitHub API error: ' + res.status);
                 return res.json();
