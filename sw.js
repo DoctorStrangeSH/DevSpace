@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.66.20';
-const ASSET_VERSION = '3.66.20';
+const CACHE_VERSION = 'devspace-v3.66.21';
+const ASSET_VERSION = '3.66.21';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -71,37 +71,34 @@ const PRECACHE_URLS = [
 // ========== INSTALL ==========
 self.addEventListener('install', (event) => {
     console.log('SW: Installing...');
-    
+
     event.waitUntil(
         caches.open(STATIC_CACHE)
             .then(cache => {
-                console.log('SW: Caching files...');
-                
-                // Кешируем файлы по одному, игнорируя ошибки
-                return Promise.allSettled(
-                    PRECACHE_URLS.map(url => {
-                        return fetch(url, { 
-                            method: 'GET',
-                            credentials: 'same-origin',
-                            mode: 'same-origin'
-                        })
-                        .then(response => {
-                            if (response && response.ok) {
-                                return cache.put(url, response);
-                            } else {
-                                console.warn('SW: Skip caching (not ok):', url);
-                            }
-                        })
-                        .catch(err => {
-                            // Просто пропускаем недоступные файлы
-                            console.warn('SW: Skip caching (error):', url);
-                        });
-                    })
+                console.log('SW: Caching required app shell...');
+                return Promise.all(
+                    PRECACHE_URLS.map(url => fetch(url, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        mode: 'same-origin'
+                    }).then(response => {
+                        if (!response || !response.ok) {
+                            throw new Error('Required offline asset failed to load: ' + url);
+                        }
+                        return cache.put(url, response);
+                    }))
                 );
             })
             .then(() => {
-                console.log('SW: Caching complete');
+                console.log('SW: Required offline assets cached');
                 return self.skipWaiting();
+            })
+            .catch(error => {
+                // Do not leave a partial cache or replace the currently working worker.
+                return caches.delete(STATIC_CACHE).then(() => {
+                    console.error('SW: Installation aborted; previous worker remains active', error);
+                    throw error;
+                });
             })
     );
 });
