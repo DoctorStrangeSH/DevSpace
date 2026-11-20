@@ -3471,7 +3471,7 @@ test('bulk note transfer changes only selected notes and respects cancellation',
     assert.deepEqual(from.notes.map(n => n.id), ['two']);
     assert.deepEqual(to.notes.map(n => n.id), ['one']);
     assert.deepEqual(updates.map(update => update[0]), ['a', 'transaction']);
-    assert.equal(updates[2][1].length, 2);
+    assert.equal(updates[1][1].length, 2);
     assert.equal(detail._selectedNoteIds.size, 0);
 });
 
