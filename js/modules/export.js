@@ -157,6 +157,45 @@ var ExportModule = {
         }
     },
 
+    _validateBackupProjects: function(projects) {
+        if (!Array.isArray(projects) || projects.length > 1000) {
+            throw new Error('Некорректный список проектов в бэкапе');
+        }
+        var serialized;
+        try { serialized = JSON.stringify(projects); } catch (error) {
+            throw new Error('Бэкап содержит неподдерживаемые данные');
+        }
+        if (!serialized || serialized.length > 5 * 1024 * 1024) {
+            throw new Error('Размер данных проектов превышает 5 МБ');
+        }
+        var parsed = JSON.parse(serialized);
+        var seen = new Set();
+        var stack = [{ value: parsed, depth: 0 }];
+        var nodes = 0;
+        while (stack.length) {
+            var current = stack.pop();
+            if (++nodes > 50000 || current.depth > 40) throw new Error('Слишком сложная структура данных в бэкапе');
+            var value = current.value;
+            if (!value || typeof value !== 'object') continue;
+            Object.keys(value).forEach(function(key) {
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                    throw new Error('Бэкап содержит небезопасные поля');
+                }
+                stack.push({ value: value[key], depth: current.depth + 1 });
+            });
+        }
+        parsed.forEach(function(project) {
+            if (!project || typeof project !== 'object' || Array.isArray(project) ||
+                typeof project.id !== 'string' || !/^[a-zA-Z0-9_-]{1,150}$/.test(project.id) ||
+                typeof project.name !== 'string' || !project.name.trim() || project.name.length > 200) {
+                throw new Error('В бэкапе найден некорректный проект');
+            }
+            if (seen.has(project.id)) throw new Error('В бэкапе есть повторяющиеся ID проектов');
+            seen.add(project.id);
+        });
+        return parsed;
+    },
+
     _triggerImport: function() {
         var self = this;
         var input = document.createElement('input');
@@ -179,36 +218,59 @@ var ExportModule = {
             .then(function(text) {
                 var data = JSON.parse(text);
                 
-                // Определяем формат
+                // Validate and clone all imported project records before touching user data.
                 var projects;
                 if (Array.isArray(data)) {
                     projects = data;
-                } else if (data.projects && Array.isArray(data.projects)) {
+                } else if (data && Array.isArray(data.projects)) {
                     projects = data.projects;
                 } else {
                     throw new Error('Неверный формат');
                 }
+                projects = self._validateBackupProjects(projects);
 
-                // Проверяем историю до замены проектов. Старые бэкапы без неё поддерживаются.
-                var mergedHistory = Array.isArray(data.healthHistory) ? self._mergeHealthHistory(StorageService.get('healthHistory', []), data.healthHistory) : null;
-                if (data.healthHistory !== undefined && mergedHistory === null) throw new Error('Некорректная история в бэкапе');
+                if (data && data.favorites !== undefined &&
+                    (!Array.isArray(data.favorites) || data.favorites.length > 5000)) {
+                    throw new Error('Некорректный список избранного в бэкапе');
+                }
+                if (data && data.achievements !== undefined &&
+                    (!Array.isArray(data.achievements) || data.achievements.length > 5000)) {
+                    throw new Error('Некорректный список достижений в бэкапе');
+                }
+                if (data && data.theme !== undefined && !['dark', 'light'].includes(data.theme)) {
+                    throw new Error('Некорректная тема в бэкапе');
+                }
 
+                // Validate health history before any project replacement.
+                var mergedHistory = data && Array.isArray(data.healthHistory)
+                    ? self._mergeHealthHistory(StorageService.get('healthHistory', []), data.healthHistory) : null;
+                if (data && data.healthHistory !== undefined && mergedHistory === null) {
+                    throw new Error('Некорректная история в бэкапе');
+                }
                 if (!confirm('Импортировать ' + projects.length + ' проектов? Текущие будут заменены.')) return;
 
                 projects = projects.map(function(p) {
-                    p.name = (p.name || '').replace(/\s*\(копия\)\s*/gi, '').trim();
+                    p.name = p.name.replace(/\\s*\\(копия\\)\\s*/gi, '').trim();
                     p.updatedAt = new Date().toISOString();
                     return p;
                 });
 
                 StateManager.set('projects', projects);
                 StateManager.saveProjects();
-                
-                if (data.favorites) {
+
+                if (data && data.theme) {
+                    StateManager.set('theme', data.theme);
+                    StorageService.set('theme', data.theme);
+                    if (typeof document !== 'undefined' && document.documentElement) {
+                        document.documentElement.setAttribute('data-bs-theme', data.theme);
+                    }
+                }
+
+                if (data && data.favorites) {
                     StorageService.set('favorites', data.favorites);
                     if (typeof FavoritesModule !== 'undefined') FavoritesModule.favorites = data.favorites;
                 }
-                if (data.achievements) {
+                if (data && data.achievements) {
                     StorageService.set('achievements', data.achievements);
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
                 }

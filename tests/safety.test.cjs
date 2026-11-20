@@ -325,6 +325,48 @@ test('health history transfer validates and merges daily readings without overwr
   assert.match(html, /id="healthImportBtn"/);
 });
 
+test('backup project validator rejects malformed, duplicate and unsafe records', () => {
+  const service = execute('js/modules/export.js').ExportModule;
+  const valid = [{ id: 'project_1', name: 'Project One', checklist: [{ text: 'Task' }] }];
+  const normalized = service._validateBackupProjects(valid);
+  assert.deepEqual(JSON.parse(JSON.stringify(normalized)), valid);
+  assert.notEqual(normalized, valid);
+  assert.notEqual(normalized[0], valid[0]);
+  assert.throws(() => service._validateBackupProjects([{ id: 'same', name: 'One' }, { id: 'same', name: 'Two' }]), /повторяющиеся ID/);
+  assert.throws(() => service._validateBackupProjects([{ id: 'bad id', name: 'Invalid' }]), /некорректный проект/);
+  assert.throws(() => service._validateBackupProjects([null]), /некорректный проект/);
+  const unsafe = JSON.parse('[{"id":"p1","name":"Unsafe","meta":{"constructor":{"prototype":{"polluted":true}}}}]');
+  assert.throws(() => service._validateBackupProjects(unsafe), /небезопасные поля/);
+  assert.throws(() => service._validateBackupProjects(Array(1001).fill({ id: 'p', name: 'Too many' })), /список проектов/);
+});
+
+test('backup importer validates payload before confirmation and restores a valid theme', async () => {
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      theme: 'light',
+      projects: [{ id: 'p1', name: 'Imported project' }],
+      favorites: ['p1'],
+      achievements: []
+    })) },
+    confirm: () => true,
+    StateManager: {
+      set(path, value) { writes.push([path, value]); },
+      saveProjects() { writes.push(['saveProjects']); }
+    },
+    StorageService: { get() { return []; }, set(key, value) { writes.push([key, value]); return true; } },
+    document: { documentElement: { setAttribute(name, value) { writes.push([name, value]); } } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+  const writes = [];
+  const errors = [];
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(writes.some(([key, value]) => key === 'theme' && value === 'light'));
+  assert.ok(writes.some(([key, value]) => key === 'data-bs-theme' && value === 'light'));
+  assert.equal(errors.length, 0);
+});
+
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
