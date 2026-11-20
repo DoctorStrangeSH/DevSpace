@@ -2,10 +2,11 @@
 
 Проверка: 20.11.2026. Основная ветка: `main`.
 
-Все перечисленные ниже 34 ветки проверены относительно объединённых PR и содержимого текущей `main`. Ни одна из них не является текущей рабочей веткой. Их удаление не удаляет коммиты из `main`.
+Все перечисленные ниже 35 веток проверены относительно объединённых PR и содержимого текущей `main`. Ни одна из них не является текущей рабочей веткой. Их удаление не удаляет коммиты из `main`.
 
-## Ветки из объединённых PR (30)
+## Ветки из объединённых PR (31)
 
+- `docs/branch-cleanup-audit`
 - `chore/remove-orphan-modules-v2`
 - `chore/repository-hygiene`
 - `docs/release-1.0-acceptance`
@@ -52,7 +53,7 @@
 
 ```powershell
 git fetch --prune origin
-git push origin --delete chore/remove-orphan-modules chore/remove-orphan-modules-v2 chore/repository-hygiene docs/release-1.0-acceptance docs/release-checklist-automation-status feat/compact-section-dock feat/compact-section-dock-clean feat/complete-backup-data fix/backup-import-transaction fix/backup-import-validation fix/backup-restore-ui-state fix/backup-storage-failure-reporting fix/bulk-notes-atomic-persistence fix/checklist-rollback-on-storage-failure fix/notes-rollback-on-storage-failure fix/notes-safe-render-and-links fix/project-save-failure-keeps-form fix/pwa-atomic-precache fix/pwa-precache-cleanup-race fix/roadmap-save-failure-feedback fix/secondary-mutations-storage-failure fix/secondary-mutations-storage-failure-v2 fix/state-mutations-on-storage-failure fix/storage-clear-all-prefixed-data fix/sync-reconnect-handler fix/sync-storage-async-init fix/theme-persist-same-selection fix/theme-persistence-failure fix/theme-persistence-failure-rebased test/backup-project-save-failure-rollback test/backup-rollback-failure-warning test/full-backup-roundtrip test/pwa-install-rollback-behavior test/pwa-precache-integrity
+git push origin --delete docs/branch-cleanup-audit chore/remove-orphan-modules chore/remove-orphan-modules-v2 chore/repository-hygiene docs/release-1.0-acceptance docs/release-checklist-automation-status feat/compact-section-dock feat/compact-section-dock-clean feat/complete-backup-data fix/backup-import-transaction fix/backup-import-validation fix/backup-restore-ui-state fix/backup-storage-failure-reporting fix/bulk-notes-atomic-persistence fix/checklist-rollback-on-storage-failure fix/notes-rollback-on-storage-failure fix/notes-safe-render-and-links fix/project-save-failure-keeps-form fix/pwa-atomic-precache fix/pwa-precache-cleanup-race fix/roadmap-save-failure-feedback fix/secondary-mutations-storage-failure fix/secondary-mutations-storage-failure-v2 fix/state-mutations-on-storage-failure fix/storage-clear-all-prefixed-data fix/sync-reconnect-handler fix/sync-storage-async-init fix/theme-persist-same-selection fix/theme-persistence-failure fix/theme-persistence-failure-rebased test/backup-project-save-failure-rollback test/backup-rollback-failure-warning test/full-backup-roundtrip test/pwa-install-rollback-behavior test/pwa-precache-integrity
 ```
 
 Команда удаляет только перечисленные удалённые ветки. Ветка `main` не затрагивается. Если GitHub сообщает, что отдельная ветка уже удалена, это не мешает удалению остальных.
