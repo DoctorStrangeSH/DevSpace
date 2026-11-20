@@ -2280,6 +2280,53 @@ test('decorative particles are fetched only after idle on capable screens', () =
   assert.ok(app.includes("script.onload = startParticles"));
 });
 
+
+test('StateManager undo and redo keep history and runtime state unchanged when persistence fails', () => {
+  for (const action of ['undo', 'redo']) {
+    const events = [];
+    let statsUpdates = 0;
+    const ctx = execute('js/core/state.js', {
+      EventBus: { emit(name) { events.push(name); } }
+    });
+    const manager = ctx.StateManager;
+    const oldProjects = [{ id: 'old', name: 'Old project' }];
+    const newProjects = [{ id: 'new', name: 'New project' }];
+    manager._state.projects = action === 'undo' ? newProjects : oldProjects;
+    manager._history = [oldProjects, newProjects];
+    manager._historyIndex = action === 'undo' ? 1 : 0;
+    manager.saveProjects = () => false;
+    manager._updateStats = () => { statsUpdates++; };
+
+    assert.equal(manager[action](), false);
+    assert.equal(manager._state.projects, action === 'undo' ? newProjects : oldProjects);
+    assert.equal(manager._historyIndex, action === 'undo' ? 1 : 0);
+    assert.equal(statsUpdates, 1);
+    assert.equal(events.includes(action + ':performed'), false);
+  }
+});
+
+test('StateManager undo and redo advance history only after successful persistence', () => {
+  for (const action of ['undo', 'redo']) {
+    const events = [];
+    const ctx = execute('js/core/state.js', {
+      EventBus: { emit(name) { events.push(name); } }
+    });
+    const manager = ctx.StateManager;
+    const oldProjects = [{ id: 'old', name: 'Old project' }];
+    const newProjects = [{ id: 'new', name: 'New project' }];
+    manager._state.projects = action === 'undo' ? newProjects : oldProjects;
+    manager._history = [oldProjects, newProjects];
+    manager._historyIndex = action === 'undo' ? 1 : 0;
+    manager.saveProjects = () => true;
+    manager._updateStats = () => {};
+
+    assert.equal(manager[action](), true);
+    assert.equal(manager._state.projects[0].id, action === 'undo' ? 'old' : 'new');
+    assert.equal(manager._historyIndex, action === 'undo' ? 0 : 1);
+    assert.equal(events.includes(action + ':performed'), true);
+  }
+});
+
 test('tracker never intercepts native browser new-window or text-undo shortcuts', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
