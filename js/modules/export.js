@@ -145,6 +145,8 @@ var ExportModule = {
             theme: StateManager.get('theme') || 'dark',
             favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
             achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
+            settings: StorageService.get(StorageService.KEYS.SETTINGS, {}) || {},
+            activity: StorageService.get(StorageService.KEYS.ACTIVITY, []) || [],
             healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
             version: '3.66.20',
             timestamp: new Date().toISOString()
@@ -196,6 +198,37 @@ var ExportModule = {
         return parsed;
     },
 
+    _validateBackupMetadata: function(value, expectArray, maxEntries, label) {
+        var validShape = expectArray ? Array.isArray(value) : value && typeof value === 'object' && !Array.isArray(value);
+        if (!validShape || Object.keys(value).length > maxEntries) {
+            throw new Error('Некорректные данные раздела «' + label + '» в бэкапе');
+        }
+        var serialized;
+        try { serialized = JSON.stringify(value); } catch (error) {
+            throw new Error('Не удалось проверить раздел «' + label + '»');
+        }
+        if (!serialized || serialized.length > 1024 * 1024) {
+            throw new Error('Раздел «' + label + '» слишком большой');
+        }
+        var parsed = JSON.parse(serialized);
+        var stack = [{ value: parsed, depth: 0 }];
+        var nodes = 0;
+        while (stack.length) {
+            var current = stack.pop();
+            if (++nodes > 20000 || current.depth > 30) {
+                throw new Error('Слишком сложные данные раздела «' + label + '»');
+            }
+            if (!current.value || typeof current.value !== 'object') continue;
+            Object.keys(current.value).forEach(function(key) {
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                    throw new Error('Раздел «' + label + '» содержит небезопасные поля');
+                }
+                stack.push({ value: current.value[key], depth: current.depth + 1 });
+            });
+        }
+        return parsed;
+    },
+
     _triggerImport: function() {
         var self = this;
         var input = document.createElement('input');
@@ -237,6 +270,10 @@ var ExportModule = {
                     (!Array.isArray(data.achievements) || data.achievements.length > 5000)) {
                     throw new Error('Некорректный список достижений в бэкапе');
                 }
+                var importedSettings = data && data.settings !== undefined
+                    ? self._validateBackupMetadata(data.settings, false, 500, 'настройки') : undefined;
+                var importedActivity = data && data.activity !== undefined
+                    ? self._validateBackupMetadata(data.activity, true, 10000, 'активность') : undefined;
                 if (data && data.theme !== undefined && !['dark', 'light'].includes(data.theme)) {
                     throw new Error('Некорректная тема в бэкапе');
                 }
@@ -273,6 +310,12 @@ var ExportModule = {
                 if (data && data.achievements) {
                     StorageService.set('achievements', data.achievements);
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
+                }
+                if (data && data.settings !== undefined) {
+                    StorageService.set(StorageService.KEYS.SETTINGS, importedSettings);
+                }
+                if (data && data.activity !== undefined) {
+                    StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity);
                 }
                 if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
                     if (typeof NotificationModule !== 'undefined') NotificationModule.error('Проекты загружены, но историю оценок сохранить не удалось');

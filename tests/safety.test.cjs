@@ -325,6 +325,15 @@ test('health history transfer validates and merges daily readings without overwr
   assert.match(html, /id="healthImportBtn"/);
 });
 
+test('full backup includes settings and activity alongside projects and theme', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
+  assert.match(source, /settings: StorageService\.get\(StorageService\.KEYS\.SETTINGS, \{\}\)/);
+  assert.match(source, /activity: StorageService\.get\(StorageService\.KEYS\.ACTIVITY, \[\]\)/);
+  assert.match(source, /StorageService\.set\(StorageService\.KEYS\.SETTINGS, importedSettings\)/);
+  assert.match(source, /StorageService\.set\(StorageService\.KEYS\.ACTIVITY, importedActivity\)/);
+  assert.match(source, /_validateBackupMetadata/);
+});
+
 test('backup project validator rejects malformed, duplicate and unsafe records', () => {
   const service = execute('js/modules/export.js').ExportModule;
   const valid = [{ id: 'project_1', name: 'Project One', checklist: [{ text: 'Task' }] }];
@@ -346,14 +355,20 @@ test('backup importer validates payload before confirmation and restores a valid
       theme: 'light',
       projects: [{ id: 'p1', name: 'Imported project' }],
       favorites: ['p1'],
-      achievements: []
+      achievements: [],
+      settings: { compactMode: true },
+      activity: [{ type: 'project-created', at: '2026-11-20T09:00:00.000Z' }]
     })) },
     confirm: () => true,
     StateManager: {
       set(path, value) { writes.push([path, value]); },
       saveProjects() { writes.push(['saveProjects']); }
     },
-    StorageService: { get() { return []; }, set(key, value) { writes.push([key, value]); return true; } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get() { return []; },
+      set(key, value) { writes.push([key, value]); return true; }
+    },
     document: { documentElement: { setAttribute(name, value) { writes.push([name, value]); } } },
     NotificationModule: { success() {}, error(message) { errors.push(message); } }
   }).ExportModule;
@@ -364,7 +379,29 @@ test('backup importer validates payload before confirmation and restores a valid
   await Promise.resolve();
   assert.ok(writes.some(([key, value]) => key === 'theme' && value === 'light'));
   assert.ok(writes.some(([key, value]) => key === 'data-bs-theme' && value === 'light'));
+  assert.ok(writes.some(([key, value]) => key === 'settings' && value.compactMode === true));
+  assert.ok(writes.some(([key, value]) => key === 'activity' && value[0].type === 'project-created'));
   assert.equal(errors.length, 0);
+});
+
+test('backup importer rejects invalid settings before writing any project data', async () => {
+  const writes = [];
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'p1', name: 'Valid project' }],
+      settings: ['not', 'an', 'object']
+    })) },
+    confirm: () => { throw Error('Invalid backup must not ask for confirmation'); },
+    StateManager: { set(path, value) { writes.push([path, value]); }, saveProjects() { writes.push(['saveProjects']); } },
+    StorageService: { get() { return []; }, set(key, value) { writes.push([key, value]); return true; } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+  service._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(writes.length, 0);
+  assert.match(errors[0], /настройки/);
 });
 
 test('project backup carries health history while legacy backup import remains supported', () => {
