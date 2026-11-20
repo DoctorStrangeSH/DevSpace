@@ -289,29 +289,37 @@ const StateManager = {
 
     undo() {
         if (this._historyIndex <= 0) return false;
-        
-        this._historyIndex--;
-        this._state.projects = JSON.parse(
-            JSON.stringify(this._history[this._historyIndex])
-        );
-        
-        this.saveProjects();
+
+        const targetIndex = this._historyIndex - 1;
+        const previousProjects = this._state.projects;
+        this._state.projects = JSON.parse(JSON.stringify(this._history[targetIndex]));
+
+        if (!this.saveProjects()) {
+            this._state.projects = previousProjects;
+            this._updateStats();
+            return false;
+        }
+
+        this._historyIndex = targetIndex;
         EventBus.emit('undo:performed');
-        
         return true;
     },
 
     redo() {
         if (this._historyIndex >= this._history.length - 1) return false;
-        
-        this._historyIndex++;
-        this._state.projects = JSON.parse(
-            JSON.stringify(this._history[this._historyIndex])
-        );
-        
-        this.saveProjects();
+
+        const targetIndex = this._historyIndex + 1;
+        const previousProjects = this._state.projects;
+        this._state.projects = JSON.parse(JSON.stringify(this._history[targetIndex]));
+
+        if (!this.saveProjects()) {
+            this._state.projects = previousProjects;
+            this._updateStats();
+            return false;
+        }
+
+        this._historyIndex = targetIndex;
         EventBus.emit('redo:performed');
-        
         return true;
     },
 
