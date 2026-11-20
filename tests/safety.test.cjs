@@ -1655,11 +1655,12 @@ test('roadmap task assignment validates stage names and keeps checklist flags', 
   const roadmap = ctx.ProjectDetailModule;
   assert.equal(roadmap.assignTaskStage('p', 't', 'Unknown'), false);
   assert.equal(roadmap.assignTaskStage('p', 't', 'Дизайн'), true);
-  assert.equal(project.checklist[0].milestone, 'Дизайн');
-  assert.equal(project.checklist[0].completed, true);
+  assert.equal(project.checklist[0].milestone, undefined);
+  assert.equal(saved[0].checklist[0].milestone, 'Дизайн');
+  assert.equal(saved[0].checklist[0].completed, true);
   assert.equal(saved.length, 1);
   assert.equal(roadmap.assignTaskStage('p', 't', ''), true);
-  assert.equal(Object.hasOwn(project.checklist[0], 'milestone'), false);
+  assert.equal(Object.hasOwn(saved[1].checklist[0], 'milestone'), false);
 });
 
 test('manual roadmap completion refuses stages containing linked tasks', () => {
@@ -1852,7 +1853,8 @@ test('roadmap creates checklist tasks only for a valid stage and links returned 
   assert.equal(calls.length, 0);
   assert.equal(roadmap.addRoadmapTask('p', 'Фундамент', '  Проверить сборку '), true);
   assert.equal(project.checklist[0].text, 'Проверить сборку');
-  assert.equal(project.checklist[0].milestone, 'Фундамент');
+  assert.equal(project.checklist[0].milestone, undefined);
+  assert.equal(calls[1].checklist[0].milestone, 'Фундамент');
   assert.equal(calls.length, 2);
 });
 
