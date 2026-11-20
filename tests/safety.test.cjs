@@ -462,6 +462,74 @@ test('backup importer reports storage quota failures instead of claiming a full 
   assert.match(errors[0], /журнал активности не удалось сохранить/);
 });
 
+test('backup importer rolls back every store when a later write fails', async () => {
+  const errors = [];
+  const values = new Map([
+    ['theme', 'dark'],
+    ['favorites', ['old_favorite']],
+    ['achievements', ['old_achievement']],
+    ['settings', { compactMode: false }],
+    ['activity', [{ type: 'old-event' }]],
+    ['healthHistory', [{ date: '2026-11-01', scores: { focus: 50 } }]]
+  ]);
+  const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'dark' };
+  const favorites = { favorites: ['old_favorite'] };
+  const achievements = { unlocked: ['old_achievement'] };
+  let failActivityWriteOnce = true;
+  const storage = {
+    KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+    get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+    set(key, value) {
+      if (key === 'activity' && failActivityWriteOnce) {
+        failActivityWriteOnce = false;
+        return false;
+      }
+      values.set(key, value);
+      return true;
+    },
+    remove(key) { values.delete(key); return true; }
+  };
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      theme: 'light',
+      favorites: ['new_favorite'],
+      achievements: ['new_achievement'],
+      settings: { compactMode: true },
+      activity: [{ type: 'new-event' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: storage,
+    FavoritesModule: favorites,
+    AchievementsModule: achievements,
+    ThemeModule: { setTheme(value) { state.theme = value; values.set('theme', value); } },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {}, _updateQuickAccess() {}, _renderAchievements() {} },
+    NotificationModule: { success() { throw new Error('must not report success'); }, error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(state.projects, [{ id: 'old_project', name: 'Old project' }]);
+  assert.equal(state.theme, 'dark');
+  assert.deepEqual(favorites.favorites, ['old_favorite']);
+  assert.deepEqual(achievements.unlocked, ['old_achievement']);
+  assert.deepEqual(values.get('theme'), 'dark');
+  assert.deepEqual(values.get('favorites'), ['old_favorite']);
+  assert.deepEqual(values.get('achievements'), ['old_achievement']);
+  assert.deepEqual(values.get('settings'), { compactMode: false });
+  assert.deepEqual(values.get('activity'), [{ type: 'old-event' }]);
+  assert.deepEqual(values.get('healthHistory'), [{ date: '2026-11-01', scores: { focus: 50 } }]);
+  assert.match(errors[0], /Импорт отменён, прежние данные восстановлены/);
+});
+
 test('backup importer rejects invalid settings before writing any project data', async () => {
   const writes = [];
   const errors = [];

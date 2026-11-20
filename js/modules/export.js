@@ -298,68 +298,129 @@ var ExportModule = {
                     return p;
                 });
 
+                // Snapshot every affected store before the first write. If any later
+                // write fails (quota, storage error, etc.), restore the complete prior state.
+                var missingValue = {};
+                var storageKeys = ['theme', 'favorites', 'achievements',
+                    StorageService.KEYS.SETTINGS, StorageService.KEYS.ACTIVITY, 'healthHistory'];
+                var previousStorage = {};
+                storageKeys.forEach(function(key) {
+                    previousStorage[key] = StorageService.get(key, missingValue);
+                });
                 var previousProjects = StateManager.get('projects') || [];
-                StateManager.set('projects', projects);
-                if (StateManager.saveProjects() === false) {
+                var previousTheme = StateManager.get('theme');
+                var previousFavorites = typeof FavoritesModule !== 'undefined'
+                    ? FavoritesModule.favorites : undefined;
+                var previousAchievements = typeof AchievementsModule !== 'undefined'
+                    ? AchievementsModule.unlocked : undefined;
+
+                try {
+                    StateManager.set('projects', projects);
+                    if (StateManager.saveProjects() === false) {
+                        StateManager.set('projects', previousProjects);
+                        if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
+                        if (typeof RendererModule !== 'undefined' && typeof RendererModule.renderProjects === 'function') RendererModule.renderProjects();
+                        throw new Error('Не удалось сохранить проекты. Проверьте свободное место в хранилище; прежние данные восстановлены.');
+                    }
+    
+                    if (data && data.theme) {
+                        if (typeof ThemeModule !== 'undefined' && typeof ThemeModule.setTheme === 'function') {
+                            ThemeModule.setTheme(data.theme, true);
+                        } else {
+                            StateManager.set('theme', data.theme);
+                            if (!StorageService.set('theme', data.theme)) {
+                                throw new Error('Проекты импортированы, но тему не удалось сохранить');
+                            }
+                            if (typeof document !== 'undefined' && document.documentElement) {
+                                document.documentElement.setAttribute('data-bs-theme', data.theme);
+                            }
+                        }
+                        if (StorageService.get('theme') !== data.theme) {
+                            throw new Error('Проекты импортированы, но выбранную тему не удалось сохранить');
+                        }
+                    }
+    
+                    if (data && data.favorites) {
+                        if (!StorageService.set('favorites', importedFavorites)) {
+                            throw new Error('Проекты импортированы, но избранное не удалось сохранить');
+                        }
+                        if (typeof FavoritesModule !== 'undefined') {
+                            FavoritesModule.favorites = importedFavorites;
+                            if (typeof RendererModule !== 'undefined' && typeof RendererModule._updateQuickAccess === 'function') {
+                                RendererModule._updateQuickAccess();
+                            }
+                        }
+                    }
+                    if (data && data.achievements) {
+                        if (!StorageService.set('achievements', importedAchievements)) {
+                            throw new Error('Проекты импортированы, но достижения не удалось сохранить');
+                        }
+                        if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = importedAchievements;
+                    }
+                    if (data && data.settings !== undefined &&
+                        !StorageService.set(StorageService.KEYS.SETTINGS, importedSettings)) {
+                        throw new Error('Проекты импортированы, но настройки не удалось сохранить');
+                    }
+                    if (data && data.activity !== undefined &&
+                        !StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity)) {
+                        throw new Error('Проекты импортированы, но журнал активности не удалось сохранить');
+                    }
+                    if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
+                        throw new Error('Проекты импортированы, но историю оценок не удалось сохранить');
+                    }
+                    
+                    if (typeof RendererModule !== 'undefined') {
+                        RendererModule.renderProjects();
+                        RendererModule.renderStats();
+                        RendererModule._renderInsights();
+                    }
+                    if (typeof AchievementsModule !== 'undefined') {
+                        AchievementsModule._renderAchievements();
+                    }
+    
+                } catch (applyError) {
+                    // Roll back all persisted keys, not just the projects collection.
+                    var rollbackSucceeded = true;
+                    Object.keys(previousStorage).reverse().forEach(function(key) {
+                        var previousValue = previousStorage[key];
+                        if (previousValue === missingValue) {
+                            if (typeof StorageService.remove === 'function') {
+                                if (StorageService.remove(key) === false) rollbackSucceeded = false;
+                            } else {
+                                rollbackSucceeded = false;
+                            }
+                        } else if (StorageService.set(key, previousValue) === false) {
+                            rollbackSucceeded = false;
+                        }
+                    });
                     StateManager.set('projects', previousProjects);
+                    StateManager.set('theme', previousTheme);
+                    if (typeof StateManager.saveProjects === 'function' &&
+                        StateManager.saveProjects() === false) rollbackSucceeded = false;
+                    if (typeof FavoritesModule !== 'undefined' && previousFavorites !== undefined) {
+                        FavoritesModule.favorites = previousFavorites;
+                    }
+                    if (typeof AchievementsModule !== 'undefined' && previousAchievements !== undefined) {
+                        AchievementsModule.unlocked = previousAchievements;
+                    }
+                    if (previousTheme && typeof ThemeModule !== 'undefined' &&
+                        typeof ThemeModule.setTheme === 'function') {
+                        ThemeModule.setTheme(previousTheme, true);
+                    }
                     if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
-                    if (typeof RendererModule !== 'undefined' && typeof RendererModule.renderProjects === 'function') RendererModule.renderProjects();
-                    throw new Error('Не удалось сохранить проекты. Проверьте свободное место в хранилище; прежние данные восстановлены.');
-                }
-
-                if (data && data.theme) {
-                    if (typeof ThemeModule !== 'undefined' && typeof ThemeModule.setTheme === 'function') {
-                        ThemeModule.setTheme(data.theme, true);
-                    } else {
-                        StateManager.set('theme', data.theme);
-                        if (!StorageService.set('theme', data.theme)) {
-                            throw new Error('Проекты импортированы, но тему не удалось сохранить');
-                        }
-                        if (typeof document !== 'undefined' && document.documentElement) {
-                            document.documentElement.setAttribute('data-bs-theme', data.theme);
-                        }
+                    if (typeof RendererModule !== 'undefined') {
+                        if (typeof RendererModule.renderProjects === 'function') RendererModule.renderProjects();
+                        if (typeof RendererModule.renderStats === 'function') RendererModule.renderStats();
+                        if (typeof RendererModule._renderInsights === 'function') RendererModule._renderInsights();
+                        if (typeof RendererModule._updateQuickAccess === 'function') RendererModule._updateQuickAccess();
                     }
-                    if (StorageService.get('theme') !== data.theme) {
-                        throw new Error('Проекты импортированы, но выбранную тему не удалось сохранить');
+                    if (typeof AchievementsModule !== 'undefined' &&
+                        typeof AchievementsModule._renderAchievements === 'function') {
+                        AchievementsModule._renderAchievements();
                     }
-                }
-
-                if (data && data.favorites) {
-                    if (!StorageService.set('favorites', importedFavorites)) {
-                        throw new Error('Проекты импортированы, но избранное не удалось сохранить');
-                    }
-                    if (typeof FavoritesModule !== 'undefined') {
-                        FavoritesModule.favorites = importedFavorites;
-                        if (typeof RendererModule !== 'undefined' && typeof RendererModule._updateQuickAccess === 'function') {
-                            RendererModule._updateQuickAccess();
-                        }
-                    }
-                }
-                if (data && data.achievements) {
-                    if (!StorageService.set('achievements', importedAchievements)) {
-                        throw new Error('Проекты импортированы, но достижения не удалось сохранить');
-                    }
-                    if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = importedAchievements;
-                }
-                if (data && data.settings !== undefined &&
-                    !StorageService.set(StorageService.KEYS.SETTINGS, importedSettings)) {
-                    throw new Error('Проекты импортированы, но настройки не удалось сохранить');
-                }
-                if (data && data.activity !== undefined &&
-                    !StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity)) {
-                    throw new Error('Проекты импортированы, но журнал активности не удалось сохранить');
-                }
-                if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
-                    throw new Error('Проекты импортированы, но историю оценок не удалось сохранить');
-                }
-                
-                if (typeof RendererModule !== 'undefined') {
-                    RendererModule.renderProjects();
-                    RendererModule.renderStats();
-                    RendererModule._renderInsights();
-                }
-                if (typeof AchievementsModule !== 'undefined') {
-                    AchievementsModule._renderAchievements();
+                    throw new Error(applyError.message + (rollbackSucceeded
+                        ? ' Импорт отменён, прежние данные восстановлены.'
+                        : ' Импорт прерван; автоматическое восстановление завершилось не полностью. Проверьте хранилище и восстановите данные из резервной копии.'));
                 }
                 
                 if (typeof NotificationModule !== 'undefined') {
