@@ -257,12 +257,20 @@ var ExportModule = {
 
                 StateManager.set('projects', projects);
                 StateManager.saveProjects();
-                
-                if (data.favorites) {
+
+                if (data && data.theme) {
+                    StateManager.set('theme', data.theme);
+                    StorageService.set('theme', data.theme);
+                    if (typeof document !== 'undefined' && document.documentElement) {
+                        document.documentElement.setAttribute('data-bs-theme', data.theme);
+                    }
+                }
+
+                if (data && data.favorites) {
                     StorageService.set('favorites', data.favorites);
                     if (typeof FavoritesModule !== 'undefined') FavoritesModule.favorites = data.favorites;
                 }
-                if (data.achievements) {
+                if (data && data.achievements) {
                     StorageService.set('achievements', data.achievements);
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
                 }
