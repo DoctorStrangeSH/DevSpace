@@ -586,6 +586,47 @@ test('backup importer warns when rollback itself cannot restore every storage ke
   assert.equal(JSON.stringify(values.get('settings')), JSON.stringify({ compactMode: true }));
 });
 
+test('backup importer restores prior projects when the initial project save fails', async () => {
+  const errors = [];
+  const oldProjects = [{ id: 'old_project', name: 'Old project' }];
+  const state = { projects: oldProjects };
+  let saveCalls = 0;
+  const storageWrites = [];
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      theme: 'light',
+      favorites: ['new_project'],
+      settings: { compactMode: true }
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { saveCalls++; return saveCalls > 1; },
+      _updateStats() {}
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set(key, value) { storageWrites.push([key, value]); return true; },
+      remove() { return true; }
+    },
+    ThemeModule: { setTheme() { throw Error('theme must not be applied after failed project save'); } },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {}, _updateQuickAccess() {} },
+    NotificationModule: { success() { throw Error('must not report success'); }, error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(state.projects, oldProjects);
+  assert.equal(saveCalls, 2, 'the failed write is followed by a rollback save');
+  assert.deepEqual(storageWrites, [], 'metadata must not be changed if projects cannot be saved');
+  assert.match(errors[0], /прежние данные восстановлены/);
+});
+
 test('backup importer rejects invalid settings before writing any project data', async () => {
   const writes = [];
   const errors = [];
