@@ -66,9 +66,19 @@ const TimeTrackerModule = {
 
         const project = StateManager.getProject(projectId);
         if (project) {
-            project.trackedTime = (project.trackedTime || 0) + elapsed;
-            StateManager.updateProject(projectId, { trackedTime: project.trackedTime });
-            StateManager.saveProjects();
+            const previousTrackedTime = project.trackedTime || 0;
+            project.trackedTime = previousTrackedTime + elapsed;
+            const saved = StateManager.updateProject(projectId, { trackedTime: project.trackedTime });
+            if (saved === false || saved === null) {
+                project.trackedTime = previousTrackedTime;
+                this.timerInterval = setInterval(() => this._updateTimerDisplay(), 1000);
+                if (typeof NotificationModule !== 'undefined') {
+                    const message = 'Не удалось сохранить затраченное время. Сессия оставлена активной — попробуйте остановить её ещё раз.';
+                    if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+                    else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+                }
+                return false;
+            }
         }
 
         const formatted = this._formatTime(elapsed);
