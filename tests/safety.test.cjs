@@ -372,7 +372,7 @@ test('full backup with malformed health history is rejected before replacing pro
 test('createBackup serializes every supported workspace data section', () => {
   let downloaded = null;
   const ctx = execute('js/modules/export.js', {
-    App: { config: { version: '3.66.27' } },
+    App: { config: { version: '3.66.28' } },
     StateManager: { get(path) {
       return path === 'projects' ? [{ id: 'p1', name: 'Project One', checklist: [{ id: 't1', text: 'Task' }], notes: [{ id: 'n1', title: 'Note' }] }]
         : path === 'theme' ? 'light' : null;
@@ -396,7 +396,7 @@ test('createBackup serializes every supported workspace data section', () => {
   ctx.ExportModule.createBackup();
   assert.ok(downloaded);
   const backup = JSON.parse(downloaded.data);
-  assert.equal(backup.version, '3.66.27');
+  assert.equal(backup.version, '3.66.28');
   assert.equal(backup.projects[0].checklist[0].text, 'Task');
   assert.equal(backup.projects[0].notes[0].title, 'Note');
   assert.equal(backup.theme, 'light');
@@ -2109,8 +2109,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.27') < sources.indexOf('js/app.js?v=3.66.27'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.27') < sources.indexOf('js/app.js?v=3.66.27'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.28') < sources.indexOf('js/app.js?v=3.66.28'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.28') < sources.indexOf('js/app.js?v=3.66.28'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -2354,6 +2354,59 @@ test('mobile menu announces its state, supports Escape and fits the viewport', (
   assert.ok(css.includes('overscroll-behavior: contain'));
 });
 
+
+test('mobile navigation Escape works when focus remains on the external menu toggle', () => {
+  let documentKeydown;
+  let hidden = 0;
+  let focused = 0;
+  const navigation = {
+    classList: { contains: name => name === 'show' },
+    querySelector: () => null,
+    addEventListener() {}
+  };
+  const toggler = { setAttribute() {}, focus() { focused++; } };
+  const document = {
+    getElementById: id => id === 'navbarContent' ? navigation : null,
+    querySelector: () => toggler,
+    addEventListener(name, callback) { if (name === 'keydown') documentKeydown = callback; }
+  };
+  const bootstrap = {
+    Collapse: {
+      getOrCreateInstance(target, options) {
+        assert.equal(target, navigation);
+        assert.deepEqual(options, { toggle: false });
+        return { hide() { hidden++; } };
+      }
+    }
+  };
+  execute('js/portfolio-nav.js', { document, bootstrap });
+  assert.equal(typeof documentKeydown, 'function');
+  const event = { key: 'Escape', preventDefault() { this.prevented = true; } };
+  documentKeydown(event);
+  assert.equal(hidden, 1);
+  assert.equal(focused, 1);
+  assert.equal(event.prevented, true);
+});
+
+test('mobile navigation leaves Escape to an expanded Bootstrap dropdown', () => {
+  let documentKeydown;
+  let hidden = 0;
+  const navigation = {
+    classList: { contains: name => name === 'show' },
+    querySelector: selector => selector === '.dropdown-menu.show' ? {} : null,
+    addEventListener() {}
+  };
+  const document = {
+    getElementById: id => id === 'navbarContent' ? navigation : null,
+    querySelector: () => ({ setAttribute() {}, focus() {} }),
+    addEventListener(name, callback) { if (name === 'keydown') documentKeydown = callback; }
+  };
+  const bootstrap = { Collapse: { getOrCreateInstance: () => ({ hide() { hidden++; } }) } };
+  execute('js/portfolio-nav.js', { document, bootstrap });
+  documentKeydown({ key: 'Escape', preventDefault() { throw new Error('must not intercept dropdown Escape'); } });
+  assert.equal(hidden, 0);
+});
+
 test('project story keeps the active section tab visible in narrow viewports', () => {
   const source = fs.readFileSync(path.join(root, 'js/portfolio.js'), 'utf8');
   assert.ok(source.includes("button.closest('.showcase-section-nav')"));
@@ -2403,7 +2456,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.27" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.28" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -2433,7 +2486,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.27"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.28"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -2460,7 +2513,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.27"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.28"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -2560,7 +2613,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.27"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.28"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -2850,13 +2903,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.66.27 cache, HTML fallback and visible application version are aligned', () => {
+test('3.66.28 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.66.27'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.27'"));
-  assert.ok(html.includes('id="appVersion">v3.66.27</span>'));
+  assert.ok(app.includes("version: '3.66.28'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.28'"));
+  assert.ok(html.includes('id="appVersion">v3.66.28</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -2866,10 +2919,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.66.27', `${file} is not versioned`);
+    assert.equal(version, '?v=3.66.28', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.66.27'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.66.28'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
