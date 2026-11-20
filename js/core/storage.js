@@ -65,8 +65,16 @@ const StorageService = {
     
     // Проверка существования
     has(key) {
-        const fullKey = this._getKey(key);
-        return localStorage.getItem(fullKey) !== null;
+        try {
+            const fullKey = this._getKey(key);
+            return localStorage.getItem(fullKey) !== null;
+        } catch (error) {
+            console.error('StorageService: existence check error:', error);
+            if (typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:error', { key, error: error.message });
+            }
+            return false;
+        }
     },
     
     // Удаление данных
