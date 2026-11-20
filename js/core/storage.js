@@ -81,15 +81,28 @@ const StorageService = {
         }
     },
     
-    // Очистка всех данных приложения
+    // Очистка всех данных приложения, включая ключи новых модулей.
+    // Чужие данные в том же origin не затрагиваются.
     clearAll() {
-        Object.values(this.KEYS).forEach(key => {
-            this.remove(key);
-        });
-        
+        try {
+            for (let index = localStorage.length - 1; index >= 0; index--) {
+                const key = localStorage.key(index);
+                if (key && key.startsWith(this._prefix)) {
+                    localStorage.removeItem(key);
+                }
+            }
+        } catch (error) {
+            console.error('StorageService: clear error:', error);
+            if (typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:error', { key: '*', error: error.message });
+            }
+            return false;
+        }
+
         if (typeof EventBus !== 'undefined') {
             EventBus.emit('storage:cleared');
         }
+        return true;
     }
 };
 

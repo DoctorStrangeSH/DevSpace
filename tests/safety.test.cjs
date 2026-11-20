@@ -896,6 +896,28 @@ function execute(file, context = {}) {
   return sandbox;
 }
 
+test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
+  const values = new Map([
+    ['devspace_projects', '[]'],
+    ['devspace_favorites', '["p1"]'],
+    ['devspace_healthHistory', '[]'],
+    ['other-app-session', 'keep']
+  ]);
+  const events = [];
+  const localStorage = {
+    get length() { return values.size; },
+    key(index) { return Array.from(values.keys())[index] ?? null; },
+    removeItem(key) { values.delete(key); }
+  };
+  const ctx = execute('js/core/storage.js', {
+    localStorage,
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  assert.equal(ctx.StorageService.clearAll(), true);
+  assert.deepEqual(Array.from(values.entries()), [['other-app-session', 'keep']]);
+  assert.deepEqual(events, ['storage:cleared']);
+});
+
 test('StateManager reports project persistence failures and only emits saved after success', () => {
   let allowSave = false;
   const events = [];
