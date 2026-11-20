@@ -1153,6 +1153,43 @@ test('StateManager updates multiple projects in one storage write and rolls all 
   assert.equal(events.filter(name => name === 'project:updated').length, 2);
 });
 
+test('project creation does not sync an item when local persistence fails', () => {
+  let synced = 0;
+  const ctx = execute('js/modules/projects.js', {
+    Helpers: { generateId() { return 'new-project'; } },
+    StateManager: { addProject() { return null; } },
+    SupabaseService: { isEnabled() { return true; }, saveProject() { synced++; } },
+    window: {}
+  });
+  const created = ctx.ProjectsModule.createProject({ name: 'Новый проект' });
+  assert.equal(created, null);
+  assert.equal(synced, 0);
+});
+
+test('failed project edits keep the modal open and preserve the entered form data', () => {
+  const errors = [];
+  let modalLookups = 0;
+  const values = {
+    projectId: 'p1', projectTech: { value: 'Godot' }, projectMilestones: { value: 'MVP' },
+    projectName: { value: 'Изменённое название' }, projectDescription: { value: 'Описание' },
+    projectStatus: { value: 'development' }, projectGithub: { value: '' },
+    projectSupabase: { value: '' }, projectDemo: { value: '' }, projectModal: {}
+  };
+  const ctx = execute('js/modules/projects.js', {
+    document: { getElementById(id) { return values[id] || null; } },
+    Validators: { validateProject() { return { valid: true, errors: [] }; } },
+    StateManager: { updateProject() { return null; } },
+    NotificationModule: { error(message) { errors.push(message); } },
+    bootstrap: { Modal: { getInstance() { modalLookups++; return { hide() {} }; } } },
+    window: {}
+  });
+  const result = ctx.ProjectsModule._handleSaveProject();
+  assert.equal(result, false);
+  assert.equal(modalLookups, 0);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /Не удалось сохранить проект/);
+});
+
 test('active service worker precaches every first-party stylesheet and script', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
