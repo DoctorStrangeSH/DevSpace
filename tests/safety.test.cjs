@@ -3544,7 +3544,7 @@ test('checklist mutations restore the original project when persistence fails', 
   checklist._updateChecklistDOM = () => {};
 
   assert.equal(checklist.setPriority('p', 'task', 'high'), false);
-  assert.equal(task.priority, undefined);
+  assert.equal(project.checklist[0].priority, undefined);
   assert.equal(project.taskActivity.length, 0);
 
   assert.equal(checklist.updateText('p', 'task', 'Changed'), false);
