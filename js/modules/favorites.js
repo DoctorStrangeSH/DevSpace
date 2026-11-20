@@ -27,20 +27,25 @@ var FavoritesModule = {
 
     toggleFavorite: function(projectId) {
         var index = this.favorites.indexOf(projectId);
-        
-        if (index === -1) {
-            this.favorites.push(projectId);
+        var wasFavorite = index !== -1;
+        var nextFavorites = this.favorites.slice();
+        if (wasFavorite) nextFavorites.splice(index, 1);
+        else nextFavorites.push(projectId);
+
+        if (StorageService.set('favorites', nextFavorites) === false) {
             if (typeof NotificationModule !== 'undefined') {
-                NotificationModule.success('⭐ Добавлено в избранное');
+                var message = 'Не удалось сохранить избранное. Проверьте свободное место в хранилище.';
+                if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+                else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
             }
-        } else {
-            this.favorites.splice(index, 1);
-            if (typeof NotificationModule !== 'undefined') {
-                NotificationModule.info('Удалено из избранного');
-            }
+            return wasFavorite;
         }
 
-        StorageService.set('favorites', this.favorites);
+        this.favorites = nextFavorites;
+        if (typeof NotificationModule !== 'undefined') {
+            if (wasFavorite) NotificationModule.info('Удалено из избранного');
+            else NotificationModule.success('⭐ Добавлено в избранное');
+        }
         EventBus.emit('favorites:updated', this.favorites);
         
         // Обновляем быстрое меню
