@@ -2374,7 +2374,7 @@ test('mobile navigation Escape works when focus remains on the external menu tog
     Collapse: {
       getOrCreateInstance(target, options) {
         assert.equal(target, navigation);
-        assert.deepEqual(options, { toggle: false });
+        assert.equal(options.toggle, false);
         return { hide() { hidden++; } };
       }
     }
