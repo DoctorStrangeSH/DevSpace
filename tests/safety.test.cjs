@@ -3174,7 +3174,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.25/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.26/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
