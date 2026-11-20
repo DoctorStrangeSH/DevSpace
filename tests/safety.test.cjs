@@ -687,6 +687,28 @@ test('theme module persists an imported preference even when that theme is alrea
   assert.deepEqual(writes, []);
 });
 
+test('theme remains unchanged and reports an error when preference persistence fails', () => {
+  const errors = [];
+  const events = [];
+  const applied = [];
+  const ctx = execute('js/modules/theme.js', {
+    StorageService: { KEYS: { THEME: 'theme' }, set() { return false; } },
+    NotificationModule: { error(message) { errors.push(message); } },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  const theme = ctx.ThemeModule;
+  theme._applyThemeToDOM = value => applied.push(value);
+  theme._updateToggleButton = () => {};
+  assert.equal(theme.setTheme('light', true), false);
+  assert.equal(theme.currentTheme, 'dark');
+  assert.deepEqual(applied, []);
+  assert.deepEqual(events, []);
+  assert.equal(errors.length, 1);
+  assert.equal(theme.setTheme('light', false), true);
+  assert.equal(theme.currentTheme, 'light');
+  assert.deepEqual(applied, ['light']);
+});
+
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
