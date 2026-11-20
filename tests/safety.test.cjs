@@ -325,6 +325,50 @@ test('health history transfer validates and merges daily readings without overwr
   assert.match(html, /id="healthImportBtn"/);
 });
 
+
+test('imported health history rejects malformed rows and scores instead of silently dropping them', () => {
+  const service = execute('js/modules/export.js').ExportModule;
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(service._validateImportedHealthHistory([
+      { date: '2026-11-19', scores: { focus: 80, quality: 0 } }
+    ]))),
+    [{ date: '2026-11-19', scores: { focus: 80, quality: 0 } }]
+  );
+  for (const invalid of [
+    [{ date: '2026-02-30', scores: { focus: 80 } }],
+    [{ date: '2026-11-19', scores: { focus: 101 } }],
+    [{ date: '2026-11-19', scores: { focus: -1 } }],
+    [{ date: '2026-11-19', scores: { focus: 80 }, unexpected: true }],
+    [{ date: '2026-11-19', scores: { focus: 80 } }, { date: '2026-11-19', scores: { focus: 90 } }],
+    [{ date: '2026-11-19', scores: ['not', 'an', 'object'] }]
+  ]) assert.throws(() => service._validateImportedHealthHistory(invalid));
+  assert.throws(() => service._validateImportedHealthHistory(null));
+});
+
+test('full backup with malformed health history is rejected before replacing projects or asking confirmation', async () => {
+  const writes = [];
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      healthHistory: [{ date: '2026-02-30', scores: { focus: 80 } }]
+    })) },
+    confirm: () => { throw Error('Invalid health history must not ask for confirmation'); },
+    StateManager: {
+      get() { return [{ id: 'old_project', name: 'Old project' }]; },
+      set(path, value) { writes.push([path, value]); },
+      saveProjects() { writes.push(['saveProjects']); return true; }
+    },
+    StorageService: { get(key, fallback) { return fallback; }, set(key, value) { writes.push([key, value]); return true; } },
+    NotificationModule: { success() { throw Error('must not report success'); }, error(message) { errors.push(message); } }
+  }).ExportModule;
+  service._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(writes.length, 0);
+  assert.match(errors[0], /некорректная или повторная дата истории|некорректная запись истории/);
+});
+
 test('createBackup serializes every supported workspace data section', () => {
   let downloaded = null;
   const ctx = execute('js/modules/export.js', {
@@ -714,7 +758,7 @@ test('theme remains unchanged and reports an error when preference persistence f
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
-  assert.match(source, /Array\.isArray\(data\.healthHistory\)/);
+  assert.match(source, /_validateImportedHealthHistory\(data\.healthHistory\)/);
   assert.match(source, /data\.healthHistory !== undefined/);
   assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
 });
