@@ -1395,12 +1395,14 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
       head: { appendChild(script) { injected.push(script); } }
     },
     requestIdleCallback(callback) { idle.push(callback); },
-    LocalStorageService: { get(key) { return key === 'settings' ? { syncMode: 'read-only' } : null; } },
+    LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback); } },
     FirebaseService: { _initialized: false, init() { this._initialized = true; return Promise.resolve(); } }
   });
   let cloudReads = 0;
   sync.SyncModule._syncFromCloud = () => { cloudReads++; return Promise.resolve(); };
   const pending = sync.SyncModule.init();
+  await Promise.resolve();
+  await Promise.resolve();
   assert.equal(injected.length, 0);
   assert.equal(cloudReads, 0);
   assert.equal(idle.length, 1);
@@ -1414,11 +1416,31 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
 
   const local = execute('js/core/sync.js', {
     document: { getElementById() { return null; } },
-    LocalStorageService: { get(key) { return key === 'settings' ? { syncMode: 'local' } : null; } },
+    LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback); } },
     FirebaseService: { init() { throw Error('Local mode should never fetch SDK'); } }
   });
   await local.SyncModule.init();
+  assert.equal(local.SyncModule._mode, 'local');
   assert.equal(local.SyncModule._sdkPromise, null);
+});
+
+test('local storage getAll resolves values instead of returning nested promises', async () => {
+  const values = new Map();
+  const ctx = execute('js/services/localStorage.js', {
+    localStorage: {
+      getItem(key) { return values.has(key) ? values.get(key) : null; },
+      setItem(key, value) { values.set(key, value); },
+      removeItem(key) { values.delete(key); }
+    }
+  });
+  const storage = ctx.LocalStorageService;
+  await storage.set('projects', [{ id: 'p1' }]);
+  await storage.set('theme', 'dark');
+  const all = await storage.getAll();
+  assert.deepEqual(all.projects, [{ id: 'p1' }]);
+  assert.equal(all.theme, 'dark');
+  assert.equal(all.settings, null);
+  assert.equal(all.last_sync, null);
 });
 
 test('decorative particles are fetched only after idle on capable screens', () => {
