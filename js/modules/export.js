@@ -315,7 +315,6 @@ var ExportModule = {
                     ? AchievementsModule.unlocked : undefined;
 
                 try {
-                    var previousProjects = StateManager.get('projects') || [];
                     StateManager.set('projects', projects);
                     if (StateManager.saveProjects() === false) {
                         StateManager.set('projects', previousProjects);
@@ -381,17 +380,23 @@ var ExportModule = {
     
                 } catch (applyError) {
                     // Roll back all persisted keys, not just the projects collection.
+                    var rollbackSucceeded = true;
                     Object.keys(previousStorage).reverse().forEach(function(key) {
                         var previousValue = previousStorage[key];
                         if (previousValue === missingValue) {
-                            if (typeof StorageService.remove === 'function') StorageService.remove(key);
-                        } else {
-                            StorageService.set(key, previousValue);
+                            if (typeof StorageService.remove === 'function') {
+                                if (StorageService.remove(key) === false) rollbackSucceeded = false;
+                            } else {
+                                rollbackSucceeded = false;
+                            }
+                        } else if (StorageService.set(key, previousValue) === false) {
+                            rollbackSucceeded = false;
                         }
                     });
                     StateManager.set('projects', previousProjects);
                     StateManager.set('theme', previousTheme);
-                    if (typeof StateManager.saveProjects === 'function') StateManager.saveProjects();
+                    if (typeof StateManager.saveProjects === 'function' &&
+                        StateManager.saveProjects() === false) rollbackSucceeded = false;
                     if (typeof FavoritesModule !== 'undefined' && previousFavorites !== undefined) {
                         FavoritesModule.favorites = previousFavorites;
                     }
@@ -413,7 +418,9 @@ var ExportModule = {
                         typeof AchievementsModule._renderAchievements === 'function') {
                         AchievementsModule._renderAchievements();
                     }
-                    throw new Error(applyError.message + ' Импорт отменён, прежние данные восстановлены.');
+                    throw new Error(applyError.message + (rollbackSucceeded
+                        ? ' Импорт отменён, прежние данные восстановлены.'
+                        : ' Импорт прерван; автоматическое восстановление завершилось не полностью. Проверьте хранилище и восстановите данные из резервной копии.'));
                 }
                 
                 if (typeof NotificationModule !== 'undefined') {
