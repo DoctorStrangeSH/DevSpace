@@ -1394,10 +1394,8 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
       createElement() { return {}; },
       head: { appendChild(script) { injected.push(script); } }
     },
-    window: {
-      addEventListener() {},
-      requestIdleCallback(callback) { idle.push(callback); }
-    },
+    addEventListener() {},
+    requestIdleCallback(callback) { idle.push(callback); },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback); } },
     FirebaseService: { _initialized: false, init() { this._initialized = true; return Promise.resolve(); } }
   });
@@ -1418,7 +1416,7 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
   assert.equal(cloudReads, 1);
 
   const local = execute('js/core/sync.js', {
-    window: { addEventListener() {} },
+    addEventListener() {},
     document: { getElementById() { return null; } },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback); } },
     FirebaseService: { init() { throw Error('Local mode should never fetch SDK'); } }
@@ -1432,13 +1430,11 @@ test('sync binds one online reconnect handler during initialization', async () =
   const listeners = {};
   const idle = [];
   const ctx = execute('js/core/sync.js', {
-    window: {
-      addEventListener(name, callback) {
-        listeners[name] = listeners[name] || [];
-        listeners[name].push(callback);
-      },
-      requestIdleCallback(callback) { idle.push(callback); }
+    addEventListener(name, callback) {
+      listeners[name] = listeners[name] || [];
+      listeners[name].push(callback);
     },
+    requestIdleCallback(callback) { idle.push(callback); },
     document: { getElementById() { return null; } },
     LocalStorageService: {
       get(key, fallback) {
