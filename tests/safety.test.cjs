@@ -325,6 +325,43 @@ test('health history transfer validates and merges daily readings without overwr
   assert.match(html, /id="healthImportBtn"/);
 });
 
+test('createBackup serializes every supported workspace data section', () => {
+  let downloaded = null;
+  const ctx = execute('js/modules/export.js', {
+    StateManager: { get(path) {
+      return path === 'projects' ? [{ id: 'p1', name: 'Project One', checklist: [{ id: 't1', text: 'Task' }], notes: [{ id: 'n1', title: 'Note' }] }]
+        : path === 'theme' ? 'light' : null;
+    } },
+    FavoritesModule: { favorites: ['p1'] },
+    AchievementsModule: { unlocked: ['first_project'] },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) {
+        const values = {
+          settings: { syncMode: 'local', compactMode: true },
+          activity: [{ type: 'project-created', id: 'evt1' }],
+          healthHistory: [{ date: '2026-11-19', scores: { focus: 80 } }]
+        };
+        return values[key] === undefined ? fallback : values[key];
+      }
+    },
+    Helpers: { downloadFile(data, filename) { downloaded = { data, filename }; } },
+    NotificationModule: { success() {} }
+  });
+  ctx.ExportModule.createBackup();
+  assert.ok(downloaded);
+  const backup = JSON.parse(downloaded.data);
+  assert.equal(backup.projects[0].checklist[0].text, 'Task');
+  assert.equal(backup.projects[0].notes[0].title, 'Note');
+  assert.equal(backup.theme, 'light');
+  assert.deepEqual(backup.favorites, ['p1']);
+  assert.deepEqual(backup.achievements, ['first_project']);
+  assert.equal(backup.settings.compactMode, true);
+  assert.equal(backup.activity[0].id, 'evt1');
+  assert.equal(backup.healthHistory[0].scores.focus, 80);
+  assert.match(downloaded.filename, /^devspace-backup-\d{4}-\d{2}-\d{2}\.json$/);
+});
+
 test('full backup includes settings and activity alongside projects and theme', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /settings: StorageService\.get\(StorageService\.KEYS\.SETTINGS, \{\}\)/);
