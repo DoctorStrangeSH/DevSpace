@@ -359,7 +359,7 @@ test('createBackup serializes every supported workspace data section', () => {
   assert.equal(backup.settings.compactMode, true);
   assert.equal(backup.activity[0].id, 'evt1');
   assert.equal(backup.healthHistory[0].scores.focus, 80);
-  assert.match(downloaded.filename, /^devspace-backup-\\d{4}-\\d{2}-\\d{2}\\.json$/);
+  assert.match(downloaded.filename, /^devspace-backup-\d{4}-\d{2}-\d{2}\.json$/);
 });
 
 test('full backup includes settings and activity alongside projects and theme', () => {
