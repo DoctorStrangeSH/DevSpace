@@ -22,6 +22,8 @@ var ExportModule = {
                 self.exportAllProjects();
             });
         }
+        var tasksExportBtn = document.getElementById('footerTasksExportBtn');
+        if (tasksExportBtn) tasksExportBtn.addEventListener('click', function() { self.exportTasksCsv(); });
         
         var importBtn = document.getElementById('footerImportBtn');
         if (importBtn) {
@@ -107,6 +109,36 @@ var ExportModule = {
         }
     },
 
+    _csvCell: function(value) {
+        var text = String(value == null ? '' : value);
+        // Spreadsheet programs may interpret imported text as executable formulas.
+        if (/^[\s\u0000-\u001f]*[=+\-@]/.test(text)) text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+    },
+
+    _tasksCsv: function(projects) {
+        var self = this;
+        var rows = [['Проект', 'Статус проекта', 'Задача', 'Статус задачи', 'Приоритет', 'Срок']];
+        (projects || []).forEach(function(project) {
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || typeof task.text !== 'string') return;
+                rows.push([
+                    project.name || '', project.status || '', task.text,
+                    task.completed ? 'Выполнена' : 'Открыта',
+                    ['high', 'normal', 'low'].includes(task.priority) ? task.priority : 'normal',
+                    /^\d{4}-\d{2}-\d{2}$/.test(task.deadline || '') ? task.deadline : ''
+                ]);
+            });
+        });
+        return { count: rows.length - 1, csv: '\uFEFF' + rows.map(function(row) { return row.map(self._csvCell).join(';'); }).join('\r\n') + '\r\n' };
+    },
+
+    exportTasksCsv: function() {
+        var result = this._tasksCsv(StateManager.get('projects') || []);
+        Helpers.downloadFile(result.csv, 'devspace-tasks-' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv;charset=utf-8');
+        if (typeof NotificationModule !== 'undefined') NotificationModule.success('Экспортировано задач: ' + result.count);
+    },
+
     createBackup: function() {
         var data = {
             projects: StateManager.get('projects') || [],
@@ -114,7 +146,7 @@ var ExportModule = {
             favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
             achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
             healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
-            version: '3.62.5',
+            version: '3.66.20',
             timestamp: new Date().toISOString()
         };
         var json = JSON.stringify(data, null, 2);
