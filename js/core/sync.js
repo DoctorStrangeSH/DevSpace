@@ -168,7 +168,11 @@ var SyncModule = {
                 // Локальные данные главнее
                 if (local.length === 0 && cloud.length > 0) {
                     StateManager.set('projects', cloud);
-                    StateManager.saveProjects();
+                    if (StateManager.saveProjects() === false) {
+                        // Never keep a cloud snapshot in memory when local persistence failed.
+                        StateManager.set('projects', local);
+                        if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
+                    }
                 }
                 if (typeof RendererModule !== 'undefined') {
                     RendererModule.renderProjects();
@@ -178,12 +182,10 @@ var SyncModule = {
             .then(function() { return FirebaseService.getSettings(); })
             .then(function(s) {
                 if (!s) return;
-                if (s.favorites) {
-                    StorageService.set('favorites', s.favorites);
+                if (Array.isArray(s.favorites) && StorageService.set('favorites', s.favorites)) {
                     if (typeof FavoritesModule !== 'undefined') FavoritesModule.favorites = s.favorites;
                 }
-                if (s.achievements && Array.isArray(s.achievements)) {
-                    StorageService.set('achievements', s.achievements);
+                if (Array.isArray(s.achievements) && StorageService.set('achievements', s.achievements)) {
                     if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = s.achievements;
                 }
             })
