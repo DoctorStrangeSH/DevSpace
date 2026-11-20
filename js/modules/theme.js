@@ -107,52 +107,46 @@ const ThemeModule = {
 
     toggle() {
         const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
-        this.setTheme(newTheme, true);
+        return this.setTheme(newTheme, true);
     },
 
     setTheme(themeName, savePreference = true) {
         if (!this.themes[themeName]) {
             console.warn('ThemeModule: unknown theme:', themeName);
-            return;
+            return false;
         }
 
-        if (this.currentTheme === themeName) {
-            // An imported backup may explicitly choose the already-active theme.
-            // Persist that preference even when no visual transition is needed.
-            if (savePreference) {
-                StorageService.set(StorageService.KEYS.THEME, themeName);
+        // Persist first. Never switch the visible or in-memory theme when the
+        // user's preference could not be stored.
+        if (savePreference && StorageService.set(StorageService.KEYS.THEME, themeName) === false) {
+            if (typeof NotificationModule !== 'undefined') {
+                const message = 'Не удалось сохранить тему оформления. Проверьте свободное место в хранилище.';
+                if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+                else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
             }
-            return;
+            return false;
         }
+
+        if (this.currentTheme === themeName) return true;
 
         console.log('ThemeModule: switching to', themeName);
-
         this.currentTheme = themeName;
-
-        // Применяем к DOM
         this._applyThemeToDOM(themeName);
-
-        // Обновляем кнопку
         this._updateToggleButton();
 
-        // Сохраняем в StateManager
         if (typeof StateManager !== 'undefined') {
             StateManager.set('theme', themeName);
         }
 
-        // Сохраняем в Storage только если это ручной выбор
-        if (savePreference) {
-            StorageService.set(StorageService.KEYS.THEME, themeName);
-            console.log('ThemeModule: saved preference:', themeName);
-        }
+        if (savePreference) console.log('ThemeModule: saved preference:', themeName);
 
-        // Уведомляем
         if (typeof EventBus !== 'undefined') {
             EventBus.emit('theme:changed', {
                 theme: themeName,
                 themeData: this.themes[themeName]
             });
         }
+        return true;
     },
 
     _applyThemeToDOM(themeName) {
