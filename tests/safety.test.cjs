@@ -968,7 +968,7 @@ test('failed PWA installation waits for pending cache writes before deleting par
       open: async () => ({
         put(url) {
           calls.push(['put', url]);
-          return url === 'css/main.css' ? pendingWrite : Promise.resolve();
+          return url.startsWith('css/main.css') ? pendingWrite : Promise.resolve();
         }
       }),
       delete: async name => { calls.push(['delete', name]); deleted = true; return true; }
