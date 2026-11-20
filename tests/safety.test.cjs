@@ -325,6 +325,15 @@ test('health history transfer validates and merges daily readings without overwr
   assert.match(html, /id="healthImportBtn"/);
 });
 
+test('full backup includes settings and activity alongside projects and theme', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
+  assert.match(source, /settings: StorageService\.get\(StorageService\.KEYS\.SETTINGS, \{\}\)/);
+  assert.match(source, /activity: StorageService\.get\(StorageService\.KEYS\.ACTIVITY, \[\]\)/);
+  assert.match(source, /StorageService\.set\(StorageService\.KEYS\.SETTINGS, importedSettings\)/);
+  assert.match(source, /StorageService\.set\(StorageService\.KEYS\.ACTIVITY, importedActivity\)/);
+  assert.match(source, /_validateBackupMetadata/);
+});
+
 test('backup project validator rejects malformed, duplicate and unsafe records', () => {
   const service = execute('js/modules/export.js').ExportModule;
   const valid = [{ id: 'project_1', name: 'Project One', checklist: [{ text: 'Task' }] }];
