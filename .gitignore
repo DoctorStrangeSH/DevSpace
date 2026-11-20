@@ -1,0 +1,23 @@
+# Local dependencies and generated output
+node_modules/
+coverage/
+dist/
+build/
+
+# Firebase local tooling
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and OS/editor noise
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
