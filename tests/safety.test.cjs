@@ -1699,6 +1699,36 @@ test('roadmap remains read-only without local editing enabled', () => {
   assert.equal(ctx.ProjectDetailModule.setRoadmapDeadline('p', 'Этап', '2026-12-15'), false);
 });
 
+test('roadmap mutations report persistence failures without changing live project data', () => {
+  const project = {
+    id: 'p', milestones: ['Разработка', 'Релиз'],
+    checklist: [{ id: 't1', text: 'Task', milestone: 'Разработка' }],
+    completedMilestones: [], milestoneDeadlines: {}
+  };
+  const errors = [];
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject() { return null; } },
+    AuthService: { isOwner() { return true; } },
+    NotificationModule: { error(message) { errors.push(message); } },
+    document: { getElementById() { return null; } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+
+  assert.equal(roadmap.addRoadmapStage('p', 'Тестирование'), false);
+  assert.equal(roadmap.moveRoadmapStage('p', 0, 'down'), false);
+  assert.equal(roadmap.renameRoadmapStage('p', 'Разработка', 'Реализация'), false);
+  assert.equal(roadmap.removeRoadmapStage('p', 'Релиз'), false);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', '2026-12-15'), false);
+  assert.equal(roadmap.assignTaskStage('p', 't1', 'Релиз'), false);
+  assert.equal(roadmap.toggleRoadmapStage('p', 'Релиз'), false);
+
+  assert.deepEqual(Array.from(project.milestones), ['Разработка', 'Релиз']);
+  assert.equal(project.checklist[0].milestone, 'Разработка');
+  assert.deepEqual(Object.keys(project.milestoneDeadlines), []);
+  assert.deepEqual(Array.from(project.completedMilestones), []);
+  assert.equal(errors.length, 7);
+});
+
 test('roadmap deadlines validate calendar dates, persist by stage and allow clearing', () => {
   const project = { id: 'p', milestones: ['Разработка'], checklist: [] };
   const patches = [];
