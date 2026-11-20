@@ -364,7 +364,11 @@ test('backup importer validates payload before confirmation and restores a valid
       set(path, value) { writes.push([path, value]); },
       saveProjects() { writes.push(['saveProjects']); }
     },
-    StorageService: { get() { return []; }, set(key, value) { writes.push([key, value]); return true; } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get() { return []; },
+      set(key, value) { writes.push([key, value]); return true; }
+    },
     document: { documentElement: { setAttribute(name, value) { writes.push([name, value]); } } },
     NotificationModule: { success() {}, error(message) { errors.push(message); } }
   }).ExportModule;
