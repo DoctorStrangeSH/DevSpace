@@ -1141,6 +1141,26 @@ test('StorageService.clearAll removes every app key but preserves unrelated orig
   assert.deepEqual(events, ['storage:cleared']);
 });
 
+
+test('StorageService.has returns false and reports restricted localStorage access', () => {
+  const events = [];
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) {
+        assert.equal(key, 'devspace_projects');
+        const error = new Error('Storage access is blocked');
+        error.name = 'SecurityError';
+        throw error;
+      }
+    },
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+  assert.equal(ctx.StorageService.has('projects'), false);
+  assert.deepEqual(events.map(event => event.name), ['storage:error']);
+  assert.equal(events[0].payload.key, 'projects');
+  assert.equal(events[0].payload.error, 'Storage access is blocked');
+});
+
 test('StateManager reports project persistence failures and only emits saved after success', () => {
   let allowSave = false;
   const events = [];
