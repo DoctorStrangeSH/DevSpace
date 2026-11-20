@@ -3562,6 +3562,57 @@ test('checklist mutations restore the original project when persistence fails', 
   assert.equal(errors.length, 4);
 });
 
+test('tag updates restore the previous project tags when persistence fails', () => {
+  const project = { id: 'p1', tags: ['existing'] };
+  const errors = [];
+  const ctx = execute('js/modules/tags.js', {
+    StateManager: { getProject() { return project; }, updateProject() { return null; } },
+    NotificationModule: { error(message) { errors.push(message); } }
+  });
+  assert.equal(ctx.TagsModule.addTagsToProject('p1', ['new']), false);
+  assert.deepEqual(Array.from(project.tags), ['existing']);
+  assert.equal(errors.length, 1);
+});
+
+test('favorites do not change or emit success when storage rejects a write', () => {
+  const events = [];
+  const errors = [];
+  const ctx = execute('js/modules/favorites.js', {
+    StorageService: { get() { return []; }, set() { return false; } },
+    EventBus: { emit(name) { events.push(name); }, on() {} },
+    NotificationModule: { error(message) { errors.push(message); }, success() {}, info() {} }
+  });
+  const favorites = ctx.FavoritesModule;
+  favorites.favorites = ['p1'];
+  assert.equal(favorites.toggleFavorite('p2'), false);
+  assert.deepEqual(Array.from(favorites.favorites), ['p1']);
+  assert.equal(favorites.toggleFavorite('p1'), true);
+  assert.deepEqual(Array.from(favorites.favorites), ['p1']);
+  assert.equal(events.length, 0);
+  assert.equal(errors.length, 2);
+});
+
+test('time tracker keeps the active session when saving tracked time fails', () => {
+  const project = { id: 'p1', trackedTime: 1200 };
+  const errors = [];
+  const ctx = execute('js/modules/timetracker.js', {
+    StateManager: { getProject() { return project; }, updateProject() { return null; } },
+    NotificationModule: { error(message) { errors.push(message); }, info() {}, success() {} },
+    EventBus: { emit() {}, on() {} },
+    clearInterval() {},
+    setInterval() { return 2; }
+  });
+  const tracker = ctx.TimeTrackerModule;
+  tracker.activeSession = { projectId: 'p1', startTime: Date.now() - 5000, paused: false, pausedTime: 0, pauseStart: null };
+  tracker.timerInterval = 1;
+  assert.equal(tracker.stopTracking(), false);
+  assert.equal(project.trackedTime, 1200);
+  assert.ok(tracker.activeSession);
+  assert.equal(tracker.activeSession.projectId, 'p1');
+  assert.equal(tracker.timerInterval, 2);
+  assert.equal(errors.length, 1);
+});
+
 test('editing a checklist task preserves completion history and rejects invalid text', () => {
     const project = { id: 'p', progress: 100, checklist: [
         { id: 'task', text: 'Старое название', completed: true, completedAt: '2026-11-19T10:00:00.000Z', sourceNoteId: 'note' }
