@@ -21,12 +21,32 @@ var ProjectDetailModule = {
         EventBus.on('checklist:changed', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) {
                 self._refreshRoadmap(data.projectId);
+                self._refreshTaskActivity(data.projectId);
                 if (document.getElementById('notesContainer')) self._refreshNotes(data.projectId);
             }
         });
         EventBus.on('notes:focus', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) self._focusNote(data.projectId, data.noteId);
         });
+    },
+
+    showTask: function(projectId, taskId) {
+        var project = StateManager.getProject(projectId);
+        if (!project) return;
+        if (!Array.isArray(project.checklist) || !project.checklist.some(function(task) {
+            return task && String(task.id) === String(taskId);
+        })) { this.show(projectId); return; }
+        var modal = document.getElementById('projectDetailModal');
+        if (!modal) return;
+        modal.addEventListener('shown.bs.modal', function() {
+            var rows = modal.querySelectorAll('.checklist-container .checklist-item[data-item-id]');
+            var row = Array.from(rows).find(function(item) { return item.dataset.itemId === String(taskId); });
+            if (!row) return;
+            row.setAttribute('tabindex', '-1');
+            row.focus({ preventScroll: true });
+            row.scrollIntoView({ behavior: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+        }, { once: true });
+        this.show(projectId);
     },
 
     show: function(projectId) {
@@ -51,6 +71,7 @@ var ProjectDetailModule = {
         document.getElementById('detailBody').innerHTML = this._renderDetail(project);
 
         this._initDetailChecklist(project);
+        this._initTaskActivity(project);
         this._initRoadmap(project.id);
         this._initDetailUpdates(project);
         this._initDetailNotes(project);
@@ -288,6 +309,7 @@ var ProjectDetailModule = {
                 '<div class="detail-main">' +
                     descriptionHTML +
                     checklistHTML +
+                    this._renderTaskActivity(project) +
                     roadmapHTML +
                     updatesHTML +
                     notesHTML +
@@ -311,6 +333,77 @@ var ProjectDetailModule = {
                 '</div>' +
             '</div>' +
         '</div>';
+    },
+
+    _renderTaskActivity: function(project, filter) {
+        var entries = Array.isArray(project.taskActivity) ? project.taskActivity.slice().reverse() : [];
+        var selected = filter || 'all';
+        if (selected !== 'all') entries = entries.filter(function(entry) { return entry.action === selected; });
+        var labels = { updated: 'Изменение задачи', completed: 'Задача завершена', reopened: 'Задача открыта повторно', undone: 'Изменение отменено', redone: 'Изменение восстановлено' };
+        var fields = { text: 'Название', priority: 'Приоритет', deadline: 'Срок', completed: 'Статус' };
+        var format = function(value) {
+            if (value === null || value === '') return '—';
+            if (value === true) return 'Выполнено';
+            if (value === false) return 'Не выполнено';
+            if (value === 'high') return 'Высокий';
+            if (value === 'normal') return 'Обычный';
+            if (value === 'low') return 'Низкий';
+            return String(value);
+        };
+        var rows = entries.map(function(entry) {
+            var changes = Array.isArray(entry.changes) ? entry.changes : [];
+            var changeHTML = changes.map(function(change) {
+                var field = fields[change.field] || change.field;
+                return '<div class="task-activity-change"><span>' + Helpers.escapeHtml(field) + '</span><div><del>' + Helpers.escapeHtml(format(change.from)) + '</del><i class="bi bi-arrow-right"></i><strong>' + Helpers.escapeHtml(format(change.to)) + '</strong></div></div>';
+            }).join('');
+            var date = entry.createdAt && Number.isFinite(Date.parse(entry.createdAt)) ? new Date(entry.createdAt).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : 'Дата неизвестна';
+            var actor = entry.actor && typeof entry.actor === 'object' ? entry.actor : {};
+            var actorName = actor.name || 'Автор не указан (старое событие)';
+            var actorType = actor.type === 'google' ? 'Google' : (actor.type === 'local-editor' ? 'Локальное устройство' : (actor.type === 'anonymous' ? 'Без авторизации' : ''));
+            var actorHTML = '<div class="task-activity-actor" title="' + Helpers.escapeHtml(actor.email || actorType) + '"><span class="task-activity-avatar">' + Helpers.escapeHtml(actorName.trim().slice(0, 1).toUpperCase() || '?') + '</span><span>' + Helpers.escapeHtml(actorName) + (actorType ? '<small>' + Helpers.escapeHtml(actorType) + '</small>' : '') + '</span></div>';
+            return '<article class="task-activity-entry"><div class="task-activity-marker"></div><div class="task-activity-card"><div class="task-activity-heading"><strong>' + Helpers.escapeHtml(labels[entry.action] || 'Изменение') + '</strong><time datetime="' + Helpers.escapeHtml(entry.createdAt || '') + '">' + Helpers.escapeHtml(date) + '</time></div>' + actorHTML + '<button type="button" class="task-activity-task" data-activity-project="' + Helpers.escapeHtml(String(project.id)) + '" data-activity-task="' + Helpers.escapeHtml(String(entry.taskId || '')) + '">' + Helpers.escapeHtml(entry.taskText || 'Задача без названия') + '</button>' + (changeHTML ? '<div class="task-activity-changes">' + changeHTML + '</div>' : '') + '</div></article>';
+        }).join('');
+        var hasUndo = entries.some(function(entry) { return ['updated', 'completed', 'reopened'].indexOf(entry.action) !== -1 && !entry.undoneAt; });
+        var hasRedo = entries.some(function(entry) { return entry.undoneAt && !entry.redoneAt && !entry.redoInvalidatedAt; });
+        return '<section class="detail-section task-activity-section" id="taskActivitySection"><div class="task-activity-title"><h4><i class="bi bi-clock-history"></i> История действий</h4><span class="task-activity-count">' + (Array.isArray(project.taskActivity) ? project.taskActivity.length : 0) + '</span></div><div class="task-activity-toolbar"><label class="visually-hidden" for="taskActivityFilter">Фильтр истории</label><select id="taskActivityFilter" class="form-select form-select-sm"><option value="all">Все события</option><option value="updated">Изменения</option><option value="completed">Завершения</option><option value="reopened">Повторные открытия</option><option value="undone">Отменённые</option><option value="redone">Восстановленные</option></select><div class="task-activity-history-actions"><button type="button" class="task-activity-undo" data-task-history-action="undo" ' + (hasUndo ? '' : 'disabled') + '><i class="bi bi-arrow-counterclockwise"></i> Отменить</button><button type="button" class="task-activity-redo" data-task-history-action="redo" ' + (hasRedo ? '' : 'disabled') + '><i class="bi bi-arrow-clockwise"></i> Повторить</button></div></div><div class="task-activity-list" id="taskActivityList">' + (rows || '<p class="text-muted small mb-0">История пока пуста. Изменения задач появятся здесь.</p>') + '</div></section>';
+    },
+
+    _refreshTaskActivity: function(projectId) {
+        var project = StateManager.getProject(projectId);
+        var list = document.getElementById('taskActivityList');
+        var count = document.querySelector('#taskActivitySection .task-activity-count');
+        var filter = document.getElementById('taskActivityFilter');
+        if (!project || !list) return;
+        var selected = filter ? filter.value : 'all';
+        var rendered = this._renderTaskActivity(project, selected);
+        var temporary = document.createElement('div');
+        temporary.innerHTML = rendered;
+        var nextList = temporary.querySelector('#taskActivityList');
+        if (nextList) list.innerHTML = nextList.innerHTML;
+        if (count) count.textContent = Array.isArray(project.taskActivity) ? project.taskActivity.length : 0;
+        var refreshed = temporary.querySelector('.task-activity-history-actions');
+        var current = document.querySelector('#taskActivitySection .task-activity-history-actions');
+        if (refreshed && current) current.innerHTML = refreshed.innerHTML;
+    },
+
+    _initTaskActivity: function(project) {
+        var self = this;
+        var filter = document.getElementById('taskActivityFilter');
+        if (filter && !filter.dataset.activityBound) {
+            filter.dataset.activityBound = 'true';
+            filter.addEventListener('change', function() { self._refreshTaskActivity(project.id); });
+        }
+        var section = document.getElementById('taskActivitySection');
+        if (section && !section.dataset.historyBound) {
+            section.dataset.historyBound = 'true';
+            section.addEventListener('click', function(event) {
+                var button = event.target.closest('[data-task-history-action]');
+                if (!button || button.disabled) return;
+                var action = button.dataset.taskHistoryAction;
+                var ok = action === 'undo' ? ChecklistModule.undoLastChange(project.id) : ChecklistModule.redoLastChange(project.id);
+                if (ok) self._refreshTaskActivity(project.id);
+            });
+        }
     },
 
     _renderRoadmap: function(project) {
@@ -555,6 +648,7 @@ var ProjectDetailModule = {
             return '<div class="checklist-item ' + (item.completed ? 'completed' : '') + '" data-item-id="' + item.id + '">' +
                 '<div class="checklist-checkbox">' + (item.completed ? '<i class="bi bi-check"></i>' : '') + '</div>' +
                 '<span class="checklist-text">' + Helpers.escapeHtml(item.text) + '</span>' +
+                (isOwner ? '<button class="checklist-edit" type="button" aria-label="Изменить задачу" title="Изменить задачу"><i class="bi bi-pencil"></i></button>' : '') +
                 (item.sourceNoteId ? '<button class="task-source-note" type="button" data-source-note="' + Helpers.escapeHtml(String(item.sourceNoteId)) + '" aria-label="Перейти к исходной заметке" title="Исходная заметка"><i class="bi bi-journal-text"></i></button>' : '') +
                 (isOwner ? '<button class="checklist-delete" aria-label="Удалить задачу" title="Удалить задачу"><i class="bi bi-x"></i></button>' : '') +
             '</div>';
