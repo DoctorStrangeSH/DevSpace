@@ -107,9 +107,20 @@ const TagsModule = {
         const project = StateManager.getProject(projectId);
         if (!project) return;
 
+        const previousTags = project.tags ? project.tags.slice() : undefined;
         project.tags = [...new Set([...(project.tags || []), ...tags])];
-        StateManager.updateProject(projectId, { tags: project.tags });
-        StateManager.saveProjects();
+        const saved = StateManager.updateProject(projectId, { tags: project.tags });
+        if (saved === false || saved === null) {
+            if (previousTags === undefined) delete project.tags;
+            else project.tags = previousTags;
+            if (typeof NotificationModule !== 'undefined') {
+                const message = 'Не удалось сохранить теги. Проверьте свободное место в хранилище.';
+                if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+                else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+            }
+            return false;
+        }
+        return true;
     }
 };
 
