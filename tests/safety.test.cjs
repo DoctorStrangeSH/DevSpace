@@ -896,6 +896,21 @@ function execute(file, context = {}) {
   return sandbox;
 }
 
+test('StateManager reports project persistence failures and only emits saved after success', () => {
+  let allowSave = false;
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return allowSave; } },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  ctx.StateManager._state.projects = [{ id: 'p1', name: 'Project' }];
+  assert.equal(ctx.StateManager.saveProjects(), false);
+  assert.equal(events.includes('projects:saved'), false);
+  allowSave = true;
+  assert.equal(ctx.StateManager.saveProjects(), true);
+  assert.equal(events.includes('projects:saved'), true);
+});
+
 test('public Firebase client rejects writes before touching a database', async () => {
   const ctx = execute('js/services/firebase.js');
   const firebase = ctx.FirebaseService;
