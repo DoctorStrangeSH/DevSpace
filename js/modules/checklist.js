@@ -47,9 +47,27 @@ var ChecklistModule = {
         project.taskActivity = entries.slice(-200);
     },
 
+    _persistMutation: function(projectId, project, snapshot, updates) {
+        var saved = StateManager.updateProject(projectId, updates);
+        // Older integrations may return undefined on success; only explicit
+        // false/null from StateManager indicate a rejected persistence operation.
+        if (saved !== false && saved !== null) return true;
+        Object.keys(project).forEach(function(key) { delete project[key]; });
+        Object.assign(project, snapshot);
+        if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
+        this._updateChecklistDOM(project);
+        if (typeof NotificationModule !== 'undefined') {
+            var message = 'Не удалось сохранить изменения. Проверьте свободное место в хранилище.';
+            if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+            else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+        }
+        return false;
+    },
+
     toggleItem: function(projectId, itemId) {
         var project = StateManager.getProject(projectId);
         if (!project) return;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         var item = (project.checklist || []).find(function(i) { return i.id === itemId; });
         if (!item) return;
@@ -61,11 +79,11 @@ var ChecklistModule = {
 
         this._recalculateProgress(project);
 
-        StateManager.updateProject(projectId, {
+        if (!this._persistMutation(projectId, project, snapshot, {
             checklist: project.checklist,
             progress: project.progress,
             taskActivity: project.taskActivity
-        });
+        })) return false;
 
         // Обновляем ТОЛЬКО чек-лист в DOM, не перерисовывая всю модалку
         this._updateChecklistDOM(project);
@@ -80,6 +98,7 @@ var ChecklistModule = {
         if (!normalized || normalized.length > 240) return false;
         var project = StateManager.getProject(projectId);
         if (!project || !Array.isArray(project.checklist)) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
         if (item.text === normalized) return true;
@@ -87,7 +106,7 @@ var ChecklistModule = {
         item.text = normalized;
         this._recordTaskActivity(project, item, 'updated', [{ field: 'text', from: previousText, to: normalized }]);
         item.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
+        if (!this._persistMutation(projectId, project, snapshot, { checklist: project.checklist, taskActivity: project.taskActivity })) return false;
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -103,6 +122,7 @@ var ChecklistModule = {
         if (deadline && (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
         var project = StateManager.getProject(projectId);
         if (!project || !Array.isArray(project.checklist)) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var item = project.checklist.find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
         var previous = { text: item.text, priority: item.priority || 'normal', deadline: item.deadline || '' };
@@ -117,7 +137,7 @@ var ChecklistModule = {
             if (entry[1] !== entry[2]) changes.push({ field: entry[0], from: entry[1], to: entry[2] });
         });
         this._recordTaskActivity(project, item, 'updated', changes);
-        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
+        if (!this._persistMutation(projectId, project, snapshot, { checklist: project.checklist, taskActivity: project.taskActivity })) return false;
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -164,6 +184,7 @@ var ChecklistModule = {
         if (['high', 'normal', 'low'].indexOf(priority) === -1) return false;
         var project = StateManager.getProject(projectId);
         if (!project) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var item = (project.checklist || []).find(function(task) { return String(task.id) === String(itemId); });
         if (!item) return false;
         if (item.priority === priority || (priority === 'normal' && !item.priority)) return true;
@@ -172,7 +193,7 @@ var ChecklistModule = {
         else item.priority = priority;
         item.updatedAt = new Date().toISOString();
         this._recordTaskActivity(project, item, 'updated', [{ field: 'priority', from: previousPriority, to: priority }]);
-        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
+        if (!this._persistMutation(projectId, project, snapshot, { checklist: project.checklist, taskActivity: project.taskActivity })) return false;
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -182,6 +203,7 @@ var ChecklistModule = {
         if (deadline && (!/^\d{4}-\d{2}-\d{2}$/.test(deadline) || !Number.isFinite(Date.parse(deadline)) || new Date(deadline).toISOString().slice(0, 10) !== deadline)) return false;
         var project = StateManager.getProject(projectId);
         if (!project) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var task = (project.checklist || []).find(function(item) { return String(item.id) === String(itemId); });
         if (!task) return false;
         if ((task.deadline || '') === deadline) return true;
@@ -190,7 +212,7 @@ var ChecklistModule = {
         else delete task.deadline;
         task.updatedAt = new Date().toISOString();
         this._recordTaskActivity(project, task, 'updated', [{ field: 'deadline', from: previousDeadline, to: deadline || '' }]);
-        StateManager.updateProject(projectId, { checklist: project.checklist, taskActivity: project.taskActivity });
+        if (!this._persistMutation(projectId, project, snapshot, { checklist: project.checklist, taskActivity: project.taskActivity })) return false;
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: itemId });
         return true;
@@ -221,6 +243,7 @@ var ChecklistModule = {
     _restoreActivityEvent: function(projectId, event, direction) {
         var project = StateManager.getProject(projectId);
         if (!project || !Array.isArray(project.checklist) || !Array.isArray(project.taskActivity)) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var task = project.checklist.find(function(item) { return String(item.id) === String(event.taskId); });
         if (!task || !Array.isArray(event.changes) || !event.changes.length) return false;
         var isUndo = direction === 'undo';
@@ -247,11 +270,11 @@ var ChecklistModule = {
         task.updatedAt = new Date().toISOString();
         this._recordTaskActivity(project, task, isUndo ? 'undone' : 'redone', inverseChanges);
         this._recalculateProgress(project);
-        StateManager.updateProject(projectId, {
+        if (!this._persistMutation(projectId, project, snapshot, {
             checklist: project.checklist,
             progress: project.progress,
             taskActivity: project.taskActivity
-        });
+        })) return false;
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId, itemId: task.id });
         if (typeof NotificationModule !== 'undefined') NotificationModule.success(isUndo ? 'Последнее изменение отменено' : 'Изменение восстановлено');
@@ -279,6 +302,7 @@ var ChecklistModule = {
     addItem: function(projectId, text) {
         var project = StateManager.getProject(projectId);
         if (!project) return null;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         if (!text || !text.trim()) return null;
 
@@ -296,10 +320,10 @@ var ChecklistModule = {
 
         this._recalculateProgress(project);
 
-        StateManager.updateProject(projectId, {
+        if (!this._persistMutation(projectId, project, snapshot, {
             checklist: project.checklist,
             progress: project.progress
-        });
+        })) return false;
 
         // Обновляем DOM
         this._updateChecklistDOM(project);
@@ -315,6 +339,7 @@ var ChecklistModule = {
     deleteItem: function(projectId, itemId) {
         var project = StateManager.getProject(projectId);
         if (!project) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         var removed = (project.checklist || []).find(function(item) { return item.id === itemId; });
         if (!removed) return false;
@@ -329,11 +354,11 @@ var ChecklistModule = {
 
         this._recalculateProgress(project);
 
-        StateManager.updateProject(projectId, {
+        if (!this._persistMutation(projectId, project, snapshot, {
             checklist: project.checklist,
             notes: project.notes,
             progress: project.progress
-        });
+        })) return false;
 
         this._updateChecklistDOM(project);
         EventBus.emit('checklist:changed', { projectId: projectId });

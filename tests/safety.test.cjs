@@ -3524,6 +3524,44 @@ test('checklist completion timestamps are set on completion and cleared on reope
     assert.equal(events.at(-1).name, 'checklist:changed');
 });
 
+test('checklist mutations restore the original project when persistence fails', () => {
+  const task = { id: 'task', text: 'Original', completed: false };
+  const project = { id: 'p', checklist: [task], taskActivity: [] };
+  const events = [];
+  const errors = [];
+  const ctx = execute('js/modules/checklist.js', {
+    StateManager: {
+      getProject() { return project; },
+      updateProject() { return null; },
+      _updateStats() {}
+    },
+    EventBus: { emit(name) { events.push(name); }, on() {} },
+    Helpers: { generateId: () => 'new-task', escapeHtml: value => String(value) },
+    NotificationModule: { error(message) { errors.push(message); } },
+    document: { querySelector() { return null; } }
+  });
+  const checklist = ctx.ChecklistModule;
+  checklist._updateChecklistDOM = () => {};
+
+  assert.equal(checklist.setPriority('p', 'task', 'high'), false);
+  assert.equal(project.checklist[0].priority, undefined);
+  assert.equal(project.taskActivity.length, 0);
+
+  assert.equal(checklist.updateText('p', 'task', 'Changed'), false);
+  assert.equal(task.text, 'Original');
+  assert.equal(project.taskActivity.length, 0);
+
+  assert.equal(checklist.addItem('p', 'New task'), false);
+  assert.equal(project.checklist.length, 1);
+
+  assert.equal(checklist.deleteItem('p', 'task'), false);
+  assert.equal(project.checklist.length, 1);
+  assert.equal(project.checklist[0].text, 'Original');
+
+  assert.equal(events.includes('checklist:changed'), false);
+  assert.equal(errors.length, 4);
+});
+
 test('editing a checklist task preserves completion history and rejects invalid text', () => {
     const project = { id: 'p', progress: 100, checklist: [
         { id: 'task', text: 'Старое название', completed: true, completedAt: '2026-11-19T10:00:00.000Z', sourceNoteId: 'note' }
