@@ -406,7 +406,12 @@ test('backup importer validates payload before confirmation and restores a valid
       get() { return []; },
       set(key, value) { writes.push([key, value]); return true; }
     },
-    document: { documentElement: { setAttribute(name, value) { writes.push([name, value]); } } },
+    ThemeModule: { setTheme(theme, persist) { writes.push(['theme-module', theme, persist]); writes.push(['theme', theme]); } },
+    FavoritesModule: { favorites: [] },
+    RendererModule: {
+      _updateQuickAccess() { writes.push(['quick-access-refresh']); },
+      renderProjects() {}, renderStats() {}, _renderInsights() {}
+    },
     NotificationModule: { success() {}, error(message) { errors.push(message); } }
   }).ExportModule;
   const writes = [];
@@ -415,7 +420,8 @@ test('backup importer validates payload before confirmation and restores a valid
   await Promise.resolve();
   await Promise.resolve();
   assert.ok(writes.some(([key, value]) => key === 'theme' && value === 'light'));
-  assert.ok(writes.some(([key, value]) => key === 'data-bs-theme' && value === 'light'));
+  assert.ok(writes.some(([key, value, persist]) => key === 'theme-module' && value === 'light' && persist === true));
+  assert.ok(writes.some(([key]) => key === 'quick-access-refresh'));
   assert.ok(writes.some(([key, value]) => key === 'settings' && value.compactMode === true));
   assert.ok(writes.some(([key, value]) => key === 'activity' && value[0].type === 'project-created'));
   assert.equal(errors.length, 0);
@@ -439,6 +445,31 @@ test('backup importer rejects invalid settings before writing any project data',
   await Promise.resolve();
   assert.equal(writes.length, 0);
   assert.match(errors[0], /настройки/);
+});
+
+test('backup importer rejects malformed favorites and achievements before changing state', async () => {
+  for (const payload of [
+    { favorites: ['p1', { unsafe: true }] },
+    { achievements: ['first_project', 'first_project'] }
+  ]) {
+    const writes = [];
+    const errors = [];
+    const service = execute('js/modules/export.js', {
+      Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+        projects: [{ id: 'p1', name: 'Valid project' }],
+        ...payload
+      })) },
+      confirm: () => { throw Error('Invalid list must not ask for confirmation'); },
+      StateManager: { set(path, value) { writes.push([path, value]); }, saveProjects() { writes.push(['saveProjects']); } },
+      StorageService: { get() { return []; }, set(key, value) { writes.push([key, value]); return true; } },
+      NotificationModule: { success() {}, error(message) { errors.push(message); } }
+    }).ExportModule;
+    service._importFile({ size: 10 });
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(writes.length, 0);
+    assert.match(errors[0], /списка|избранное|достижения/);
+  }
 });
 
 test('project backup carries health history while legacy backup import remains supported', () => {

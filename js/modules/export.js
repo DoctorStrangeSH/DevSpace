@@ -262,14 +262,20 @@ var ExportModule = {
                 }
                 projects = self._validateBackupProjects(projects);
 
-                if (data && data.favorites !== undefined &&
-                    (!Array.isArray(data.favorites) || data.favorites.length > 5000)) {
-                    throw new Error('Некорректный список избранного в бэкапе');
-                }
-                if (data && data.achievements !== undefined &&
-                    (!Array.isArray(data.achievements) || data.achievements.length > 5000)) {
-                    throw new Error('Некорректный список достижений в бэкапе');
-                }
+                var importedFavorites = data && data.favorites !== undefined
+                    ? self._validateBackupMetadata(data.favorites, true, 5000, 'избранное') : undefined;
+                var importedAchievements = data && data.achievements !== undefined
+                    ? self._validateBackupMetadata(data.achievements, true, 5000, 'достижения') : undefined;
+                [importedFavorites, importedAchievements].forEach(function(items) {
+                    if (items === undefined) return;
+                    var seenItems = new Set();
+                    items.forEach(function(item) {
+                        if (typeof item !== 'string' || !item.trim() || item.length > 150 || seenItems.has(item)) {
+                            throw new Error('Некорректный элемент списка в бэкапе');
+                        }
+                        seenItems.add(item);
+                    });
+                });
                 var importedSettings = data && data.settings !== undefined
                     ? self._validateBackupMetadata(data.settings, false, 500, 'настройки') : undefined;
                 var importedActivity = data && data.activity !== undefined
@@ -296,20 +302,29 @@ var ExportModule = {
                 StateManager.saveProjects();
 
                 if (data && data.theme) {
-                    StateManager.set('theme', data.theme);
-                    StorageService.set('theme', data.theme);
-                    if (typeof document !== 'undefined' && document.documentElement) {
-                        document.documentElement.setAttribute('data-bs-theme', data.theme);
+                    if (typeof ThemeModule !== 'undefined' && typeof ThemeModule.setTheme === 'function') {
+                        ThemeModule.setTheme(data.theme, true);
+                    } else {
+                        StateManager.set('theme', data.theme);
+                        StorageService.set('theme', data.theme);
+                        if (typeof document !== 'undefined' && document.documentElement) {
+                            document.documentElement.setAttribute('data-bs-theme', data.theme);
+                        }
                     }
                 }
 
                 if (data && data.favorites) {
-                    StorageService.set('favorites', data.favorites);
-                    if (typeof FavoritesModule !== 'undefined') FavoritesModule.favorites = data.favorites;
+                    StorageService.set('favorites', importedFavorites);
+                    if (typeof FavoritesModule !== 'undefined') {
+                        FavoritesModule.favorites = importedFavorites;
+                        if (typeof RendererModule !== 'undefined' && typeof RendererModule._updateQuickAccess === 'function') {
+                            RendererModule._updateQuickAccess();
+                        }
+                    }
                 }
                 if (data && data.achievements) {
-                    StorageService.set('achievements', data.achievements);
-                    if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = data.achievements;
+                    StorageService.set('achievements', importedAchievements);
+                    if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = importedAchievements;
                 }
                 if (data && data.settings !== undefined) {
                     StorageService.set(StorageService.KEYS.SETTINGS, importedSettings);
