@@ -10,6 +10,7 @@ var SyncModule = {
     _syncTimer: null,
     _mode: 'read-only',
     _sdkPromise: null,
+    _eventsBound: false,
 
     _loadFirebaseSDK: function() {
         if (typeof firebase !== 'undefined' && firebase.firestore) return Promise.resolve(true);
@@ -41,6 +42,7 @@ var SyncModule = {
 
     init: function() {
         var self = this;
+        this._bindEvents();
         // LocalStorageService exposes Promise-based methods. Resolve both values
         // before inspecting them; otherwise settings.syncMode is read from a
         // Promise and local-only mode silently falls through to cloud loading.
@@ -65,8 +67,13 @@ var SyncModule = {
     },
 
     _bindEvents: function() {
+        if (this._eventsBound) return;
+        this._eventsBound = true;
         var self = this;
-        
+
+        // A restored connection should refresh read-only cloud data without
+        // requiring a manual page reload. Guard against duplicate listeners
+        // when application initialization is retried.
         window.addEventListener('online', function() { self._syncFromCloud(); });
     },
 
