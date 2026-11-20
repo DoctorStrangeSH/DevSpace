@@ -915,21 +915,21 @@ test('active service worker precaches every first-party stylesheet and script', 
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const registeredWorker = app.match(/serviceWorker\\.register\\(['"]([^'"]+)/);
+  const registeredWorker = app.match(/serviceWorker\.register\(['"]([^'"]+)/);
   assert.ok(registeredWorker, 'app must register a service worker');
-  assert.match(registeredWorker[1], /^sw\\.js\\?v=/, 'app must register the maintained sw.js worker');
+  assert.match(registeredWorker[1], /^sw\.js\?v=/, 'app must register the maintained sw.js worker');
 
-  const appVersion = app.match(/version:\\s*['"]([^'"]+)['"]/);
+  const appVersion = app.match(/version:\s*['"]([^'"]+)['"]/);
   const workerAssetVersion = worker.match(/const ASSET_VERSION = ['"]([^'"]+)['"]/);
   assert.ok(appVersion && workerAssetVersion, 'app and worker asset versions must be declared');
   assert.equal(workerAssetVersion[1], appVersion[1], 'worker cache-busting version must match the app');
 
-  const precacheBlock = worker.match(/const PRECACHE_URLS = \\[([\\s\\S]*?)\\]\\.map/);
+  const precacheBlock = worker.match(/const PRECACHE_URLS = \[([\s\S]*?)\]\.map/);
   assert.ok(precacheBlock, 'worker must declare its precache list');
-  const precached = new Set(Array.from(precacheBlock[1].matchAll(/['"]((?:css|js)\\/[^'"]+)['"]/g), match => match[1].split('?')[0]));
+  const precached = new Set(Array.from(precacheBlock[1].matchAll(/['"]((?:css|js)\/[^'"]+)['"]/g), match => match[1].split('?')[0]));
   const localAssets = [
-    ...Array.from(html.matchAll(/<script[^>]+src=['"]((?:css|js)\\/[^'"]+)/g), match => match[1]),
-    ...Array.from(html.matchAll(/<link[^>]+href=['"]((?:css|js)\\/[^'"]+\\.css[^'"]*)/g), match => match[1])
+    ...Array.from(html.matchAll(/<script[^>]+src=['"]((?:css|js)\/[^'"]+)/g), match => match[1]),
+    ...Array.from(html.matchAll(/<link[^>]+href=['"]((?:css|js)\/[^'"]+\.css[^'"]*)/g), match => match[1])
   ].map(asset => asset.split('?')[0]);
   const missing = Array.from(new Set(localAssets)).filter(asset => !precached.has(asset));
   assert.deepEqual(missing, [], 'all first-party scripts and stylesheets must be available to the offline shell');
