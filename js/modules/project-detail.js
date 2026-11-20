@@ -1045,13 +1045,18 @@ var ProjectDetailModule = {
         var count = (project.notes || []).filter(function(note) { return selected.has(note.id); }).length;
         if (!count || !confirm('Изменить приоритет у ' + count + ' заметок?')) return;
         var now = new Date().toISOString();
-        project.notes.forEach(function(note) {
-            if (selected.has(note.id)) { note.priority = priority; note.updatedAt = now; }
+        var notes = (project.notes || []).map(function(note) {
+            return selected.has(note.id) ? Object.assign({}, note, { priority: priority, updatedAt: now }) : note;
         });
-        StateManager.updateProject(projectId, { notes: project.notes });
+        var saved = StateManager.updateProject(projectId, { notes: notes });
+        if (saved === false || saved === null) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось сохранить приоритеты заметок. Изменения не применены.');
+            return false;
+        }
         EventBus.emit('notes:bulk-priority', { projectId: projectId, count: count, priority: priority });
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Приоритет изменён: ' + count);
         this._refreshNotes(projectId);
+        return true;
     },
 
     _moveSelectedNotes: function(projectId) {
@@ -1064,21 +1069,30 @@ var ProjectDetailModule = {
         var selected = this._selectedNoteIds;
         var moving = (source.notes || []).filter(function(note) { return selected.has(note.id); });
         if (!moving.length || !confirm('Перенести ' + moving.length + ' заметок в проект «' + target.name + '»?')) return;
+        moving = moving.map(function(note) { return Object.assign({}, note); });
+        var checklist = (source.checklist || []).map(function(task) { return Object.assign({}, task); });
         moving.forEach(function(note) {
             if (note.linkedTaskId) {
-                var task = (source.checklist || []).find(function(item) { return item.id === note.linkedTaskId; });
+                var task = checklist.find(function(item) { return item.id === note.linkedTaskId; });
                 if (task && task.sourceNoteId === note.id) delete task.sourceNoteId;
                 delete note.linkedTaskId;
             }
         });
-        source.notes = source.notes.filter(function(note) { return !selected.has(note.id); });
-        target.notes = (target.notes || []).concat(moving);
-        StateManager.updateProject(projectId, { notes: source.notes, checklist: source.checklist });
-        StateManager.updateProject(target.id, { notes: target.notes });
+        var sourceNotes = (source.notes || []).filter(function(note) { return !selected.has(note.id); });
+        var targetNotes = (target.notes || []).concat(moving);
+        var saved = StateManager.updateProjects([
+            { projectId: projectId, updates: { notes: sourceNotes, checklist: checklist } },
+            { projectId: target.id, updates: { notes: targetNotes } }
+        ]);
+        if (!saved) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось перенести заметки. Оба проекта оставлены без изменений.');
+            return false;
+        }
         EventBus.emit('notes:bulk-moved', { fromProjectId: projectId, toProjectId: target.id, count: moving.length });
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Перенесено заметок: ' + moving.length);
         selected.clear();
         this._refreshNotes(projectId);
+        return true;
     },
 
     _completeVisibleNotes: function(projectId) {
@@ -1088,18 +1102,22 @@ var ProjectDetailModule = {
         if (!pending.length || !confirm('Отметить выполненными ' + pending.length + ' найденных заметок?')) return;
         var ids = new Set(pending.map(function(note) { return note.id; }));
         var timestamp = new Date().toISOString();
-        project.notes.forEach(function(note) {
-            if (ids.has(note.id)) {
-                note.completed = true;
-                note.completedAt = timestamp;
-                note.updatedAt = timestamp;
-            }
+        var notes = (project.notes || []).map(function(note) {
+            return ids.has(note.id) ? Object.assign({}, note, {
+                completed: true,
+                completedAt: timestamp,
+                updatedAt: timestamp
+            }) : note;
         });
-        StateManager.updateProject(projectId, { notes: project.notes });
-        StateManager.saveProjects();
+        var saved = StateManager.updateProject(projectId, { notes: notes });
+        if (saved === false || saved === null) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось сохранить завершение заметок. Изменения не применены.');
+            return false;
+        }
         EventBus.emit('notes:bulk-completed', { projectId: projectId, count: pending.length });
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Завершено заметок: ' + pending.length);
         this._refreshNotes(projectId);
+        return true;
     }
 };
 
