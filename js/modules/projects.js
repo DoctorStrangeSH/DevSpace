@@ -154,18 +154,24 @@ var ProjectsModule = {
 
         if (projectId) {
             var updated = StateManager.updateProject(projectId, formData);
-            if (updated) {
-                if (typeof NotificationModule !== 'undefined') {
-                    NotificationModule.success('Проект "' + updated.name + '" обновлён');
-                }
-                // Сохраняем в Supabase
-                if (typeof SupabaseService !== 'undefined' && SupabaseService.isEnabled()) {
-                    SupabaseService.saveProject(updated);
-                }
+            if (!updated) {
+                if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось сохранить проект. Проверьте свободное место в хранилище и повторите попытку.');
+                return false;
+            }
+            if (typeof NotificationModule !== 'undefined') {
+                NotificationModule.success('Проект "' + updated.name + '" обновлён');
+            }
+            // Сохраняем в Supabase
+            if (typeof SupabaseService !== 'undefined' && SupabaseService.isEnabled()) {
+                SupabaseService.saveProject(updated);
             }
         } else {
             var newProject = this.createProject(formData);
-            if (newProject && typeof NotificationModule !== 'undefined') {
+            if (!newProject) {
+                if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось создать проект. Проверьте свободное место в хранилище и повторите попытку.');
+                return false;
+            }
+            if (typeof NotificationModule !== 'undefined') {
                 NotificationModule.success('Проект "' + newProject.name + '" создан');
             }
         }
@@ -177,6 +183,7 @@ var ProjectsModule = {
             RendererModule.renderProjects();
             RendererModule.renderStats();
         }
+        return true;
     },
 
     _getFormData: function() {
@@ -231,13 +238,14 @@ var ProjectsModule = {
         };
 
         var added = StateManager.addProject(newProject);
+        if (!added) return null;
         this._cache.filteredProjects = null;
-        
-        // Сохраняем в Supabase
+
+        // Сохраняем в Supabase only after local persistence succeeds.
         if (typeof SupabaseService !== 'undefined' && SupabaseService.isEnabled()) {
             SupabaseService.saveProject(added);
         }
-        
+
         return added;
     },
 
