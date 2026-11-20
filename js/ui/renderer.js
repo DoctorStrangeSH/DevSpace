@@ -64,6 +64,27 @@ var RendererModule = {
             var button = event.target.closest('[data-focus-project]');
             if (button && typeof ProjectDetailModule !== 'undefined') ProjectDetailModule.show(button.dataset.focusProject);
         });
+        var nextTasks = document.getElementById('workspaceNextTasks');
+        if (nextTasks) nextTasks.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-next-project][data-next-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.nextProject, button.dataset.nextTask);
+            }
+        });
+        var recentActivity = document.getElementById('workspaceActivityList');
+        if (recentActivity) recentActivity.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-activity-project][data-activity-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.activityProject, button.dataset.activityTask);
+            }
+        });
+        var deadlineAlerts = document.getElementById('workspaceDeadlineList');
+        if (deadlineAlerts) deadlineAlerts.addEventListener('click', function(event) {
+            var button = event.target.closest('[data-alert-project][data-alert-task]');
+            if (button && typeof ProjectDetailModule !== 'undefined') {
+                ProjectDetailModule.showTask(button.dataset.alertProject, button.dataset.alertTask);
+            }
+        });
         var schedule = document.getElementById('scheduleCalendar');
         if (schedule) schedule.addEventListener('click', function(event) {
             var project = event.target.closest('[data-focus-project]');
@@ -325,7 +346,7 @@ var RendererModule = {
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) loadMore.addEventListener('click', function() {
             self._visibleCount += self._pageSize;
-            self.renderProjects();
+            self.renderProjects({ listOnly: true });
         });
         var sort = document.getElementById('projectsSort');
         if (sort) {
@@ -335,7 +356,7 @@ var RendererModule = {
             sort.addEventListener('change', function() {
                 self._sortMode = ['updated', 'name', 'status'].indexOf(sort.value) !== -1 ? sort.value : 'updated';
                 if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('devspace_sort', self._sortMode);
-                self.renderProjects();
+                self.renderProjects({ listOnly: true });
             });
         }
         var savedView = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('devspace_view') : null;
@@ -599,7 +620,7 @@ var RendererModule = {
         var tasks = [];
         (projects || []).forEach(function(project) {
             (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
-                if (!task || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                if (!project.id || !task || task.id == null || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
                 var level = Object.hasOwn(rank, task.priority) ? task.priority : 'normal';
                 var due = typeof task.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(task.deadline) ? task.deadline : '';
                 if (priority !== 'all' && level !== priority) return;
@@ -1202,6 +1223,17 @@ var RendererModule = {
             btn.addEventListener('click', function() {
                 self._switchTab(btn.dataset.tab);
             });
+            btn.addEventListener('keydown', function(event) {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                var tabs = Array.from(document.querySelectorAll('.tab-btn'));
+                var index = tabs.indexOf(btn);
+                if (index < 0) return;
+                event.preventDefault();
+                var next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+                    (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+                self._switchTab(tabs[next].dataset.tab);
+                tabs[next].focus();
+            });
         });
     },
 
@@ -1209,7 +1241,10 @@ var RendererModule = {
         sessionStorage.setItem('devspace_tab', tab);
 
         document.querySelectorAll('.tab-btn').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.tab === tab);
+            var selected = b.dataset.tab === tab;
+            b.classList.toggle('active', selected);
+            b.setAttribute('aria-selected', String(selected));
+            b.tabIndex = selected ? 0 : -1;
         });
 
         var tp = document.getElementById('tabProjects');
@@ -1246,15 +1281,17 @@ var RendererModule = {
 
     // ========== РЕНДЕР ==========
 
-    renderProjects: function() {
-        this._renderQuickTaskProjects();
-        this._renderWorkspaceSummary();
-        this._renderInsights();
-        this._renderToday();
-        this._renderFocus();
-        this._renderProductivity();
-        this._renderRoadmapOverview();
-        this._renderSchedule();
+    renderProjects: function(options) {
+        if (!options || !options.listOnly) {
+            this._renderQuickTaskProjects();
+            this._renderWorkspaceSummary();
+            this._renderInsights();
+            this._renderToday();
+            this._renderFocus();
+            this._renderProductivity();
+            this._renderRoadmapOverview();
+            this._renderSchedule();
+        }
         var container = this.containers.projects;
         var emptyState = this.containers.emptyState;
         if (!container) return;
@@ -1273,7 +1310,9 @@ var RendererModule = {
             projects = ProjectsModule.getFilteredProjects();
         }
 
-        if (sq) {
+        // ProjectsModule already applies search for the regular project collection.
+        // Favorites are sourced separately, so apply the same query only to that view.
+        if (filterStatus === 'favorites' && sq) {
             var t = sq.toLowerCase();
             projects = projects.filter(function(p) {
                 return [p.name, p.description].concat(p.techStack || []).join(' ').toLowerCase().indexOf(t) !== -1;
@@ -1297,6 +1336,11 @@ var RendererModule = {
 
         var countEl = document.getElementById('filteredCount');
         if (countEl) countEl.textContent = projects.length;
+        var resultsStatus = document.getElementById('projectsResultsStatus');
+        if (resultsStatus) resultsStatus.textContent = projects.length ? 'Найдено: ' + projects.length : 'Совпадений нет';
+        var hasFilters = !!sq || !!filterStatus && filterStatus !== 'all';
+        var clearFilters = document.getElementById('projectsClearFilters');
+        if (clearFilters) clearFilters.hidden = !hasFilters;
         var loadMore = document.getElementById('projectsLoadMore');
         if (loadMore) {
             var remaining = Math.max(0, projects.length - this._visibleCount);
@@ -1306,10 +1350,18 @@ var RendererModule = {
 
         if (!projects.length) {
             container.innerHTML = '';
-            if (emptyState) emptyState.style.display = 'block';
+            var emptyTitle = document.getElementById('projectsEmptyTitle');
+            var emptyDescription = document.getElementById('projectsEmptyDescription');
+            var emptyReset = document.getElementById('projectsEmptyReset');
+            var emptyCreate = document.getElementById('projectsEmptyCreate');
+            if (emptyTitle) emptyTitle.textContent = hasFilters ? 'Ничего не найдено' : 'Нет проектов';
+            if (emptyDescription) emptyDescription.textContent = hasFilters ? 'Попробуй другой запрос или сбрось фильтры.' : 'Создайте первый проект';
+            if (emptyReset) emptyReset.hidden = !hasFilters;
+            if (emptyCreate) emptyCreate.hidden = hasFilters;
+            if (emptyState) emptyState.hidden = false;
             return;
         }
-        if (emptyState) emptyState.style.display = 'none';
+        if (emptyState) emptyState.hidden = true;
 
         var self = this;
         container.innerHTML = projects.slice(0, this._visibleCount).map(function(p, i) { return self._renderProjectCard(p, i); }).join('');
@@ -1337,6 +1389,149 @@ var RendererModule = {
         if (projects.some(function(project) { return project.id === selected; })) select.value = selected;
     },
 
+    _getOverviewNextTasks: function(projects, now) {
+        return this._collectTodayTasks((projects || []).filter(function(project) {
+            return project && project.status !== 'completed' && project.status !== 'archived';
+        }), now, 'all', 'all');
+    },
+
+    _collectRecentCompletions: function(projects, now) {
+        var end = now.getTime();
+        var start = end - 7 * 86400000;
+        var results = [];
+        (projects || []).forEach(function(project) {
+            if (!project || project.id == null) return;
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || task.id == null || !task.completed || typeof task.text !== 'string' || !task.text.trim() || typeof task.completedAt !== 'string') return;
+                var timestamp = Date.parse(task.completedAt);
+                if (!Number.isFinite(timestamp) || timestamp < start || timestamp > end) return;
+                results.push({ projectId: project.id, projectName: project.name || 'Без названия', taskId: task.id, text: task.text, timestamp: timestamp });
+            });
+        });
+        return results.sort(function(a, b) { return b.timestamp - a.timestamp; });
+    },
+
+    _collectDeadlineAlerts: function(projects, now) {
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var dayKey = function(offset) {
+            var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        };
+        var start = dayKey(0), end = dayKey(2), alerts = [];
+        (projects || []).forEach(function(project) {
+            if (!project || project.id == null || project.status === 'completed' || project.status === 'archived') return;
+            (Array.isArray(project.checklist) ? project.checklist : []).forEach(function(task) {
+                if (!task || task.id == null || task.completed || typeof task.text !== 'string' || !task.text.trim()) return;
+                var due = task.deadline;
+                if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due) || due > end) return;
+                var parsed = new Date(due + 'T12:00:00');
+                if (Number.isNaN(parsed.getTime()) || dayKeyForAlert(parsed) !== due) return;
+                alerts.push({ projectId: project.id, projectName: project.name || 'Без названия', taskId: task.id, text: task.text, due: due, overdue: due < start });
+            });
+        });
+        function dayKeyForAlert(date) {
+            return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        }
+        // Keep the most recently overdue items first so an old backlog cannot hide today's deadlines.
+        return alerts.sort(function(a, b) {
+            if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+            return (a.overdue ? b.due.localeCompare(a.due) : a.due.localeCompare(b.due)) ||
+                a.projectName.localeCompare(b.projectName, 'ru');
+        });
+    },
+
+    _renderDeadlineAlerts: function(projects, now) {
+        var list = document.getElementById('workspaceDeadlineList');
+        if (!list) return;
+        var alerts = this._collectDeadlineAlerts(projects, now);
+        var count = document.getElementById('workspaceDeadlineCount');
+        if (count) count.textContent = alerts.length ? '· ' + alerts.length + ' требуют внимания' : '· всё спокойно';
+        list.replaceChildren();
+        if (!alerts.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'Просроченных задач и сроков на ближайшие 2 дня нет';
+            list.appendChild(empty);
+            return;
+        }
+        var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        // Reserve room for upcoming deadlines even when many tasks are overdue.
+        var overdueAlerts = alerts.filter(function(item) { return item.overdue; });
+        var upcomingAlerts = alerts.filter(function(item) { return !item.overdue; });
+        var visibleAlerts = overdueAlerts.slice(0, 3).concat(upcomingAlerts.slice(0, 2));
+        if (visibleAlerts.length < 5) {
+            visibleAlerts = visibleAlerts.concat(overdueAlerts.slice(3, 3 + (5 - visibleAlerts.length)));
+        }
+        visibleAlerts.forEach(function(item) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.alertProject = String(item.projectId);
+            button.dataset.alertTask = String(item.taskId);
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var title = document.createElement('strong');
+            title.textContent = item.text;
+            var project = document.createElement('small');
+            project.textContent = item.projectName;
+            detail.append(title, project);
+            var tag = document.createElement('span');
+            tag.className = 'workspace-next-tag';
+            if (item.overdue) tag.classList.add('is-overdue');
+            tag.textContent = item.overdue ? 'Просрочено · ' + item.due.slice(8, 10) + '.' + item.due.slice(5, 7) : item.due === today ? 'Сегодня' : item.due.slice(8, 10) + '.' + item.due.slice(5, 7);
+            button.append(detail, tag);
+            row.appendChild(button);
+            list.appendChild(row);
+        });
+        if (alerts.length > visibleAlerts.length) {
+            var remainder = document.createElement('li');
+            remainder.className = 'workspace-next-empty';
+            remainder.textContent = 'Ещё ' + (alerts.length - visibleAlerts.length) + ' задач требуют внимания';
+            list.appendChild(remainder);
+        }
+    },
+
+    _renderRecentCompletions: function(projects, now) {
+        var list = document.getElementById('workspaceActivityList');
+        if (!list) return;
+        var rows = this._collectRecentCompletions(projects, now);
+        var count = document.getElementById('workspaceActivityCount');
+        if (count) count.textContent = rows.length ? '· ' + rows.length + ' за 7 дней' : '';
+        list.replaceChildren();
+        if (!rows.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'За последние 7 дней завершённых задач нет';
+            list.appendChild(empty);
+            return;
+        }
+        rows.slice(0, 5).forEach(function(item) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.activityProject = String(item.projectId);
+            button.dataset.activityTask = String(item.taskId);
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var title = document.createElement('strong');
+            title.textContent = item.text;
+            var project = document.createElement('small');
+            project.textContent = item.projectName;
+            detail.append(title, project);
+            var date = document.createElement('time');
+            date.className = 'workspace-next-tag';
+            date.dateTime = new Date(item.timestamp).toISOString();
+            date.textContent = new Date(item.timestamp).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+            button.append(detail, date);
+            row.appendChild(button);
+            list.appendChild(row);
+        });
+    },
+
     _renderWorkspaceSummary: function() {
         var projects = StateManager.get('projects') || [];
         var now = new Date();
@@ -1357,6 +1552,53 @@ var RendererModule = {
         [['workspaceActiveProjects', active], ['workspaceOpenTasks', open], ['workspaceOverdueTasks', overdue], ['workspaceDoneTasks', done]].forEach(function(entry) {
             var el = document.getElementById(entry[0]);
             if (el) el.textContent = String(entry[1]);
+        });
+        this._renderRecentCompletions(projects, now);
+        this._renderDeadlineAlerts(projects, now);
+        var nextList = document.getElementById('workspaceNextTasks');
+        var nextCount = document.getElementById('workspaceNextCount');
+        if (!nextList) return;
+        var nextTasks = this._getOverviewNextTasks(projects, now);
+        if (nextCount) nextCount.textContent = nextTasks.length ? nextTasks.length + ' в очереди' : '';
+        nextList.replaceChildren();
+        if (!nextTasks.length) {
+            var empty = document.createElement('li');
+            empty.className = 'workspace-next-empty';
+            empty.textContent = 'Пока нет открытых задач — можно выдохнуть ✨';
+            nextList.appendChild(empty);
+            return;
+        }
+        nextTasks.slice(0, 3).forEach(function(task) {
+            var row = document.createElement('li');
+            row.className = 'workspace-next-item';
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'workspace-next-open';
+            button.dataset.nextProject = String(task.projectId);
+            button.dataset.nextTask = String(task.id);
+            button.setAttribute('aria-label', 'Открыть задачу: ' + task.text + ' — ' + task.projectName);
+            var detail = document.createElement('span');
+            detail.className = 'workspace-next-detail';
+            var name = document.createElement('strong');
+            name.textContent = task.text;
+            var project = document.createElement('small');
+            project.textContent = task.projectName;
+            detail.append(name, project);
+            var tag = document.createElement('span');
+            tag.className = 'workspace-next-tag';
+            if (task.deadline && task.deadline < today) {
+                tag.classList.add('is-overdue');
+                tag.textContent = 'Просрочено';
+            } else if (task.deadline === today) {
+                tag.textContent = 'Сегодня';
+            } else if (task.deadline) {
+                tag.textContent = task.deadline.slice(8, 10) + '.' + task.deadline.slice(5, 7);
+            } else {
+                tag.textContent = task.priority === 'high' ? 'Важно' : 'Без срока';
+            }
+            button.append(detail, tag);
+            row.appendChild(button);
+            nextList.appendChild(row);
         });
     },
 
@@ -1415,14 +1657,13 @@ var RendererModule = {
         if (isOwner) {
             actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
                 '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isFav + '" aria-label="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '" title="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>' +
-                '<button class="project-action-btn edit-project" data-project-id="' + project.id + '" aria-label="Редактировать проект" title="Редактировать проект"><i class="bi bi-pencil"></i></button>' +
-                '<button class="project-action-btn delete-project" data-project-id="' + project.id + '" aria-label="Удалить проект" title="Удалить проект"><i class="bi bi-trash"></i></button>';
+                '<button class="project-action-btn edit-project" data-project-id="' + project.id + '" aria-label="Редактировать проект" title="Редактировать проект"><i class="bi bi-pencil"></i></button>';
         } else {
             actions = '<button class="project-action-btn pin-project ' + (isPinned ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isPinned + '" title="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '" aria-label="' + (isPinned ? 'Открепить проект' : 'Закрепить наверху') + '"><i class="bi ' + (isPinned ? 'bi-pin-angle-fill' : 'bi-pin-angle') + '"></i></button>' +
                 '<button class="project-action-btn favorite-btn-card ' + (isFav ? 'active' : '') + '" data-project-id="' + project.id + '" aria-pressed="' + isFav + '" aria-label="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '" title="' + (isFav ? 'Убрать из избранного' : 'Добавить в избранное') + '"><i class="bi ' + (isFav ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
         }
 
-        return '<div class="project-card" data-project-id="' + project.id + '"><div class="project-card-inner">' +
+        return '<div class="project-card" data-project-id="' + project.id + '" tabindex="0" role="group" aria-label="Проект: ' + Helpers.escapeHtml(String(project.name || 'Без названия')).replace(/"/g, '&quot;') + '. Enter — открыть подробности"><div class="project-card-inner">' +
             '<div class="project-header"><span class="project-status-badge ' + sc + '"><i class="bi ' + si + '"></i> ' + st + '</span><div class="project-actions">' + actions + '</div></div>' +
             '<h3 class="project-name">' + Helpers.escapeHtml(project.name) + '</h3>' +
             (project.description ? '<div class="project-description-wrapper"><p class="project-description" data-full="' + Helpers.escapeHtml(project.description).replace(/"/g, '&quot;') + '">' + Helpers.escapeHtml(Helpers.truncateText(project.description, 150)) + '</p>' + (project.description.length > 150 ? '<button class="btn-show-more" onclick="event.stopPropagation(); RendererModule._toggleDescription(this)"><i class="bi bi-chevron-down me-1"></i>Показать полностью</button>' : '') + '</div>' : '') +
@@ -1432,7 +1673,7 @@ var RendererModule = {
             '<details class="project-card-extras" onclick="event.stopPropagation()"><summary><i class="bi bi-chevron-down" aria-hidden="true"></i> Задачи, заметки и план</summary>' +
             '<div class="card-mini-sections"><div class="card-mini-section"><div class="mini-section-header"><i class="bi bi-check2-square"></i><span>Чек-лист</span>' + (clTotal > 0 ? '<span class="mini-badge">' + clDone + '/' + clTotal + '</span>' : '<span class="mini-badge empty">0</span>') + '</div>' + clHTML + '</div>' +
             '<div class="card-mini-section"><div class="mini-section-header"><i class="bi bi-journal-text"></i><span>Заметки</span>' + (nActive.length > 0 ? '<span class="mini-badge">' + nActive.length + '</span>' : '<span class="mini-badge empty">0</span>') + '</div>' + nHTML + '</div></div>' +
-            mHTML + '</details>' +
+            mHTML + (isOwner ? '<div class="project-card-danger"><button type="button" class="delete-project" data-project-id="' + project.id + '" aria-label="Удалить проект"><i class="bi bi-trash" aria-hidden="true"></i> Удалить проект</button></div>' : '') + '</details>' +
             '<div class="project-footer"><span class="project-date"><i class="bi bi-clock me-1"></i>' + ua + '</span><div class="project-stats-mini"><span><i class="bi bi-arrow-repeat me-1"></i>' + (project.updates ? project.updates.length : 0) + '</span><span><i class="bi bi-sticky me-1"></i>' + notes.length + '</span><span><i class="bi bi-check2 me-1"></i>' + clTotal + '</span></div></div>' +
             '</div></div>';
     },
@@ -1577,6 +1818,11 @@ var RendererModule = {
                 ProjectDetailModule.show(card.dataset.projectId);
             };
             card.addEventListener('click', card._h);
+            card.addEventListener('keydown', function(event) {
+                if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                ProjectDetailModule.show(card.dataset.projectId);
+            });
         });
     },
 

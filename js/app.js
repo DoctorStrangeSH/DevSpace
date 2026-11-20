@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.65.9',
+        version: '3.66.20',
         debug: false
     },
 
@@ -46,7 +46,10 @@ var App = {
         if (fl) fl.style.display = savedTab === 'projects' ? '' : 'none';
 
         document.querySelectorAll('.tab-btn').forEach(function (b) {
-            b.classList.toggle('active', b.dataset.tab === savedTab);
+            var selected = b.dataset.tab === savedTab;
+            b.classList.toggle('active', selected);
+            b.setAttribute('aria-selected', String(selected));
+            b.tabIndex = selected ? 0 : -1;
         });
 
         var container = document.getElementById('tabTitleContainer');

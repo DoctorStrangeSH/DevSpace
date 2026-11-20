@@ -29,3 +29,22 @@
         window.bootstrap.Collapse.getOrCreateInstance(navigation, { toggle: false }).hide();
     });
 })();
+
+/* Keep long portfolio/workshop pages navigable without occupying the first screen. */
+(function () {
+    'use strict';
+    const dock = document.getElementById('sectionDock');
+    if (!dock) return;
+
+    const updateDock = () => {
+        const visible = window.scrollY > Math.max(420, window.innerHeight * .65);
+        dock.classList.toggle('is-visible', visible);
+        dock.setAttribute('aria-hidden', String(!visible));
+        if (visible) dock.removeAttribute('inert');
+        else dock.setAttribute('inert', '');
+    };
+
+    window.addEventListener('scroll', updateDock, { passive: true });
+    window.addEventListener('resize', updateDock, { passive: true });
+    updateDock();
+})();

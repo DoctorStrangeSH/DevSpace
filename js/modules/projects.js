@@ -51,7 +51,7 @@ var ProjectsModule = {
         if (searchInput) {
             var debouncedSearch = Helpers.debounce(function(e) {
                 StateManager.set('filters.search', e.target.value.toLowerCase().trim());
-                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
             }, 300);
             searchInput.addEventListener('input', debouncedSearch);
         }
@@ -59,13 +59,28 @@ var ProjectsModule = {
 
     _initFilters: function() {
         var self = this;
+        var reset = document.getElementById('projectsClearFilters');
+        var emptyReset = document.getElementById('projectsEmptyReset');
+        var resetFilters = function() {
+            var search = document.getElementById('searchProjects');
+            if (search) search.value = '';
+            StateManager.set('filters.search', '');
+            StateManager.set('filters.status', 'all');
+            self._cache.filteredProjects = null;
+            document.querySelectorAll('.filter-btn').forEach(function(btn) {
+                btn.classList.toggle('active', btn.dataset.filter === 'all');
+            });
+            if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
+        };
+        if (reset) reset.addEventListener('click', resetFilters);
+        if (emptyReset) emptyReset.addEventListener('click', resetFilters);
         document.querySelectorAll('.filter-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
                 StateManager.set('filters.status', btn.dataset.filter);
                 self._cache.filteredProjects = null;
-                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects();
+                if (typeof RendererModule !== 'undefined') RendererModule.renderProjects({ listOnly: true });
             });
         });
     },

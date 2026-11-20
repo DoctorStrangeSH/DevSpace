@@ -21,20 +21,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- App CSS -->
-    <link href="css/theme.css?v=3.65.9" rel="stylesheet">
-    <link href="css/main.css?v=3.65.9" rel="stylesheet">
-    <link href="css/animations.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/navbar.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/hero.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/cards.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/checklist.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/modal.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/buttons.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/project-detail.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/notes.css?v=3.65.9" rel="stylesheet">
-    <link href="css/components/widgets.css?v=3.65.9" rel="stylesheet">
-    <link href="css/portfolio.css?v=3.65.9" rel="stylesheet">
-    <link href="css/workspace.css?v=3.65.9" rel="stylesheet">
+    <link href="css/theme.css?v=3.66.20" rel="stylesheet">
+    <link href="css/main.css?v=3.66.20" rel="stylesheet">
+    <link href="css/animations.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/navbar.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/hero.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/cards.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/checklist.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/modal.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/buttons.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/project-detail.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/notes.css?v=3.66.20" rel="stylesheet">
+    <link href="css/components/widgets.css?v=3.66.20" rel="stylesheet">
+    <link href="css/portfolio.css?v=3.66.20" rel="stylesheet">
+    <link href="css/workspace.css?v=3.66.20" rel="stylesheet">
 </head>
 <body>
     <!-- Particles Background -->
@@ -83,8 +83,8 @@
                             <input type="search" class="search-input" id="searchProjects" placeholder="Найти проект…" aria-label="Поиск по проектам" autocomplete="off" title="Поиск проектов · Ctrl+K">
                         </div>
                         
-                        <button class="theme-toggle" id="authBtn" title="Локальное редактирование" aria-label="Включить локальное редактирование">
-                            <i class="bi bi-pencil"></i>
+                        <button class="theme-toggle edit-mode-button" type="button" id="authBtn" title="Локальное редактирование — не вход в аккаунт" aria-label="Включить локальное редактирование" aria-pressed="false">
+                            <i class="bi bi-pencil" aria-hidden="true"></i><span class="edit-mode-label">Правки</span>
                         </button>
                         <div class="dropdown profile-dropdown">
                             <button class="profile-trigger dropdown-toggle" type="button" id="cloudProfileButton" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Открыть профиль и настройки облака"><span class="profile-avatar"><i class="bi bi-person-circle" aria-hidden="true"></i></span><span class="profile-trigger-label">Профиль</span></button>
@@ -109,6 +109,14 @@
                     </div>
                 </div>
             </div>
+        </nav>
+
+        <!-- Fast section navigation appears after the introductory screen. -->
+        <nav class="section-dock" id="sectionDock" aria-label="Быстрые переходы по DevSpace" aria-hidden="true" inert>
+            <a href="#featured" aria-label="К работам"><i class="bi bi-stars" aria-hidden="true"></i><span>Работы</span></a>
+            <a href="#web-projects" aria-label="К веб-проектам"><i class="bi bi-window" aria-hidden="true"></i><span>Веб</span></a>
+            <a href="#projects" data-workspace-jump="overview" aria-label="К обзору мастерской"><i class="bi bi-grid" aria-hidden="true"></i><span>Мастерская</span></a>
+            <a href="#hero" aria-label="Наверх"><i class="bi bi-arrow-up" aria-hidden="true"></i><span>Наверх</span></a>
         </nav>
         
         <!-- Hero Section -->
@@ -206,14 +214,14 @@
                     </div>
                     
                     <!-- Табы -->
-                    <div class="tab-nav mt-3">
-                        <button class="tab-btn active" data-tab="projects">
+                    <div class="tab-nav mt-3" role="tablist" aria-label="Основные разделы мастерской">
+                        <button class="tab-btn active" type="button" id="tabButtonProjects" role="tab" aria-controls="tabProjects" aria-selected="true" tabindex="0" data-tab="projects">
                             <i class="bi bi-grid me-1"></i>Проекты
                         </button>
-                        <button class="tab-btn" data-tab="stats">
+                        <button class="tab-btn" type="button" id="tabButtonStats" role="tab" aria-controls="tabStats" aria-selected="false" tabindex="-1" data-tab="stats">
                             <i class="bi bi-graph-up me-1"></i>Статистика
                         </button>
-                        <button class="tab-btn" data-tab="achievements">
+                        <button class="tab-btn" type="button" id="tabButtonAchievements" role="tab" aria-controls="tabAchievements" aria-selected="false" tabindex="-1" data-tab="achievements">
                             <i class="bi bi-trophy me-1"></i>Достижения
                         </button>
                     </div>
@@ -234,6 +242,7 @@
                         <button class="filter-btn" data-filter="favorites">
                             <i class="bi bi-star me-1"></i>Избранное
                         </button>
+                        <button type="button" class="projects-clear-filters" id="projectsClearFilters" hidden><i class="bi bi-x-circle" aria-hidden="true"></i> Сбросить фильтры</button>
                         <label class="projects-sort-label" for="projectsSort">Сортировка
                             <select id="projectsSort" class="projects-sort-select">
                                 <option value="updated">Недавно обновлённые</option>
@@ -245,19 +254,37 @@
                             <button type="button" class="projects-view-btn active" data-projects-view="grid" aria-pressed="true" title="Карточки"><i class="bi bi-grid-3x2-gap" aria-hidden="true"></i><span>Карточки</span></button>
                             <button type="button" class="projects-view-btn" data-projects-view="list" aria-pressed="false" title="Компактный список"><i class="bi bi-list-ul" aria-hidden="true"></i><span>Список</span></button>
                         </div>
+                        <span id="projectsResultsStatus" class="projects-results-status" role="status" aria-live="polite" aria-atomic="true"></span>
                     </div>
                 </div>
                 
                 <!-- Контент табов -->
-                <div class="tab-content" id="tabProjects" data-workspace-view="overview">
+                <div class="tab-content" id="tabProjects" role="tabpanel" aria-labelledby="tabButtonProjects" data-workspace-view="overview">
                     <section class="workspace-overview" id="workspaceOverview" aria-labelledby="workspaceOverviewTitle">
                         <div class="workspace-overview-heading"><div><span class="focus-panel-kicker">МОЯ МАСТЕРСКАЯ</span><h3 id="workspaceOverviewTitle">Всё важное — на одном экране</h3><p>Живая сводка по твоим проектам и задачам</p></div><button type="button" class="workspace-overview-all" data-workspace-view-target="projects">Все проекты <i class="bi bi-arrow-up-right" aria-hidden="true"></i></button></div>
+                        <div class="workspace-overview-shortcuts" role="group" aria-label="Быстрые действия мастерской">
+                            <button type="button" data-workspace-focus="todayPanel" data-focus-view="overview"><i class="bi bi-list-check" aria-hidden="true"></i> Мои задачи <i class="bi bi-arrow-up-right" aria-hidden="true"></i></button>
+                            <button type="button" data-workspace-focus="scheduleCalendar" data-focus-view="planning"><i class="bi bi-calendar3" aria-hidden="true"></i> Календарь <i class="bi bi-arrow-up-right" aria-hidden="true"></i></button>
+                        </div>
                         <div class="workspace-metrics" aria-label="Основные показатели мастерской">
                             <button type="button" class="workspace-metric" data-workspace-view-target="projects"><span class="workspace-metric-icon metric-projects"><i class="bi bi-layers" aria-hidden="true"></i></span><strong id="workspaceActiveProjects">0</strong><span>В работе</span></button>
-                            <button type="button" class="workspace-metric" data-workspace-view-target="overview"><span class="workspace-metric-icon metric-tasks"><i class="bi bi-list-check" aria-hidden="true"></i></span><strong id="workspaceOpenTasks">0</strong><span>Открытых задач</span></button>
+                            <button type="button" class="workspace-metric" data-workspace-focus="todayPanel" data-focus-view="overview"><span class="workspace-metric-icon metric-tasks"><i class="bi bi-list-check" aria-hidden="true"></i></span><strong id="workspaceOpenTasks">0</strong><span>Открытых задач</span></button>
                             <button type="button" class="workspace-metric" data-workspace-view-target="planning"><span class="workspace-metric-icon metric-deadline"><i class="bi bi-calendar-event" aria-hidden="true"></i></span><strong id="workspaceOverdueTasks">0</strong><span>Просрочено</span></button>
                             <button type="button" class="workspace-metric" data-workspace-view-target="analytics"><span class="workspace-metric-icon metric-complete"><i class="bi bi-check2-circle" aria-hidden="true"></i></span><strong id="workspaceDoneTasks">0</strong><span>Завершено задач</span></button>
                         </div>
+                        <div class="workspace-next" aria-labelledby="workspaceNextTitle">
+                            <div class="workspace-next-heading"><h4 id="workspaceNextTitle">Что дальше</h4><span id="workspaceNextCount"></span></div>
+                            <ul id="workspaceNextTasks" class="workspace-next-list"><li class="workspace-next-empty">Пока нет открытых задач</li></ul>
+                        </div>
+                        <details class="workspace-activity" id="workspaceDeadlineAlerts">
+                            <summary><span><i class="bi bi-bell" aria-hidden="true"></i> Важные сроки <small id="workspaceDeadlineCount"></small></span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                            <ul id="workspaceDeadlineList" class="workspace-next-list"><li class="workspace-next-empty">Срочных сроков нет</li></ul>
+                        </details>
+                        <details class="workspace-activity" id="workspaceActivity">
+                            <summary><span><i class="bi bi-clock-history" aria-hidden="true"></i> Недавно завершено <small id="workspaceActivityCount"></small></span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                            <ul id="workspaceActivityList" class="workspace-next-list"><li class="workspace-next-empty">За последние 7 дней завершённых задач нет</li></ul>
+                        </details>
+                        <button type="button" class="workspace-more-toggle" id="workspaceMoreToggle" aria-expanded="false" aria-controls="focusPanel roadmapOverview productivityPanel"><i class="bi bi-sliders2" aria-hidden="true"></i><span>Показать подробности</span><i class="bi bi-chevron-down" aria-hidden="true"></i></button>
                     </section>
                     <section class="cloud-workspace-panel" id="cloudWorkspacePanel" aria-labelledby="cloudWorkspaceTitle">
                         <div class="cloud-workspace-heading"><span class="cloud-workspace-emblem"><i class="bi bi-cloud-check" aria-hidden="true"></i></span><div><span class="focus-panel-kicker">ЛИЧНОЕ ОБЛАКО</span><h3 id="cloudWorkspaceTitle">Мои данные, под защитой</h3><p>Ручной перенос между устройствами. Никакой автоматической перезаписи.</p></div></div>
@@ -265,14 +292,26 @@
                         <div class="cloud-migration-preview">
                             <button type="button" id="cloudMigrationPreviewBtn" disabled>Проверить облако</button>
                             <button type="button" id="cloudMigrationBackupBtn">Скачать резервную копию</button>
-                            <label for="cloudMigrationProjectSelect" class="health-history-note">Локальный проект для загрузки</label>
-                            <select id="cloudMigrationProjectSelect" disabled aria-label="Выбрать один проект для загрузки"><option value="">Сначала проверь перенос</option></select>
-                            <button type="button" id="cloudMigrationUploadBtn" disabled>Загрузить один проект</button>
-                            <button type="button" id="cloudMigrationBatchBtn" disabled>Загрузить остальные новые</button>
-                            <label for="cloudMigrationDownloadSelect" class="health-history-note">Проект для получения из облака</label>
-                            <select id="cloudMigrationDownloadSelect" disabled aria-label="Выбрать облачный проект"><option value="">Сначала проверь облако</option></select>
-                            <button type="button" id="cloudMigrationDownloadBtn" disabled>Получить один проект</button>
                             <p class="health-history-note" id="cloudMigrationPreviewStatus" role="status" aria-live="polite">Войди через Google, чтобы проверить доступные проекты.</p>
+                            <details class="cloud-migration-advanced" id="cloudMigrationAdvanced">
+                                <summary><span><i class="bi bi-arrow-left-right" aria-hidden="true"></i> Перенос проектов между устройствами</span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                                <p class="cloud-migration-explainer">Сначала проверь облако и скачай резервную копию. Затем выбери конкретный проект: загрузка и получение выполняются только после твоего подтверждения.</p>
+                                <div class="cloud-migration-actions">
+                                    <div class="cloud-migration-action-group">
+                                        <h4><i class="bi bi-cloud-upload" aria-hidden="true"></i> На другое устройство</h4>
+                                        <label for="cloudMigrationProjectSelect" class="health-history-note">Локальный проект для загрузки</label>
+                                        <select id="cloudMigrationProjectSelect" disabled aria-label="Выбрать один проект для загрузки"><option value="">Сначала проверь перенос</option></select>
+                                        <button type="button" id="cloudMigrationUploadBtn" disabled>Загрузить один проект</button>
+                                        <button type="button" id="cloudMigrationBatchBtn" disabled>Загрузить остальные новые</button>
+                                    </div>
+                                    <div class="cloud-migration-action-group">
+                                        <h4><i class="bi bi-cloud-download" aria-hidden="true"></i> На это устройство</h4>
+                                        <label for="cloudMigrationDownloadSelect" class="health-history-note">Проект для получения из облака</label>
+                                        <select id="cloudMigrationDownloadSelect" disabled aria-label="Выбрать облачный проект"><option value="">Сначала проверь облако</option></select>
+                                        <button type="button" id="cloudMigrationDownloadBtn" disabled>Получить один проект</button>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </section>
                     <section class="insights-panel mb-4" id="insightsPanel" aria-labelledby="insightsTitle">
@@ -343,17 +382,18 @@
                     </section>
                     <div id="projectsContainer" class="row"></div>
                     <div class="projects-load-more-wrap"><button type="button" class="btn btn-glass" id="projectsLoadMore" aria-controls="projectsContainer" hidden>Показать ещё</button></div>
-                    <div id="emptyState" class="empty-state" style="display:none;">
+                    <div id="emptyState" class="empty-state" hidden>
                         <i class="bi bi-folder2-open empty-icon"></i>
-                        <h3>Нет проектов</h3>
-                        <p>Создайте первый проект</p>
-                        <button class="btn btn-gradient owner-only" data-bs-toggle="modal" data-bs-target="#projectModal" style="display:none;">
+                        <h3 id="projectsEmptyTitle">Нет проектов</h3>
+                        <p id="projectsEmptyDescription">Создайте первый проект</p>
+                        <button type="button" class="projects-empty-reset" id="projectsEmptyReset" hidden><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Показать все проекты</button>
+                        <button class="btn btn-gradient owner-only" id="projectsEmptyCreate" data-bs-toggle="modal" data-bs-target="#projectModal" style="display:none;">
                             <i class="bi bi-plus-lg me-2"></i>Создать
                         </button>
                     </div>
                 </div>
                 
-                <div class="tab-content" id="tabStats" style="display:none;">
+                <div class="tab-content" id="tabStats" role="tabpanel" aria-labelledby="tabButtonStats" style="display:none;">
                     <div class="row g-4">
                         <div class="col-md-3" data-aos="fade-up">
                             <div class="stat-card">
@@ -386,7 +426,7 @@
                     </div>
                 </div>
                 
-                <div class="tab-content" id="tabAchievements" style="display:none;">
+                <div class="tab-content" id="tabAchievements" role="tabpanel" aria-labelledby="tabButtonAchievements" style="display:none;">
                     <div id="achievementsContainer" class="row g-4"></div>
                 </div>
             </div>
@@ -407,9 +447,12 @@
                         </span>
                     </div>
                     <div class="col-md-4 text-md-end footer-actions">
-                        <span class="footer-version" id="appVersion">v3.65.9</span>
+                        <span class="footer-version" id="appVersion">v3.66.20</span>
                         <button class="footer-link ms-3 owner-only" id="footerExportBtn" title="Экспорт проектов" style="display:none;">
                             <i class="bi bi-download"></i>
+                        </button>
+                        <button type="button" class="footer-link me-1 owner-only" id="footerTasksExportBtn" title="Экспорт задач в CSV" aria-label="Экспорт задач в CSV" style="display:none;">
+                            <i class="bi bi-filetype-csv" aria-hidden="true"></i>
                         </button>
                         <button class="footer-link me-1 owner-only" id="footerImportBtn" title="Импорт проектов" style="display:none;">
                             <i class="bi bi-upload"></i>
@@ -431,7 +474,7 @@
     
     <!-- Project Modal (Create/Edit) -->
     <div class="modal fade" id="projectModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -575,52 +618,52 @@
     <!-- Firebase SDK is loaded after the interface becomes interactive. -->
     
     <!-- App JS - Core -->
-    <script src="js/core/events.js?v=3.65.9" defer></script>
-    <script src="js/core/storage.js?v=3.65.9" defer></script>
-    <script src="js/core/state.js?v=3.65.9" defer></script>
+    <script src="js/core/events.js?v=3.66.20" defer></script>
+    <script src="js/core/storage.js?v=3.66.20" defer></script>
+    <script src="js/core/state.js?v=3.66.20" defer></script>
     
     <!-- Services -->
-    <script src="js/services/localStorage.js?v=3.65.9" defer></script>
-    <script src="js/services/firebase.js?v=3.65.9" defer></script>
-    <script src="js/services/firebase-identity.js?v=3.65.9" defer></script>
-    <script src="js/services/auth.js?v=3.65.9" defer></script>
-    <script src="js/services/github.js?v=3.65.9" defer></script>
-    <script src="js/services/supabase.js?v=3.65.9" defer></script>
+    <script src="js/services/localStorage.js?v=3.66.20" defer></script>
+    <script src="js/services/firebase.js?v=3.66.20" defer></script>
+    <script src="js/services/firebase-identity.js?v=3.66.20" defer></script>
+    <script src="js/services/auth.js?v=3.66.20" defer></script>
+    <script src="js/services/github.js?v=3.66.20" defer></script>
+    <script src="js/services/supabase.js?v=3.66.20" defer></script>
     
     <!-- Sync -->
-    <script src="js/core/sync.js?v=3.65.9" defer></script>
+    <script src="js/core/sync.js?v=3.66.20" defer></script>
     
     <!-- Utils -->
-    <script src="js/utils/helpers.js?v=3.65.9" defer></script>
-    <script src="js/utils/validators.js?v=3.65.9" defer></script>
+    <script src="js/utils/helpers.js?v=3.66.20" defer></script>
+    <script src="js/utils/validators.js?v=3.66.20" defer></script>
     
     <!-- UI -->
-    <script src="js/ui/notifications.js?v=3.65.9" defer></script>
-    <script src="js/ui/renderer.js?v=3.65.9" defer></script>
-    <script src="js/ui/workspace-view.js?v=3.65.9" defer></script>
+    <script src="js/ui/notifications.js?v=3.66.20" defer></script>
+    <script src="js/ui/renderer.js?v=3.66.20" defer></script>
+    <script src="js/ui/workspace-view.js?v=3.66.20" defer></script>
     
     <!-- Modules -->
-    <script src="js/modules/theme.js?v=3.65.9" defer></script>
-    <script src="js/modules/projects.js?v=3.65.9" defer></script>
-    <script src="js/modules/checklist.js?v=3.65.9" defer></script>
-    <script src="js/modules/updates.js?v=3.65.9" defer></script>
-    <script src="js/modules/stats.js?v=3.65.9" defer></script>
-    <script src="js/modules/notes.js?v=3.65.9" defer></script>
-    <script src="js/modules/tags.js?v=3.65.9" defer></script>
-    <script src="js/modules/favorites.js?v=3.65.9" defer></script>
-    <script src="js/modules/gallery.js?v=3.65.9" defer></script>
-    <script src="js/modules/project-detail.js?v=3.65.9" defer></script>
-    <script src="js/modules/export.js?v=3.65.9" defer></script>
-    <script src="js/modules/share.js?v=3.65.9" defer></script>
-    <script src="js/modules/achievements.js?v=3.65.9" defer></script>
-    <script src="js/modules/timetracker.js?v=3.65.9" defer></script>
+    <script src="js/modules/theme.js?v=3.66.20" defer></script>
+    <script src="js/modules/projects.js?v=3.66.20" defer></script>
+    <script src="js/modules/checklist.js?v=3.66.20" defer></script>
+    <script src="js/modules/updates.js?v=3.66.20" defer></script>
+    <script src="js/modules/stats.js?v=3.66.20" defer></script>
+    <script src="js/modules/notes.js?v=3.66.20" defer></script>
+    <script src="js/modules/tags.js?v=3.66.20" defer></script>
+    <script src="js/modules/favorites.js?v=3.66.20" defer></script>
+    <script src="js/modules/gallery.js?v=3.66.20" defer></script>
+    <script src="js/modules/project-detail.js?v=3.66.20" defer></script>
+    <script src="js/modules/export.js?v=3.66.20" defer></script>
+    <script src="js/modules/share.js?v=3.66.20" defer></script>
+    <script src="js/modules/achievements.js?v=3.66.20" defer></script>
+    <script src="js/modules/timetracker.js?v=3.66.20" defer></script>
     
     <!-- App Entry -->
-    <script src="js/portfolio.js?v=3.65.9" defer></script>
-    <script src="js/github-metadata.js?v=3.65.9" defer></script>
-    <script src="js/portfolio-gallery.js?v=3.65.9" defer></script>
-    <script src="js/portfolio-nav.js?v=3.65.9" defer></script>
-    <script src="js/portfolio-search.js?v=3.65.9" defer></script>
-    <script src="js/app.js?v=3.65.9" defer></script>
+    <script src="js/portfolio.js?v=3.66.20" defer></script>
+    <script src="js/github-metadata.js?v=3.66.20" defer></script>
+    <script src="js/portfolio-gallery.js?v=3.66.20" defer></script>
+    <script src="js/portfolio-nav.js?v=3.66.20" defer></script>
+    <script src="js/portfolio-search.js?v=3.66.20" defer></script>
+    <script src="js/app.js?v=3.66.20" defer></script>
 </body>
 </html>

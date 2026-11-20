@@ -7,6 +7,17 @@ var WorkspaceViewModule = {
         if (!switcher) return;
         var saved = sessionStorage.getItem('devspace_workspace_view');
         this.setView(['overview', 'projects', 'planning', 'cloud', 'analytics'].indexOf(saved) >= 0 ? saved : 'overview');
+        var moreToggle = document.getElementById('workspaceMoreToggle');
+        if (moreToggle) {
+            moreToggle.addEventListener('click', function() {
+                var container = document.getElementById('tabProjects');
+                if (!container) return;
+                var expanded = container.classList.toggle('is-overview-expanded');
+                moreToggle.setAttribute('aria-expanded', String(expanded));
+                var label = moreToggle.querySelector('span');
+                if (label) label.textContent = expanded ? 'Скрыть подробности' : 'Показать подробности';
+            });
+        }
         switcher.addEventListener('click', function(event) {
             var button = event.target.closest('[data-workspace-view]');
             if (!button) return;
@@ -32,6 +43,20 @@ var WorkspaceViewModule = {
             button.addEventListener('click', function() {
                 self.setView(button.dataset.workspaceViewTarget);
                 document.getElementById('workspaceSwitcher').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+        document.querySelectorAll('[data-workspace-focus]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                var view = button.dataset.focusView;
+                var id = button.dataset.workspaceFocus;
+                if (!['overview', 'planning'].includes(view) || !['todayPanel', 'scheduleCalendar'].includes(id)) return;
+                self.setView(view);
+                window.requestAnimationFrame(function() {
+                    var target = document.getElementById(id);
+                    if (!target || target.hidden) return;
+                    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    target.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth', block: 'start' });
+                });
             });
         });
         var search = document.getElementById('searchProjects');
