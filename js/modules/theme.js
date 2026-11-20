@@ -117,6 +117,11 @@ const ThemeModule = {
         }
 
         if (this.currentTheme === themeName) {
+            // An imported backup may explicitly choose the already-active theme.
+            // Persist that preference even when no visual transition is needed.
+            if (savePreference) {
+                StorageService.set(StorageService.KEYS.THEME, themeName);
+            }
             return;
         }
 
