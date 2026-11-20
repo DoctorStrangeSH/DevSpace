@@ -1418,6 +1418,7 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
   assert.equal(cloudReads, 1);
 
   const local = execute('js/core/sync.js', {
+    window: { addEventListener() {} },
     document: { getElementById() { return null; } },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback); } },
     FirebaseService: { init() { throw Error('Local mode should never fetch SDK'); } }
