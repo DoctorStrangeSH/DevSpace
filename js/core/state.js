@@ -199,6 +199,36 @@ const StateManager = {
         return updatedProject;
     },
 
+    updateProjects(projectUpdates) {
+        if (!Array.isArray(projectUpdates) || projectUpdates.length === 0) return null;
+        const seen = new Set();
+        const replacements = [];
+
+        for (const entry of projectUpdates) {
+            if (!entry || entry.projectId == null || !entry.updates || typeof entry.updates !== 'object' || Array.isArray(entry.updates)) return null;
+            if (seen.has(entry.projectId)) return null;
+            seen.add(entry.projectId);
+            const index = this._state.projects.findIndex(project => project.id === entry.projectId);
+            if (index === -1) return null;
+            const previousProject = this._state.projects[index];
+            replacements.push({ index, updatedProject: { ...previousProject, ...entry.updates, updatedAt: new Date().toISOString() } });
+        }
+
+        const previousProjects = this._state.projects;
+        const nextProjects = previousProjects.slice();
+        replacements.forEach(item => { nextProjects[item.index] = item.updatedProject; });
+        this._state.projects = nextProjects;
+
+        if (!this.saveProjects()) {
+            this._state.projects = previousProjects;
+            this._updateStats();
+            return null;
+        }
+
+        replacements.forEach(item => EventBus.emit('project:updated', item.updatedProject));
+        return replacements.map(item => item.updatedProject);
+    },
+
     removeProject(projectId) {
         const index = this._state.projects.findIndex(p => p.id === projectId);
         if (index === -1) return false;
