@@ -1438,7 +1438,7 @@ test('sync binds one online reconnect handler during initialization', async () =
     document: { getElementById() { return null; } },
     LocalStorageService: {
       get(key, fallback) {
-        return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback);
+        return Promise.resolve(key === 'settings' ? { syncMode: 'local' } : fallback);
       }
     },
     FirebaseService: { _initialized: false }
