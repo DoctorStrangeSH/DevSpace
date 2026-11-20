@@ -41,21 +41,27 @@ var SyncModule = {
 
     init: function() {
         var self = this;
-        var settings = LocalStorageService.get('settings', {});
-        this._mode = settings.syncMode === 'local' ? 'local' : 'read-only';
-        this._lastSyncTime = LocalStorageService.get('last_sync', null);
-        this._updateSyncDisplay();
+        // LocalStorageService exposes Promise-based methods. Resolve both values
+        // before inspecting them; otherwise settings.syncMode is read from a
+        // Promise and local-only mode silently falls through to cloud loading.
+        return Promise.all([
+            LocalStorageService.get('settings', {}),
+            LocalStorageService.get('last_sync', null)
+        ]).then(function(values) {
+            var settings = values[0] && typeof values[0] === 'object' ? values[0] : {};
+            self._mode = settings.syncMode === 'local' ? 'local' : 'read-only';
+            self._lastSyncTime = values[1];
+            self._updateSyncDisplay();
 
-        if (this._mode === 'local') return Promise.resolve();
-        return this._loadFirebaseSDK()
-            .then(function(ready) {
-                if (!ready) return;
-                return FirebaseService.init();
-            })
-            .then(function() {
-                if (!FirebaseService._initialized) return;
-                return self._syncFromCloud();
-            });
+            if (self._mode === 'local') return false;
+            return self._loadFirebaseSDK();
+        }).then(function(ready) {
+            if (!ready || self._mode === 'local') return;
+            return FirebaseService.init();
+        }).then(function() {
+            if (self._mode === 'local' || !FirebaseService._initialized) return;
+            return self._syncFromCloud();
+        });
     },
 
     _bindEvents: function() {
