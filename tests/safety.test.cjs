@@ -472,6 +472,21 @@ test('backup importer rejects malformed favorites and achievements before changi
   }
 });
 
+test('theme module persists an imported preference even when that theme is already active', () => {
+  const writes = [];
+  const ctx = execute('js/modules/theme.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme' },
+      set(key, value) { writes.push([key, value]); return true; }
+    }
+  });
+  ctx.ThemeModule.setTheme('dark', true);
+  assert.deepEqual(writes, [['theme', 'dark']]);
+  writes.length = 0;
+  ctx.ThemeModule.setTheme('dark', false);
+  assert.deepEqual(writes, []);
+});
+
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
   assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
