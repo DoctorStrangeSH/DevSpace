@@ -74,7 +74,7 @@ var ExportModule = {
         return rows.map(function(row) {
             if (!row || typeof row !== 'object' || Array.isArray(row) ||
                 Object.keys(row).some(function(key) { return key !== 'date' && key !== 'scores'; }) ||
-                typeof row.date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date) ||
+                typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.date) ||
                 !row.scores || typeof row.scores !== 'object' || Array.isArray(row.scores)) {
                 throw new Error('В бэкапе найдена некорректная запись истории');
             }
