@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.66.21';
-const ASSET_VERSION = '3.66.21';
+const CACHE_VERSION = 'devspace-v3.66.22';
+const ASSET_VERSION = '3.66.22';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -76,7 +76,9 @@ self.addEventListener('install', (event) => {
         caches.open(STATIC_CACHE)
             .then(cache => {
                 console.log('SW: Caching required app shell...');
-                return Promise.all(
+                // Wait for every request to settle before deleting a failed cache.
+                // Promise.all() rejects early and can race with still-running cache.put() calls.
+                return Promise.allSettled(
                     PRECACHE_URLS.map(url => fetch(url, {
                         method: 'GET',
                         credentials: 'same-origin',
@@ -87,7 +89,10 @@ self.addEventListener('install', (event) => {
                         }
                         return cache.put(url, response);
                     }))
-                );
+                ).then(results => {
+                    const failed = results.find(result => result.status === 'rejected');
+                    if (failed) throw failed.reason;
+                });
             })
             .then(() => {
                 console.log('SW: Required offline assets cached');
