@@ -3425,7 +3425,7 @@ test('project notes support multi-selection, bulk priority and cross-project tra
     assert.match(detail, /_moveSelectedNotes: function\(projectId\)/);
     assert.match(detail, /target\.id === source\.id/);
     assert.match(detail, /!confirm\('Перенести '/);
-    assert.match(detail, /StateManager\.updateProject\(target\.id, \{ notes: target\.notes \}\)/);
+    assert.match(detail, /StateManager\.updateProjects\(\[/);
     assert.match(css, /\.notes-bulk-toolbar \{/);
     assert.match(css, /\.note-select-input \{/);
 });
@@ -3470,7 +3470,7 @@ test('bulk note transfer changes only selected notes and respects cancellation',
     detail._moveSelectedNotes('a');
     assert.deepEqual(from.notes.map(n => n.id), ['two']);
     assert.deepEqual(to.notes.map(n => n.id), ['one']);
-    assert.deepEqual(updates.map(update => update[0]), ['a', 'a', 'transaction']);
+    assert.deepEqual(updates.map(update => update[0]), ['a', 'transaction']);
     assert.equal(updates[2][1].length, 2);
     assert.equal(detail._selectedNoteIds.size, 0);
 });
