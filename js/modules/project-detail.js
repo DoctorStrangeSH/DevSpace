@@ -489,7 +489,7 @@ var ProjectDetailModule = {
         var item = stages[index];
         stages[index] = stages[next];
         stages[next] = item;
-        StateManager.updateProject(projectId, { milestones: stages });
+        if (!this._saveRoadmapChanges(projectId, { milestones: stages })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
