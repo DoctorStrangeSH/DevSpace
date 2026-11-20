@@ -530,6 +530,62 @@ test('backup importer rolls back every store when a later write fails', async ()
   assert.match(errors[0], /Импорт отменён, прежние данные восстановлены/);
 });
 
+test('backup importer warns when rollback itself cannot restore every storage key', async () => {
+  const errors = [];
+  const values = new Map([
+    ['theme', 'dark'],
+    ['settings', { compactMode: false }],
+    ['activity', [{ type: 'old-event' }]]
+  ]);
+  let activityFailureTriggered = false;
+  let settingsRollbackFailureTriggered = false;
+  const storage = {
+    KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+    get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+    set(key, value) {
+      if (key === 'activity' && !activityFailureTriggered) {
+        activityFailureTriggered = true;
+        return false;
+      }
+      if (key === 'settings' && settingsRollbackFailureTriggered && value.compactMode === false) {
+        return false;
+      }
+      values.set(key, value);
+      if (key === 'settings' && value.compactMode === true) settingsRollbackFailureTriggered = true;
+      return true;
+    },
+    remove(key) { values.delete(key); return true; }
+  };
+  const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'dark' };
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      theme: 'light',
+      settings: { compactMode: true },
+      activity: [{ type: 'new-event' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: storage,
+    ThemeModule: { setTheme(value) { state.theme = value; values.set('theme', value); } },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: { success() { throw new Error('must not report success'); }, error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.match(errors[0], /автоматическое восстановление завершилось не полностью/);
+  assert.equal(state.projects[0].id, 'old_project');
+  assert.deepEqual(values.get('settings'), { compactMode: true });
+});
+
 test('backup importer rejects invalid settings before writing any project data', async () => {
   const writes = [];
   const errors = [];
