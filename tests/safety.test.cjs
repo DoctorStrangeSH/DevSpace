@@ -1394,6 +1394,7 @@ test('Firebase cloud read starts after idle, loads SDKs in order, and never runs
       createElement() { return {}; },
       head: { appendChild(script) { injected.push(script); } }
     },
+    window: { addEventListener() {} },
     requestIdleCallback(callback) { idle.push(callback); },
     LocalStorageService: { get(key, fallback) { return Promise.resolve(key === 'settings' ? { syncMode: 'read-only' } : fallback); } },
     FirebaseService: { _initialized: false, init() { this._initialized = true; return Promise.resolve(); } }
