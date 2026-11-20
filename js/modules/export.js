@@ -65,6 +65,43 @@ var ExportModule = {
         return Object.keys(valid).sort().slice(-30).map(function(date) { return { date: date, scores: valid[date] }; });
     },
 
+    _validateImportedHealthHistory: function(rows) {
+        if (!Array.isArray(rows) || rows.length > 1000) {
+            throw new Error('Некорректная история в бэкапе');
+        }
+        var seenDates = new Set();
+        var totalScores = 0;
+        return rows.map(function(row) {
+            if (!row || typeof row !== 'object' || Array.isArray(row) ||
+                Object.keys(row).some(function(key) { return key !== 'date' && key !== 'scores'; }) ||
+                typeof row.date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date) ||
+                !row.scores || typeof row.scores !== 'object' || Array.isArray(row.scores)) {
+                throw new Error('В бэкапе найдена некорректная запись истории');
+            }
+            var day = Date.parse(row.date + 'T00:00:00Z');
+            if (!Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== row.date ||
+                day > Date.now() + 86400000 || seenDates.has(row.date)) {
+                throw new Error('В бэкапе найдена некорректная или повторная дата истории');
+            }
+            seenDates.add(row.date);
+            var ids = Object.keys(row.scores);
+            totalScores += ids.length;
+            if (ids.length > 500 || totalScores > 50000) {
+                throw new Error('История в бэкапе слишком большая');
+            }
+            var scores = {};
+            ids.forEach(function(id) {
+                var value = row.scores[id];
+                if (!id || id.length > 150 || id === '__proto__' || id === 'constructor' ||
+                    id === 'prototype' || !Number.isInteger(value) || value < 0 || value > 100) {
+                    throw new Error('В бэкапе найдена некорректная оценка');
+                }
+                scores[id] = value;
+            });
+            return { date: row.date, scores: scores };
+        });
+    },
+
     _mergeHealthHistory: function(existing, incoming) {
         var merged = {};
         this._cleanHealthHistory(incoming).forEach(function(row) { merged[row.date] = row.scores; });
@@ -90,7 +127,8 @@ var ExportModule = {
             Helpers.readFile(file).then(function(contents) {
                 var data = JSON.parse(contents);
                 if (!data || data.format !== 'devspace-health-history' || data.version !== 1 || !Array.isArray(data.history)) throw new Error('Неверный формат истории');
-                var history = self._mergeHealthHistory(StorageService.get('healthHistory', []), data.history);
+                var importedHistory = self._validateImportedHealthHistory(data.history);
+                var history = self._mergeHealthHistory(StorageService.get('healthHistory', []), importedHistory);
                 if (!StorageService.set('healthHistory', history)) throw new Error('Не удалось сохранить историю');
                 if (typeof RendererModule !== 'undefined') RendererModule._renderInsights();
                 if (typeof NotificationModule !== 'undefined') NotificationModule.success('История перенесена: ' + history.length + ' дней');
@@ -285,10 +323,10 @@ var ExportModule = {
                 }
 
                 // Validate health history before any project replacement.
-                var mergedHistory = data && Array.isArray(data.healthHistory)
-                    ? self._mergeHealthHistory(StorageService.get('healthHistory', []), data.healthHistory) : null;
-                if (data && data.healthHistory !== undefined && mergedHistory === null) {
-                    throw new Error('Некорректная история в бэкапе');
+                var mergedHistory = null;
+                if (data && data.healthHistory !== undefined) {
+                    var importedHistory = self._validateImportedHealthHistory(data.healthHistory);
+                    mergedHistory = self._mergeHealthHistory(StorageService.get('healthHistory', []), importedHistory);
                 }
                 if (!confirm('Импортировать ' + projects.length + ' проектов? Текущие будут заменены.')) return;
 
