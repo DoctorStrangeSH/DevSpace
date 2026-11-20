@@ -1655,11 +1655,12 @@ test('roadmap task assignment validates stage names and keeps checklist flags', 
   const roadmap = ctx.ProjectDetailModule;
   assert.equal(roadmap.assignTaskStage('p', 't', 'Unknown'), false);
   assert.equal(roadmap.assignTaskStage('p', 't', 'Дизайн'), true);
-  assert.equal(project.checklist[0].milestone, 'Дизайн');
-  assert.equal(project.checklist[0].completed, true);
+  assert.equal(project.checklist[0].milestone, undefined);
+  assert.equal(saved[0].checklist[0].milestone, 'Дизайн');
+  assert.equal(saved[0].checklist[0].completed, true);
   assert.equal(saved.length, 1);
   assert.equal(roadmap.assignTaskStage('p', 't', ''), true);
-  assert.equal(Object.hasOwn(project.checklist[0], 'milestone'), false);
+  assert.equal(Object.hasOwn(saved[1].checklist[0], 'milestone'), false);
 });
 
 test('manual roadmap completion refuses stages containing linked tasks', () => {
@@ -1697,6 +1698,36 @@ test('roadmap remains read-only without local editing enabled', () => {
   assert.equal(ctx.ProjectDetailModule.addRoadmapTask('p', 'Этап', 'Задача'), false);
   assert.equal(ctx.ProjectDetailModule.removeRoadmapStage('p', 'Этап'), false);
   assert.equal(ctx.ProjectDetailModule.setRoadmapDeadline('p', 'Этап', '2026-12-15'), false);
+});
+
+test('roadmap mutations report persistence failures without changing live project data', () => {
+  const project = {
+    id: 'p', milestones: ['Разработка', 'Релиз'],
+    checklist: [{ id: 't1', text: 'Task', milestone: 'Разработка' }],
+    completedMilestones: [], milestoneDeadlines: {}
+  };
+  const errors = [];
+  const ctx = execute('js/modules/project-detail.js', {
+    StateManager: { getProject() { return project; }, updateProject() { return null; } },
+    AuthService: { isOwner() { return true; } },
+    NotificationModule: { error(message) { errors.push(message); } },
+    document: { getElementById() { return null; } }
+  });
+  const roadmap = ctx.ProjectDetailModule;
+
+  assert.equal(roadmap.addRoadmapStage('p', 'Тестирование'), false);
+  assert.equal(roadmap.moveRoadmapStage('p', 0, 'down'), false);
+  assert.equal(roadmap.renameRoadmapStage('p', 'Разработка', 'Реализация'), false);
+  assert.equal(roadmap.removeRoadmapStage('p', 'Релиз'), false);
+  assert.equal(roadmap.setRoadmapDeadline('p', 'Разработка', '2026-12-15'), false);
+  assert.equal(roadmap.assignTaskStage('p', 't1', 'Релиз'), false);
+  assert.equal(roadmap.toggleRoadmapStage('p', 'Релиз'), false);
+
+  assert.deepEqual(Array.from(project.milestones), ['Разработка', 'Релиз']);
+  assert.equal(project.checklist[0].milestone, 'Разработка');
+  assert.deepEqual(Object.keys(project.milestoneDeadlines), []);
+  assert.deepEqual(Array.from(project.completedMilestones), []);
+  assert.equal(errors.length, 7);
 });
 
 test('roadmap deadlines validate calendar dates, persist by stage and allow clearing', () => {
@@ -1822,7 +1853,8 @@ test('roadmap creates checklist tasks only for a valid stage and links returned 
   assert.equal(calls.length, 0);
   assert.equal(roadmap.addRoadmapTask('p', 'Фундамент', '  Проверить сборку '), true);
   assert.equal(project.checklist[0].text, 'Проверить сборку');
-  assert.equal(project.checklist[0].milestone, 'Фундамент');
+  assert.equal(project.checklist[0].milestone, undefined);
+  assert.equal(calls[1].checklist[0].milestone, 'Фундамент');
   assert.equal(calls.length, 2);
 });
 

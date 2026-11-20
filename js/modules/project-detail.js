@@ -456,6 +456,17 @@ var ProjectDetailModule = {
         if (body && project) body.innerHTML = this._renderRoadmap(project);
     },
 
+    _saveRoadmapChanges: function(projectId, updates) {
+        var saved = StateManager.updateProject(projectId, updates);
+        if (saved !== false && saved !== null) return true;
+        if (typeof NotificationModule !== 'undefined') {
+            var message = 'Не удалось сохранить дорожную карту. Проверьте свободное место в хранилище.';
+            if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+            else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+        }
+        return false;
+    },
+
     addRoadmapStage: function(projectId, value) {
         if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         var project = StateManager.getProject(projectId);
@@ -464,7 +475,7 @@ var ProjectDetailModule = {
         var stages = Array.isArray(project.milestones) ? project.milestones.slice() : [];
         if (stages.length >= 60 || stages.some(function(item) { return String(item).toLocaleLowerCase() === stage.toLocaleLowerCase(); })) return false;
         stages.push(stage);
-        StateManager.updateProject(projectId, { milestones: stages });
+        if (!this._saveRoadmapChanges(projectId, { milestones: stages })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -478,7 +489,7 @@ var ProjectDetailModule = {
         var item = stages[index];
         stages[index] = stages[next];
         stages[next] = item;
-        StateManager.updateProject(projectId, { milestones: stages });
+        if (!this._saveRoadmapChanges(projectId, { milestones: stages })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -503,7 +514,7 @@ var ProjectDetailModule = {
             deadlines[name] = deadlines[oldName];
             delete deadlines[oldName];
         }
-        StateManager.updateProject(projectId, { milestones: stages, checklist: checklist, completedMilestones: completed, milestoneDeadlines: deadlines });
+        if (!this._saveRoadmapChanges(projectId, { milestones: stages, checklist: checklist, completedMilestones: completed, milestoneDeadlines: deadlines })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -522,7 +533,7 @@ var ProjectDetailModule = {
         var completed = (project.completedMilestones || []).filter(function(name) { return name !== stage; });
         var deadlines = Object.assign(Object.create(null), project.milestoneDeadlines || {});
         delete deadlines[stage];
-        StateManager.updateProject(projectId, { milestones: milestones, checklist: checklist, completedMilestones: completed, milestoneDeadlines: deadlines });
+        if (!this._saveRoadmapChanges(projectId, { milestones: milestones, checklist: checklist, completedMilestones: completed, milestoneDeadlines: deadlines })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -545,7 +556,7 @@ var ProjectDetailModule = {
         var deadlines = Object.assign(Object.create(null), project.milestoneDeadlines || {});
         if (value) deadlines[stage] = value;
         else delete deadlines[stage];
-        StateManager.updateProject(projectId, { milestoneDeadlines: deadlines });
+        if (!this._saveRoadmapChanges(projectId, { milestoneDeadlines: deadlines })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -554,11 +565,14 @@ var ProjectDetailModule = {
         if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         var project = StateManager.getProject(projectId);
         if (!project || (milestone && (!Array.isArray(project.milestones) || project.milestones.indexOf(milestone) === -1))) return false;
-        var task = (project.checklist || []).find(function(item) { return String(item.id) === String(taskId); });
+        var checklist = (project.checklist || []).map(function(item) {
+            return Object.assign({}, item);
+        });
+        var task = checklist.find(function(item) { return String(item.id) === String(taskId); });
         if (!task) return false;
         if (milestone) task.milestone = milestone;
         else delete task.milestone;
-        StateManager.updateProject(projectId, { checklist: project.checklist });
+        if (!this._saveRoadmapChanges(projectId, { checklist: checklist })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
@@ -571,7 +585,7 @@ var ProjectDetailModule = {
         var done = Array.isArray(project.completedMilestones) ? project.completedMilestones.slice() : [];
         if (done.indexOf(stage) !== -1) done = done.filter(function(item) { return item !== stage; });
         else done.push(stage);
-        StateManager.updateProject(projectId, { completedMilestones: done });
+        if (!this._saveRoadmapChanges(projectId, { completedMilestones: done })) return false;
         this._refreshRoadmap(projectId);
         return true;
     },
