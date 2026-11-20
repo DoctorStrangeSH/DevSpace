@@ -948,6 +948,52 @@ test('service worker keeps the previous version when a required offline asset fa
   assert.match(installHandler, /throw error/, 'install failure must reject and preserve the active worker');
 });
 
+test('failed PWA installation waits for pending cache writes before deleting partial cache', async () => {
+  const handlers = {};
+  const calls = [];
+  let releasePendingWrite;
+  let deleted = false;
+  let skippedWaiting = false;
+  const pendingWrite = new Promise(resolve => { releasePendingWrite = resolve; });
+  const sandbox = {
+    console: { log() {}, error() {} },
+    URL,
+    Promise,
+    self: {
+      addEventListener(name, callback) { handlers[name] = callback; },
+      skipWaiting() { skippedWaiting = true; return Promise.resolve(); },
+      registration: { scope: 'https://example.test/DevSpace/' }
+    },
+    caches: {
+      open: async () => ({
+        put(url) {
+          calls.push(['put', url]);
+          return url === 'css/main.css' ? pendingWrite : Promise.resolve();
+        }
+      }),
+      delete: async name => { calls.push(['delete', name]); deleted = true; return true; }
+    },
+    fetch: async url => url === 'index.html'
+      ? { ok: false, status: 503 }
+      : { ok: true, status: 200 }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+  let installPromise;
+  handlers.install({ waitUntil(promise) { installPromise = promise; } });
+
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(deleted, false, 'partial cache must not be deleted while another put is pending');
+  assert.equal(skippedWaiting, false, 'failed install must not call skipWaiting');
+
+  releasePendingWrite();
+  await assert.rejects(installPromise, /Required offline asset failed to load/);
+  assert.equal(deleted, true, 'partial cache must be removed after every put settles');
+  assert.equal(skippedWaiting, false, 'failed install must never activate the new worker');
+  assert.ok(calls.some(([kind]) => kind === 'delete'));
+});
+
 test('public Firebase client rejects writes before touching a database', async () => {
   const ctx = execute('js/services/firebase.js');
   const firebase = ctx.FirebaseService;
