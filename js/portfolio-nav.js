@@ -13,8 +13,11 @@
     navigation.addEventListener('hidden.bs.collapse', updateToggleLabel);
     updateToggleLabel();
 
-    navigation.addEventListener('keydown', event => {
+    // Listen on document: focus commonly stays on the menu toggle button,
+    // which is outside the collapsed navigation element itself.
+    document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || !navigation.classList.contains('show')) return;
+        // Let Bootstrap close an expanded dropdown before collapsing the whole menu.
         if (navigation.querySelector('.dropdown-menu.show')) return;
         if (!window.bootstrap || !window.bootstrap.Collapse) return;
         window.bootstrap.Collapse.getOrCreateInstance(navigation, { toggle: false }).hide();
