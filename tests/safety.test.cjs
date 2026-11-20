@@ -1437,7 +1437,7 @@ test('local storage getAll resolves values instead of returning nested promises'
   await storage.set('projects', [{ id: 'p1' }]);
   await storage.set('theme', 'dark');
   const all = await storage.getAll();
-  assert.deepEqual(all.projects, [{ id: 'p1' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(all.projects)), [{ id: 'p1' }]);
   assert.equal(all.theme, 'dark');
   assert.equal(all.settings, null);
   assert.equal(all.last_sync, null);
