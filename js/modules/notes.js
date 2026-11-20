@@ -34,9 +34,25 @@ var NotesModule = {
         EventBus.on('notes:toggle-complete', function(data) { self.toggleComplete(data.projectId, data.noteId); });
     },
 
+    _persistMutation: function(projectId, project, snapshot, updates) {
+        var saved = StateManager.updateProject(projectId, updates);
+        if (saved !== false && saved !== null) return true;
+
+        Object.keys(project).forEach(function(key) { delete project[key]; });
+        Object.assign(project, snapshot);
+        if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
+        if (typeof NotificationModule !== 'undefined') {
+            var message = 'Не удалось сохранить заметку. Проверьте свободное место в хранилище.';
+            if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+            else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+        }
+        return false;
+    },
+
     addNote: function(projectId, data) {
         var project = StateManager.getProject(projectId);
         if (!project) return null;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         if (!project.notes) {
             project.notes = [];
@@ -56,8 +72,7 @@ var NotesModule = {
         };
 
         project.notes.unshift(note);
-        StateManager.updateProject(projectId, { notes: project.notes });
-        StateManager.saveProjects();
+        if (!this._persistMutation(projectId, project, snapshot, { notes: project.notes })) return null;
 
         EventBus.emit('notes:added', { projectId: projectId, note: note });
         
@@ -71,6 +86,7 @@ var NotesModule = {
     deleteNote: function(projectId, noteId) {
         var project = StateManager.getProject(projectId);
         if (!project) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         var index = -1;
         if (project.notes) {
@@ -89,8 +105,7 @@ var NotesModule = {
             var linkedTask = (project.checklist || []).find(function(item) { return item.id === removed.linkedTaskId; });
             if (linkedTask && linkedTask.sourceNoteId === removed.id) delete linkedTask.sourceNoteId;
         }
-        StateManager.updateProject(projectId, { notes: project.notes, checklist: project.checklist });
-        StateManager.saveProjects();
+        if (!this._persistMutation(projectId, project, snapshot, { notes: project.notes, checklist: project.checklist })) return false;
 
         EventBus.emit('notes:deleted', { projectId: projectId, noteId: noteId });
         return true;
@@ -99,6 +114,7 @@ var NotesModule = {
     updateNote: function(projectId, noteId, updates) {
         var project = StateManager.getProject(projectId);
         if (!project) return null;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         var note = null;
         if (project.notes) {
@@ -117,8 +133,7 @@ var NotesModule = {
         });
         note.updatedAt = new Date().toISOString();
 
-        StateManager.updateProject(projectId, { notes: project.notes });
-        StateManager.saveProjects();
+        if (!this._persistMutation(projectId, project, snapshot, { notes: project.notes })) return null;
 
         EventBus.emit('notes:updated', { projectId: projectId, note: note });
         return note;
@@ -127,6 +142,7 @@ var NotesModule = {
     toggleComplete: function(projectId, noteId) {
         var project = StateManager.getProject(projectId);
         if (!project) return;
+        var snapshot = JSON.parse(JSON.stringify(project));
 
         var note = null;
         if (project.notes) {
@@ -144,8 +160,7 @@ var NotesModule = {
         note.completedAt = note.completed ? new Date().toISOString() : null;
         note.updatedAt = new Date().toISOString();
 
-        StateManager.updateProject(projectId, { notes: project.notes });
-        StateManager.saveProjects();
+        if (!this._persistMutation(projectId, project, snapshot, { notes: project.notes })) return false;
 
         EventBus.emit('notes:toggled', { projectId: projectId, note: note });
     },
@@ -153,12 +168,12 @@ var NotesModule = {
     togglePin: function(projectId, noteId) {
         var project = StateManager.getProject(projectId);
         if (!project || !project.notes) return false;
+        var snapshot = JSON.parse(JSON.stringify(project));
         var note = project.notes.find(function(item) { return item.id === noteId; });
         if (!note) return false;
         note.pinned = !note.pinned;
         note.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { notes: project.notes });
-        StateManager.saveProjects();
+        if (!this._persistMutation(projectId, project, snapshot, { notes: project.notes })) return false;
         EventBus.emit('notes:pinned', { projectId: projectId, note: note });
         return note.pinned;
     },
