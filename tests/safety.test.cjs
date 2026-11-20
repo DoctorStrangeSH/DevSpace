@@ -3562,6 +3562,45 @@ test('checklist mutations restore the original project when persistence fails', 
   assert.equal(errors.length, 4);
 });
 
+test('note mutations restore note and linked-task state when project persistence fails', () => {
+  const originalNote = { id: 'n1', title: 'Original', description: 'Keep me', completed: false, pinned: false, updatedAt: '2026-01-01T00:00:00.000Z', linkedTaskId: 't1' };
+  const linkedTask = { id: 't1', text: 'Task', sourceNoteId: 'n1' };
+  const project = { id: 'p1', notes: [originalNote], checklist: [linkedTask] };
+  const events = [];
+  const errors = [];
+  const ctx = execute('js/modules/notes.js', {
+    StateManager: {
+      getProject() { return project; },
+      updateProject() { return null; },
+      _updateStats() {}
+    },
+    Helpers: { generateId: () => 'n2' },
+    EventBus: { emit(name) { events.push(name); }, on() {} },
+    NotificationModule: { error(message) { errors.push(message); }, success() {} }
+  });
+  const notes = ctx.NotesModule;
+
+  assert.equal(notes.updateNote('p1', 'n1', { title: 'Changed' }), null);
+  assert.equal(project.notes[0].title, 'Original');
+
+  assert.equal(notes.toggleComplete('p1', 'n1'), false);
+  assert.equal(project.notes[0].completed, false);
+
+  assert.equal(notes.togglePin('p1', 'n1'), false);
+  assert.equal(project.notes[0].pinned, false);
+
+  assert.equal(notes.deleteNote('p1', 'n1'), false);
+  assert.equal(project.notes.length, 1);
+  assert.equal(project.checklist[0].sourceNoteId, 'n1');
+
+  assert.equal(notes.addNote('p1', { title: 'New note' }), null);
+  assert.equal(project.notes.length, 1);
+  assert.equal(project.notes[0].title, 'Original');
+
+  assert.equal(events.length, 0);
+  assert.equal(errors.length, 5);
+});
+
 test('editing a checklist task preserves completion history and rejects invalid text', () => {
     const project = { id: 'p', progress: 100, checklist: [
         { id: 'task', text: 'Старое название', completed: true, completedAt: '2026-11-19T10:00:00.000Z', sourceNoteId: 'note' }
