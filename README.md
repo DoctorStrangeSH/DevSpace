@@ -24,7 +24,7 @@ https://doctorstrangesh.github.io/DevSpace/
 python -m http.server 8000
 ```
 
-Затем открыть http://localhost:8000/DevSpace/ при публикационной структуре каталога или http://localhost:8000/ если сервер запущен непосредственно из корня клона.
+Затем открыть http://localhost:8000/.
 
 Для проверки PWA используйте localhost или HTTPS: Service Worker не работает из обычного `file://`.
 
