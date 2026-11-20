@@ -1170,7 +1170,7 @@ test('failed project edits keep the modal open and preserve the entered form dat
   const errors = [];
   let modalLookups = 0;
   const values = {
-    projectId: 'p1', projectTech: { value: 'Godot' }, projectMilestones: { value: 'MVP' },
+    projectId: { value: 'p1' }, projectTech: { value: 'Godot' }, projectMilestones: { value: 'MVP' },
     projectName: { value: 'Изменённое название' }, projectDescription: { value: 'Описание' },
     projectStatus: { value: 'development' }, projectGithub: { value: '' },
     projectSupabase: { value: '' }, projectDemo: { value: '' }, projectModal: {}
