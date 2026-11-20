@@ -57,9 +57,11 @@ const LocalStorageService = {
     },
 
     async getAll() {
+        const keys = Object.values(this.KEYS);
+        const values = await Promise.all(keys.map(key => this.get(key)));
         const data = {};
-        Object.values(this.KEYS).forEach(key => {
-            data[key] = this.get(key);
+        keys.forEach((key, index) => {
+            data[key] = values[index];
         });
         return data;
     },
