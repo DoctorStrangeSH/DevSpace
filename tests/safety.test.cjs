@@ -475,11 +475,15 @@ test('backup importer rolls back every store when a later write fails', async ()
   const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'dark' };
   const favorites = { favorites: ['old_favorite'] };
   const achievements = { unlocked: ['old_achievement'] };
+  let failActivityWriteOnce = true;
   const storage = {
     KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
     get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
     set(key, value) {
-      if (key === 'activity') return false;
+      if (key === 'activity' && failActivityWriteOnce) {
+        failActivityWriteOnce = false;
+        return false;
+      }
       values.set(key, value);
       return true;
     },
