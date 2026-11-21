@@ -1611,6 +1611,86 @@ test('StateManager never replaces an existing malformed project store with start
   assert.equal(events.includes('state:initialized'), true);
 });
 
+test('StateManager applies valid project updates from another tab and resets stale undo history', () => {
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      _getKey(key) { return 'devspace_' + key; }
+    },
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'old', name: 'Old tab state' }];
+  state._history = [[{ id: 'older' }], [{ id: 'old' }]];
+  state._historyIndex = 1;
+
+  const external = [{ id: 'new', name: 'Updated in another tab' }];
+  assert.equal(state.handleExternalProjectsStorageChange({
+    key: 'devspace_projects',
+    newValue: JSON.stringify(external)
+  }), true);
+  assert.deepEqual(Array.from(state.get('projects'), project => project.id), ['new']);
+  assert.equal(state._history.length, 1);
+  assert.equal(state._historyIndex, 0);
+  assert.equal(state.canUndo(), false);
+  assert.equal(state._projectsLoadError, false);
+  assert.equal(events.some(event => event.name === 'projects:external-updated'), true);
+});
+
+test('StateManager handles project deletion from another tab without loading demo data', () => {
+  let writes = 0;
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      _getKey(key) { return 'devspace_' + key; },
+      set() { writes++; return true; }
+    },
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'removed-elsewhere' }];
+  state._history = [[{ id: 'removed-elsewhere' }]];
+  state._historyIndex = 0;
+
+  assert.equal(state.handleExternalProjectsStorageChange({
+    key: 'devspace_projects',
+    newValue: null
+  }), true);
+  assert.deepEqual(Array.from(state.get('projects')), []);
+  assert.equal(state._history.length, 1);
+  assert.equal(writes, 0);
+});
+
+test('StateManager ignores unrelated storage events and rejects malformed cross-tab project data', () => {
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      _getKey(key) { return 'devspace_' + key; }
+    },
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+  const state = ctx.StateManager;
+  const original = [{ id: 'keep' }];
+  state._state.projects = original;
+
+  assert.equal(state.handleExternalProjectsStorageChange({ key: 'other-app-key', newValue: '[]' }), false);
+  assert.equal(state.handleExternalProjectsStorageChange({ key: 'devspace_projects', newValue: '{broken' }), false);
+  assert.equal(state.handleExternalProjectsStorageChange({ key: 'devspace_projects', newValue: '{"not":"an array"}' }), false);
+  assert.equal(state._state.projects, original);
+  assert.equal(state._projectsLoadError, true);
+  assert.equal(events.filter(event => event.name === 'storage:error').length, 2);
+});
+
+test('App wires cross-tab project storage changes to a visible refresh', () => {
+  const source = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+  assert.match(source, /window\.addEventListener\('storage', function \(event\)/);
+  assert.match(source, /StateManager\.handleExternalProjectsStorageChange\(event\)/);
+  assert.match(source, /RendererModule\.renderProjects\(\)/);
+  assert.match(source, /Проекты обновлены из другой вкладки/);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
