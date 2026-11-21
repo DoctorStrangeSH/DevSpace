@@ -4637,3 +4637,60 @@ test('service worker caches successful CDN dependencies for later offline reques
   });
   assert.equal((await offlineResponse).source, 'cdn-bootstrap-css');
 });
+
+test('service worker keeps its lifetime open until a fetched image is cached', async () => {
+  const handlers = {};
+  const stored = new Map();
+  const lifetimePromises = [];
+  let online = true;
+  const imageRequest = {
+    url: 'https://example.test/DevSpace/images/gallery/cover.webp',
+    method: 'GET',
+    mode: 'cors',
+    headers: { get: () => 'image/webp' }
+  };
+  const imageResponse = {
+    ok: true,
+    source: 'downloaded-image',
+    clone() { return { ok: true, source: this.source }; }
+  };
+  const sandbox = {
+    console: { log() {}, error() {} },
+    URL,
+    Promise,
+    self: {
+      addEventListener(name, callback) { handlers[name] = callback; }
+    },
+    caches: {
+      match: async request => stored.get(request.url) || null,
+      open: async () => ({
+        put: async (request, response) => { stored.set(request.url, response); }
+      })
+    },
+    fetch: async () => {
+      if (!online) throw new Error('offline');
+      return imageResponse;
+    }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+
+  let onlineResult;
+  handlers.fetch({
+    request: imageRequest,
+    respondWith(promise) { onlineResult = promise; },
+    waitUntil(promise) { lifetimePromises.push(promise); }
+  });
+  assert.equal(await onlineResult, imageResponse);
+  assert.equal(lifetimePromises.length, 1, 'image cache write must extend the fetch event lifetime');
+  await Promise.all(lifetimePromises);
+  assert.equal(stored.get(imageRequest.url).source, 'downloaded-image');
+
+  online = false;
+  let offlineResult;
+  handlers.fetch({
+    request: imageRequest,
+    respondWith(promise) { offlineResult = promise; },
+    waitUntil(promise) { lifetimePromises.push(promise); }
+  });
+  assert.equal((await offlineResult).source, 'downloaded-image');
+});
