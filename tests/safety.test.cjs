@@ -1423,6 +1423,84 @@ test('StateManager importData validates input and emits success only after both 
   assert.equal(state._historyIndex, 0);
 });
 
+test('StateManager records successful project CRUD operations for undo and redo', () => {
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      set() { return true; }
+    },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'p1', name: 'Original' }];
+  state._saveToHistory();
+
+  assert.equal(state.addProject({ id: 'p2', name: 'Second' }).id, 'p2');
+  assert.equal(state.canUndo(), true);
+  assert.equal(state.undo(), true);
+  assert.deepEqual(Array.from(state._state.projects, project => project.id), ['p1']);
+  assert.equal(state.redo(), true);
+  assert.deepEqual(Array.from(state._state.projects, project => project.id), ['p2', 'p1']);
+
+  assert.ok(state.updateProject('p1', { name: 'Updated' }));
+  assert.equal(state.undo(), true);
+  assert.equal(state.getProject('p1').name, 'Original');
+  assert.equal(state.redo(), true);
+  assert.equal(state.getProject('p1').name, 'Updated');
+
+  assert.equal(state.removeProject('p2'), true);
+  assert.equal(state.canUndo(), true);
+  assert.equal(state.undo(), true);
+  assert.ok(state.getProject('p2'));
+  assert.equal(state.redo(), true);
+  assert.equal(state.getProject('p2'), null);
+
+  assert.equal(events.filter(name => name === 'undo:performed').length, 3);
+  assert.equal(events.filter(name => name === 'redo:performed').length, 3);
+});
+
+test('StateManager excludes UI-only state changes from project undo history', () => {
+  const ctx = execute('js/core/state.js', {
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'p1', name: 'Original' }];
+  state._saveToHistory();
+  const historyLength = state._history.length;
+
+  state.set('ui.activeModal', 'settings');
+  state.set('theme', 'light');
+  assert.equal(state._history.length, historyLength);
+
+  state.set('projects.0.name', 'Changed');
+  assert.equal(state._history.length, historyLength + 1);
+  assert.equal(state._history[state._historyIndex][0].name, 'Changed');
+});
+
+test('StateManager does not add failed project mutations to undo history', () => {
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      set() { return false; }
+    },
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  const original = [{ id: 'p1', name: 'Original' }];
+  state._state.projects = original;
+  state._saveToHistory();
+  const historyLength = state._history.length;
+
+  assert.equal(state.addProject({ id: 'p2', name: 'Unsaved' }), null);
+  assert.equal(state.updateProject('p1', { name: 'Unsaved edit' }), null);
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(state._history.length, historyLength);
+  assert.equal(state._historyIndex, 0);
+  assert.equal(state._state.projects, original);
+  assert.equal(state.getProject('p1').name, 'Original');
+});
+
 test('StateManager updates multiple projects in one storage write and rolls all of them back on failure', () => {
   const events = [];
   let allowSave = false;
