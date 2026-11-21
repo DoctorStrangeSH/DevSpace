@@ -28,6 +28,8 @@ const StateManager = {
     _historyIndex: -1,
     _projectMutationVersion: 0,
     _projectsLoadError: false,
+    _projectsStorageSnapshot: null,
+    _projectsConflict: false,
     _maxHistory: 50,
     _initialized: false,
 
@@ -58,6 +60,9 @@ const StateManager = {
         // 3. Загружаем проекты
         const projectsKey = StorageService.KEYS.PROJECTS;
         const savedProjects = StorageService.get(projectsKey);
+        if (typeof StorageService.getRaw === 'function') {
+            this._projectsStorageSnapshot = StorageService.getRaw(projectsKey);
+        }
         const projectsKeyExists = typeof StorageService.has === 'function' && StorageService.has(projectsKey);
         const projectsReadFailed = StorageService._lastReadKey === projectsKey && !!StorageService._lastReadError;
 
@@ -206,6 +211,8 @@ const StateManager = {
         }
 
         this._state.projects = nextProjects;
+        this._projectsStorageSnapshot = event.newValue;
+        this._projectsConflict = false;
         this._projectsLoadError = false;
         this._projectMutationVersion++;
         this._history = [JSON.parse(JSON.stringify(nextProjects))];
@@ -216,8 +223,23 @@ const StateManager = {
     },
 
     saveProjects() {
-        const saved = StorageService.set(StorageService.KEYS.PROJECTS, this._state.projects);
-        if (!saved) return false;
+        const key = StorageService.KEYS.PROJECTS;
+        const saved = typeof StorageService.setIfUnchanged === 'function'
+            ? StorageService.setIfUnchanged(key, this._state.projects, this._projectsStorageSnapshot)
+            : StorageService.set(key, this._state.projects);
+        if (!saved) {
+            if (StorageService._lastWriteConflict) {
+                this._projectsConflict = true;
+                EventBus.emit('projects:conflict', { key });
+            }
+            return false;
+        }
+        if (typeof StorageService.getRaw === 'function') {
+            this._projectsStorageSnapshot = StorageService.getRaw(key);
+        } else {
+            this._projectsStorageSnapshot = JSON.stringify(this._state.projects);
+        }
+        this._projectsConflict = false;
         this._updateStats();
         EventBus.emit('projects:saved', this._state.projects);
         return true;
