@@ -179,25 +179,33 @@ self.addEventListener('fetch', (event) => {
     // Один сетевой запрос обслуживает и страницу, и обязательную запись в runtime cache.
     const networkResponse = fetch(event.request);
 
+    const cachedFallback = () => {
+        return caches.match(event.request).then(cached => {
+            if (cached) return cached;
+
+            // GitHub Pages hosts the app below /DevSpace/, not at /.
+            // Cache.match returns a Promise, so both candidates must be awaited.
+            if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+                return caches.match(new URL('index.html', self.registration.scope).href)
+                    .then(page => page || caches.match(new URL('./', self.registration.scope).href))
+                    .then(page => page || Response.error());
+            }
+
+            return Response.error();
+        });
+    };
+
     event.respondWith(
         networkResponse
-            .then(response => response)
-            .catch(() => {
-                return caches.match(event.request)
-                    .then(cached => {
-                        if (cached) return cached;
-
-                        // GitHub Pages hosts the app below /DevSpace/, not at /.
-                        // Cache.match returns a Promise, so both candidates must be awaited.
-                        if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
-                            return caches.match(new URL('index.html', self.registration.scope).href)
-                                .then(page => page || caches.match(new URL('./', self.registration.scope).href))
-                                .then(page => page || Response.error());
-                        }
-
-                        throw new Error('Network unavailable');
-                    })
+            .then(response => {
+                // A temporary server outage is different from a valid 404.
+                // Keep the last known-good cached response available for 5xx errors.
+                if (response && response.status >= 500) {
+                    return cachedFallback().then(cached => cached || response);
+                }
+                return response;
             })
+            .catch(() => cachedFallback())
     );
 
     // Keep the worker alive until the runtime cache write settles.
