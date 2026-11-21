@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa12'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa13'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3787,7 +3787,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa12'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa13'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -5260,6 +5260,16 @@ test('cloud migration keeps all controls accessible inside a progressive disclos
     assert.ok(html.indexOf('id="cloudMigrationPreviewStatus"') < html.indexOf('<details class="cloud-migration-advanced"'));
     assert.match(css, /\.cloud-migration-actions \{ display:grid/);
     assert.match(css, /\.cloud-migration-advanced > summary:focus-visible/);
+});
+
+test('invalid persisted workspace tab falls back to projects before rendering', () => {
+    const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+    assert.match(app, /var savedTab = sessionStorage\.getItem\('devspace_tab'\) \|\| 'projects';[\s\S]*?if \(!\['projects', 'stats', 'achievements'\]\.includes\(savedTab\)\) savedTab = 'projects';[\s\S]*?sessionStorage\.setItem\('devspace_tab', savedTab\)/);
+});
+
+test('workspace tab switcher ignores unknown tab identifiers without persisting them', () => {
+    const renderer = fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8');
+    assert.match(renderer, /_switchTab: function\(tab\) \{\s*if \(!\['projects', 'stats', 'achievements'\]\.includes\(tab\)\) return;\s*sessionStorage\.setItem\('devspace_tab', tab\)/);
 });
 
 test('workspace tabs expose selected state and arrow-key navigation', () => {
