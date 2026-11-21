@@ -27,6 +27,7 @@ const StateManager = {
     _history: [],
     _historyIndex: -1,
     _projectMutationVersion: 0,
+    _projectsLoadError: false,
     _maxHistory: 50,
     _initialized: false,
 
@@ -55,11 +56,18 @@ const StateManager = {
         document.documentElement.setAttribute('data-bs-theme', this._state.theme);
 
         // 3. Загружаем проекты
-        const savedProjects = StorageService.get(StorageService.KEYS.PROJECTS);
-        
+        const projectsKey = StorageService.KEYS.PROJECTS;
+        const savedProjects = StorageService.get(projectsKey);
+        const projectsKeyExists = typeof StorageService.has === 'function' && StorageService.has(projectsKey);
+        const projectsReadFailed = StorageService._lastReadKey === projectsKey && !!StorageService._lastReadError;
+
         if (savedProjects && Array.isArray(savedProjects)) {
             this._state.projects = savedProjects;
             console.log('StateManager: loaded', savedProjects.length, 'projects');
+        } else if (projectsKeyExists || projectsReadFailed) {
+            // Preserve malformed or inaccessible saved bytes. Never replace them with demo data.
+            this._projectsLoadError = true;
+            console.error('StateManager: saved projects exist but cannot be read as a project list; keeping stored data untouched');
         } else {
             console.log('StateManager: no saved projects, loading initial data...');
             this._loadInitialProjects();
