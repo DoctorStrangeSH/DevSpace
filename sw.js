@@ -155,25 +155,20 @@ self.addEventListener('fetch', (event) => {
     if (url.protocol === 'chrome-extension:') return;
     if (url.protocol === 'chrome:') return;
     
-    // Для изображений - cache first
+    // Для изображений - cache first. Runtime-запись продлевает жизнь FetchEvent.
     if (url.pathname.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)$/i)) {
-        event.respondWith(
-            caches.match(event.request)
-                .then(cached => {
-                    if (cached) return cached;
-                    
-                    return fetch(event.request)
-                        .then(response => {
-                            if (response.ok) {
-                                const clone = response.clone();
-                                caches.open(IMAGES_CACHE)
-                                    .then(cache => cache.put(event.request, clone))
-                                    .catch(() => {});
-                            }
-                            return response;
-                        })
-                        .catch(() => cached);
+        const imageResponse = caches.match(event.request)
+            .then(cached => cached || fetch(event.request));
+
+        event.respondWith(imageResponse);
+        event.waitUntil(
+            imageResponse
+                .then(response => {
+                    if (!response || !response.ok) return;
+                    return caches.open(IMAGES_CACHE)
+                        .then(cache => cache.put(event.request, response.clone()));
                 })
+                .catch(() => {})
         );
         return;
     }
