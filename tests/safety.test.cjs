@@ -1462,6 +1462,57 @@ function execute(file, context = {}) {
   return sandbox;
 }
 
+test('initial project seeding never overwrites user changes made while the request is pending', async () => {
+  let resolveSeed;
+  const stored = new Map();
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      get(key) { return key === 'theme' ? 'dark' : null; },
+      has() { return false; },
+      set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
+    },
+    EventBus: { emit() {} },
+    document: { documentElement: { setAttribute() {} } },
+    fetch() { return new Promise(resolve => { resolveSeed = resolve; }); }
+  });
+
+  ctx.StateManager.init();
+  assert.equal(ctx.StateManager._projectMutationVersion, 0);
+  const created = ctx.StateManager.addProject({ id: 'user-project', name: 'Мой проект' });
+  assert.equal(created.id, 'user-project');
+  assert.equal(ctx.StateManager._projectMutationVersion, 1);
+
+  resolveSeed({ ok: true, json: async () => [{ id: 'seed-project', name: 'Стартовый проект' }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects'), project => project.id), ['user-project']);
+  assert.deepEqual(Array.from(stored.get('projects'), project => project.id), ['user-project']);
+});
+
+test('failed initial project request cannot clear projects created while it was pending', async () => {
+  let rejectSeed;
+  const stored = new Map();
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      get(key) { return key === 'theme' ? 'dark' : null; },
+      has() { return false; },
+      set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
+    },
+    EventBus: { emit() {} },
+    document: { documentElement: { setAttribute() {} } },
+    fetch() { return new Promise((resolve, reject) => { rejectSeed = reject; }); }
+  });
+
+  ctx.StateManager.init();
+  const created = ctx.StateManager.addProject({ id: 'user-project', name: 'Мой проект' });
+  assert.equal(created.id, 'user-project');
+  rejectSeed(new Error('offline'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects'), project => project.id), ['user-project']);
+  assert.deepEqual(Array.from(stored.get('projects'), project => project.id), ['user-project']);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
