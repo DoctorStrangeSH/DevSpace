@@ -453,20 +453,37 @@ var ExportModule = {
                     var rollbackSucceeded = true;
                     Object.keys(previousStorage).reverse().forEach(function(key) {
                         var previousValue = previousStorage[key];
-                        if (previousValue === missingValue) {
-                            if (typeof StorageService.remove === 'function') {
-                                if (StorageService.remove(key) === false) rollbackSucceeded = false;
-                            } else {
+                        try {
+                            if (previousValue === missingValue) {
+                                if (typeof StorageService.remove === 'function') {
+                                    if (StorageService.remove(key) === false) rollbackSucceeded = false;
+                                } else {
+                                    rollbackSucceeded = false;
+                                }
+                            } else if (StorageService.set(key, previousValue) === false) {
                                 rollbackSucceeded = false;
                             }
-                        } else if (StorageService.set(key, previousValue) === false) {
+                        } catch (rollbackError) {
+                            // Keep restoring the remaining keys even if one storage operation throws.
                             rollbackSucceeded = false;
                         }
                     });
-                    StateManager.set('projects', previousProjects);
-                    StateManager.set('theme', previousTheme);
-                    if (typeof StateManager.saveProjects === 'function' &&
-                        StateManager.saveProjects() === false) rollbackSucceeded = false;
+                    try {
+                        StateManager.set('projects', previousProjects);
+                    } catch (rollbackError) {
+                        rollbackSucceeded = false;
+                    }
+                    try {
+                        StateManager.set('theme', previousTheme);
+                    } catch (rollbackError) {
+                        rollbackSucceeded = false;
+                    }
+                    try {
+                        if (typeof StateManager.saveProjects === 'function' &&
+                            StateManager.saveProjects() === false) rollbackSucceeded = false;
+                    } catch (rollbackError) {
+                        rollbackSucceeded = false;
+                    }
                     if (typeof FavoritesModule !== 'undefined' && previousFavorites !== undefined) {
                         FavoritesModule.favorites = previousFavorites;
                     }
