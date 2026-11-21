@@ -1252,6 +1252,104 @@ test('project create, update and delete roll back in-memory state when storage i
   assert.equal(events.includes('projects:saved'), false);
 });
 
+
+
+test('StateManager importData keeps live state and history unchanged when project persistence fails', () => {
+  const events = [];
+  const stored = new Map([['theme', 'dark'], ['projects', [{ id: 'old' }]]]);
+  const writes = [];
+  const attributes = [];
+  const storage = {
+    KEYS: { PROJECTS: 'projects', THEME: 'theme' },
+    get(key) { return stored.has(key) ? stored.get(key) : null; },
+    set(key, value) {
+      writes.push([key, value]);
+      if (key === 'projects') return false;
+      stored.set(key, value);
+      return true;
+    },
+    remove(key) { stored.delete(key); return true; }
+  };
+  const ctx = execute('js/core/state.js', {
+    StorageService: storage,
+    EventBus: { emit(name) { events.push(name); } },
+    document: { documentElement: { setAttribute(name, value) { attributes.push([name, value]); } } }
+  });
+  const state = ctx.StateManager;
+  const originalProjects = [{ id: 'old' }];
+  state._state.projects = originalProjects;
+  state._state.theme = 'dark';
+  state._history = [[{ id: 'history' }]];
+  state._historyIndex = 0;
+
+  assert.equal(state.importData({ projects: [{ id: 'new' }], theme: 'light' }), false);
+  assert.equal(state._state.projects, originalProjects);
+  assert.equal(state._state.theme, 'dark');
+  assert.deepEqual(state._history, [[{ id: 'history' }]]);
+  assert.equal(state._historyIndex, 0);
+  assert.equal(stored.get('theme'), 'dark');
+  assert.equal(attributes.length, 0);
+  assert.equal(events.includes('data:imported'), false);
+  assert.equal(events.includes('projects:saved'), false);
+  assert.deepEqual(writes.map(([key]) => key), ['theme', 'projects', 'theme']);
+});
+
+test('StateManager importData rejects a failed theme write before touching projects', () => {
+  const events = [];
+  const originalProjects = [{ id: 'old' }];
+  const writes = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects', THEME: 'theme' },
+      get() { return 'dark'; },
+      set(key) { writes.push(key); return false; },
+      remove() { return true; }
+    },
+    EventBus: { emit(name) { events.push(name); } },
+    document: { documentElement: { setAttribute() {} } }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = originalProjects;
+  state._state.theme = 'dark';
+
+  assert.equal(state.importData({ projects: [{ id: 'new' }], theme: 'light' }), false);
+  assert.equal(state._state.projects, originalProjects);
+  assert.equal(state._state.theme, 'dark');
+  assert.deepEqual(writes, ['theme']);
+  assert.equal(events.includes('data:imported'), false);
+});
+
+test('StateManager importData validates input and emits success only after both writes', () => {
+  const events = [];
+  const stored = new Map([['theme', 'dark']]);
+  const writes = [];
+  const attributes = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects', THEME: 'theme' },
+      get(key) { return stored.has(key) ? stored.get(key) : null; },
+      set(key, value) { writes.push(key); stored.set(key, value); return true; },
+      remove(key) { stored.delete(key); return true; }
+    },
+    EventBus: { emit(name) { events.push(name); } },
+    document: { documentElement: { setAttribute(name, value) { attributes.push([name, value]); } } }
+  });
+  const state = ctx.StateManager;
+  assert.throws(() => state.importData({ projects: {} }), /Invalid data format/);
+  assert.throws(() => state.importData({ projects: [], theme: 'blue' }), /Invalid theme/);
+  assert.deepEqual(writes, []);
+
+  const imported = [{ id: 'new', checklist: [{ completed: true }], updates: [] }];
+  assert.equal(state.importData({ projects: imported, theme: 'light' }), true);
+  assert.equal(state._state.projects, imported);
+  assert.equal(state._state.theme, 'light');
+  assert.deepEqual(writes, ['theme', 'projects']);
+  assert.deepEqual(attributes, [['data-bs-theme', 'light']]);
+  assert.equal(events.includes('projects:saved'), true);
+  assert.equal(events.includes('data:imported'), true);
+  assert.equal(state._historyIndex, 0);
+});
+
 test('StateManager updates multiple projects in one storage write and rolls all of them back on failure', () => {
   const events = [];
   let allowSave = false;
