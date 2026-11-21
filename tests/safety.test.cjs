@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa13'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa14'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3787,7 +3787,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa13'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa14'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -5260,6 +5260,19 @@ test('cloud migration keeps all controls accessible inside a progressive disclos
     assert.ok(html.indexOf('id="cloudMigrationPreviewStatus"') < html.indexOf('<details class="cloud-migration-advanced"'));
     assert.match(css, /\.cloud-migration-actions \{ display:grid/);
     assert.match(css, /\.cloud-migration-advanced > summary:focus-visible/);
+});
+
+test('project detail modal restores focus to its opener and uses a safe fallback when opener is gone', () => {
+    const source = fs.readFileSync(path.join(root, 'js/modules/project-detail.js'), 'utf8');
+    assert.match(source, /_returnFocusTarget: null/);
+    assert.match(source, /var activeElement = document\.activeElement/);
+    assert.match(source, /this\._returnFocusTarget = activeElement/);
+    assert.match(source, /detailModal\.addEventListener\('hidden\.bs\.modal'/);
+    assert.match(source, /target && target\.isConnected && !target\.disabled && target\.getClientRects\(\)\.length/);
+    assert.match(source, /target\.focus\(\{ preventScroll: true \}\)/);
+    assert.match(source, /getElementById\('tabButtonProjects'\)/);
+    assert.match(source, /bootstrap\.Modal\.getOrCreateInstance/);
+    assert.doesNotMatch(source, /modalEl\.addEventListener\('hidden\.bs\.modal',[\s\S]*?\{ once: true \}\)/);
 });
 
 test('invalid persisted workspace tab falls back to projects before rendering', () => {
