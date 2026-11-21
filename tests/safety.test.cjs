@@ -4501,6 +4501,9 @@ test('service worker activation removes only stale DevSpace caches and claims cl
     'static-devspace-v3.66.28',
     'dynamic-devspace-v3.66.27',
     'images-devspace-v3.66.27',
+    'static-another-project-v1',
+    'dynamic-another-project-v1',
+    'images-another-project-v1',
     'firebase-sdk-cache'
   ];
   const sandbox = {
@@ -4526,6 +4529,9 @@ test('service worker activation removes only stale DevSpace caches and claims cl
     'dynamic-devspace-v3.66.27',
     'images-devspace-v3.66.27'
   ].sort());
+  assert.ok(cacheNames.includes('static-another-project-v1'), 'other GitHub Pages project static cache must remain');
+  assert.ok(cacheNames.includes('dynamic-another-project-v1'), 'other GitHub Pages project dynamic cache must remain');
+  assert.ok(cacheNames.includes('images-another-project-v1'), 'other GitHub Pages project image cache must remain');
   assert.equal(claimed, true, 'new worker should claim clients after cache cleanup');
 });
 
