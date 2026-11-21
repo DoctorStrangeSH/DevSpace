@@ -26,6 +26,7 @@ const StateManager = {
 
     _history: [],
     _historyIndex: -1,
+    _projectMutationVersion: 0,
     _maxHistory: 50,
     _initialized: false,
 
@@ -78,12 +79,16 @@ const StateManager = {
     },
 
     async _loadInitialProjects() {
+        const requestMutationVersion = this._projectMutationVersion;
         try {
             const response = await fetch('data/initial-projects.json');
             if (response.ok) {
                 const initialProjects = await response.json();
-                // Avoid clobbering projects added while the request was pending.
-                if (Array.isArray(initialProjects) && this._state.projects.length === 0) {
+                // Do not seed defaults if the user changed projects while the request was pending,
+                // even when that change left the collection empty again.
+                if (Array.isArray(initialProjects) &&
+                    this._projectMutationVersion === requestMutationVersion &&
+                    this._state.projects.length === 0) {
                     this._state.projects = initialProjects;
                     if (this.saveProjects()) {
                         this._saveToHistory();
@@ -99,8 +104,12 @@ const StateManager = {
                 console.log('StateManager: loaded initial projects');
             }
         } catch (error) {
-            console.warn('StateManager: cannot load initial projects, using empty array');
-            this._state.projects = [];
+            console.warn('StateManager: cannot load initial projects');
+            // A failed seed request must never erase projects created while it was pending.
+            if (this._projectMutationVersion === requestMutationVersion) {
+                this._state.projects = [];
+                this._updateStats();
+            }
         }
     },
 
@@ -141,8 +150,9 @@ const StateManager = {
         }
         
         target[lastKey] = value;
-        
+
         if (path === 'projects' || path.startsWith('projects.')) {
+            this._projectMutationVersion++;
             this._saveToHistory();
         }
         
@@ -178,6 +188,7 @@ const StateManager = {
             this._updateStats();
             return null;
         }
+        this._projectMutationVersion++;
         this._saveToHistory();
         EventBus.emit('project:added', project);
         return project;
@@ -203,6 +214,7 @@ const StateManager = {
             this._updateStats();
             return null;
         }
+        this._projectMutationVersion++;
         this._saveToHistory();
         EventBus.emit('project:updated', updatedProject);
         return updatedProject;
@@ -234,6 +246,7 @@ const StateManager = {
             return null;
         }
 
+        this._projectMutationVersion++;
         this._saveToHistory();
         replacements.forEach(item => EventBus.emit('project:updated', item.updatedProject));
         return replacements.map(item => item.updatedProject);
@@ -249,6 +262,7 @@ const StateManager = {
             this._updateStats();
             return false;
         }
+        this._projectMutationVersion++;
         this._saveToHistory();
         EventBus.emit('project:removed', removed);
         return true;
