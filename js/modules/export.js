@@ -178,22 +178,54 @@ var ExportModule = {
     },
 
     createBackup: function() {
-        var data = {
-            projects: StateManager.get('projects') || [],
-            theme: StateManager.get('theme') || 'dark',
-            favorites: typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
-            achievements: typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
-            settings: StorageService.get(StorageService.KEYS.SETTINGS, {}) || {},
-            activity: StorageService.get(StorageService.KEYS.ACTIVITY, []) || [],
-            healthHistory: this._cleanHealthHistory(StorageService.get('healthHistory', [])),
-            version: typeof App !== 'undefined' && App.config ? App.config.version : null,
-            timestamp: new Date().toISOString()
-        };
-        var json = JSON.stringify(data, null, 2);
-        var filename = 'devspace-backup-' + new Date().toISOString().split('T')[0] + '.json';
-        Helpers.downloadFile(json, filename);
-        if (typeof NotificationModule !== 'undefined') {
-            NotificationModule.success('Бэкап создан');
+        try {
+            var rawProjects = StateManager.get('projects') || [];
+            var data = {
+                projects: this._validateBackupProjects(rawProjects),
+                theme: StateManager.get('theme') || 'dark',
+                favorites: this._validateBackupMetadata(
+                    typeof FavoritesModule !== 'undefined' ? (FavoritesModule.favorites || []) : [],
+                    true, 5000, 'избранное'
+                ),
+                achievements: this._validateBackupMetadata(
+                    typeof AchievementsModule !== 'undefined' ? (AchievementsModule.unlocked || []) : [],
+                    true, 5000, 'достижения'
+                ),
+                settings: this._validateBackupMetadata(
+                    StorageService.get(StorageService.KEYS.SETTINGS, {}) || {},
+                    false, 500, 'настройки'
+                ),
+                activity: this._validateBackupMetadata(
+                    StorageService.get(StorageService.KEYS.ACTIVITY, []) || [],
+                    true, 10000, 'активность'
+                ),
+                healthHistory: this._validateImportedHealthHistory(
+                    this._cleanHealthHistory(StorageService.get('healthHistory', []))
+                ),
+                version: typeof App !== 'undefined' && App.config ? App.config.version : null,
+                timestamp: new Date().toISOString()
+            };
+
+            if (!['dark', 'light'].includes(data.theme)) {
+                throw new Error('Тема приложения содержит некорректное значение');
+            }
+
+            var json = JSON.stringify(data, null, 2);
+            if (!json || json.length > 5 * 1024 * 1024) {
+                throw new Error('Резервная копия превышает 5 МБ и не сможет быть импортирована');
+            }
+
+            var filename = 'devspace-backup-' + new Date().toISOString().split('T')[0] + '.json';
+            Helpers.downloadFile(json, filename);
+            if (typeof NotificationModule !== 'undefined') {
+                NotificationModule.success('Бэкап создан');
+            }
+            return true;
+        } catch (error) {
+            if (typeof NotificationModule !== 'undefined') {
+                NotificationModule.error('Не удалось создать резервную копию: ' + error.message);
+            }
+            return false;
         }
     },
 

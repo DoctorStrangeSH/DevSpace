@@ -410,8 +410,8 @@ test('createBackup serializes every supported workspace data section', () => {
 
 test('full backup includes settings and activity alongside projects and theme', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
-  assert.match(source, /settings: StorageService\.get\(StorageService\.KEYS\.SETTINGS, \{\}\)/);
-  assert.match(source, /activity: StorageService\.get\(StorageService\.KEYS\.ACTIVITY, \[\]\)/);
+  assert.match(source, /settings: this\._validateBackupMetadata\(/);
+  assert.match(source, /activity: this\._validateBackupMetadata\(/);
   assert.match(source, /StorageService\.set\(StorageService\.KEYS\.SETTINGS, importedSettings\)/);
   assert.match(source, /StorageService\.set\(StorageService\.KEYS\.ACTIVITY, importedActivity\)/);
   assert.match(source, /_validateBackupMetadata/);
@@ -757,7 +757,8 @@ test('theme remains unchanged and reports an error when preference persistence f
 
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
-  assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
+  assert.match(source, /healthHistory: this\._validateImportedHealthHistory\(/);
+  assert.match(source, /_cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
   assert.match(source, /_validateImportedHealthHistory\(data\.healthHistory\)/);
   assert.match(source, /data\.healthHistory !== undefined/);
   assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
@@ -4421,4 +4422,49 @@ test('backup importer removes the copy suffix from restored project names', asyn
   assert.equal(imported[1][0].name, 'Проект');
   assert.equal(errors.length, 0);
   assert.deepEqual(successes, ['1 проектов импортировано']);
+});
+
+test('createBackup rejects invalid workspace data without downloading a backup', () => {
+  let downloads = 0;
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    StateManager: { get(path) {
+      return path === 'projects' ? [{ id: 'bad id', name: 'Invalid project' }] : 'dark';
+    } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; }
+    },
+    Helpers: { downloadFile() { downloads++; } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  assert.equal(service.createBackup(), false);
+  assert.equal(downloads, 0);
+  assert.match(errors[0], /некорректный проект/);
+});
+
+test('createBackup rejects an archive larger than the importer limit', () => {
+  let downloads = 0;
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    StateManager: { get(path) {
+      if (path === 'projects') {
+        return [{ id: 'p1', name: 'Project', description: 'x'.repeat(6 * 1024 * 1024) }];
+      }
+      return 'dark';
+    } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) {
+        return key === 'settings' ? { note: 'y'.repeat(800 * 1024) } : fallback;
+      }
+    },
+    Helpers: { downloadFile() { downloads++; } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  assert.equal(service.createBackup(), false);
+  assert.equal(downloads, 0);
+  assert.match(errors[0], /5 МБ/);
 });
