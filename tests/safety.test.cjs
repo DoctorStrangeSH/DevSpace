@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa17'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa18'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3787,7 +3787,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa17'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa18'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -5281,6 +5281,28 @@ test('create-project and GitHub-import dialogs restore focus to their opener aft
     assert.match(app, /target\.focus\(\{ preventScroll: true \}\)/);
     assert.match(app, /data-bs-target="#' \+ modalId \+ '"\]:not\(:disabled\)/);
     assert.match(app, /modalEl\.dataset\.focusRestoreBound = 'true'/);
+});
+
+test('GitHub import controls open one modal and render repository data safely', () => {
+    const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+    assert.match(app, /_initGithubImport: function \(\)/);
+    assert.match(app, /document\.getElementById\('importGithubBtn'\)/);
+    assert.match(app, /document\.getElementById\('footerImportBtn'\)/);
+    assert.match(app, /bootstrap\.Modal\.getOrCreateInstance\(modalEl\)/);
+    assert.match(app, /GitHubService\.getRepos\(\)/);
+    assert.match(app, /title\.textContent = repo\.name/);
+    assert.match(app, /description\.textContent = repo\.description/);
+    assert.doesNotMatch(app, /title\.innerHTML = repo\.name|description\.innerHTML = repo\.description/);
+    assert.match(app, /ProjectsModule\.createProject\(GitHubService\.importAsProject\(repo\)\)/);
+    assert.match(app, /project\.github && project\.github === repo\.url/);
+    assert.match(app, /this\._initGithubImport\(\)/);
+    assert.doesNotMatch(app, /latestProjects\.push\(imported\)/);
+});
+
+test('GitHub imports preserve repository topics and provenance in created projects', () => {
+    const projects = fs.readFileSync(path.join(root, 'js/modules/projects.js'), 'utf8');
+    assert.match(projects, /tags: Array\.isArray\(data\.tags\) \? data\.tags : \[\]/);
+    assert.match(projects, /source: data\.source \|\| 'manual'/);
 });
 
 test('project detail transitions wait for hidden.bs.modal before editing or deleting', () => {
