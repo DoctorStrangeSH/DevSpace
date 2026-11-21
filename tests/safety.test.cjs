@@ -2689,8 +2689,12 @@ test('PWA manifest icon declarations resolve to real PNGs', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(html.includes('rel="icon"'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(worker.includes("'images/icons/icon-192x192.png'"));
-  assert.ok(worker.includes("'images/icons/icon-512x512.png'"));
+  const precache = worker.match(/const PRECACHE_URLS = \[([\s\S]*?)\]\.map/);
+  assert.ok(precache, 'service worker must declare its offline asset list');
+  for (const icon of manifest.icons) {
+    assert.ok(precache[1].includes("'" + icon.src + "'"), `PWA icon is not available offline: ${icon.src}`);
+  }
+  assert.ok(precache[1].includes("'images/icons/icon-72x72.png'"), 'push notification badge must be available offline');
   assert.ok(worker.includes("clients.openWindow(self.registration.scope)"));
 });
 
