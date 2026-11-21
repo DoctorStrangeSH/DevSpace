@@ -90,19 +90,43 @@ const StorageService = {
     },
     
     // Очистка всех данных приложения, включая ключи новых модулей.
+    // Сначала делаем снимок, чтобы при ошибке удаления попытаться восстановить уже удалённые ключи.
     // Чужие данные в том же origin не затрагиваются.
     clearAll() {
+        const snapshot = [];
+        const removed = [];
+
         try {
-            for (let index = localStorage.length - 1; index >= 0; index--) {
+            for (let index = 0; index < localStorage.length; index++) {
                 const key = localStorage.key(index);
                 if (key && key.startsWith(this._prefix)) {
-                    localStorage.removeItem(key);
+                    snapshot.push({ key, value: localStorage.getItem(key) });
                 }
             }
+
+            snapshot.forEach(function(entry) {
+                localStorage.removeItem(entry.key);
+                removed.push(entry);
+            });
         } catch (error) {
             console.error('StorageService: clear error:', error);
+            let rollbackFailed = false;
+
+            removed.forEach(function(entry) {
+                try {
+                    localStorage.setItem(entry.key, entry.value);
+                } catch (restoreError) {
+                    rollbackFailed = true;
+                    console.error('StorageService: clear rollback error:', restoreError);
+                }
+            });
+
             if (typeof EventBus !== 'undefined') {
-                EventBus.emit('storage:error', { key: '*', error: error.message });
+                EventBus.emit('storage:error', {
+                    key: '*',
+                    error: error.message,
+                    rollbackFailed
+                });
             }
             return false;
         }
