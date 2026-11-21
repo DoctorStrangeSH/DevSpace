@@ -2680,11 +2680,14 @@ test('offline page fallback respects GitHub Pages subpath', async () => {
   };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
   let response;
+  let lifetime;
   callbacks.fetch({
     request: { url: scope + 'unknown', method: 'GET', mode: 'navigate', headers: { get: () => 'text/html' } },
-    respondWith: value => { response = value; }
+    respondWith: value => { response = value; },
+    waitUntil: value => { lifetime = value; }
   });
   assert.equal(await response, offlinePage);
+  await lifetime;
   assert.ok(seen.includes(scope + 'index.html'));
   assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
 });
