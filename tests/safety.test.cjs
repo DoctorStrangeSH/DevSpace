@@ -2680,11 +2680,14 @@ test('offline page fallback respects GitHub Pages subpath', async () => {
   };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
   let response;
+  let lifetime;
   callbacks.fetch({
     request: { url: scope + 'unknown', method: 'GET', mode: 'navigate', headers: { get: () => 'text/html' } },
-    respondWith: value => { response = value; }
+    respondWith: value => { response = value; },
+    waitUntil: value => { lifetime = value; }
   });
   assert.equal(await response, offlinePage);
+  await lifetime;
   assert.ok(seen.includes(scope + 'index.html'));
   assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
 });
@@ -4576,6 +4579,7 @@ test('service worker caches successful CDN dependencies for later offline reques
   const handlers = {};
   const stored = new Map();
   const dynamicCacheNames = [];
+  const lifetimePromises = [];
   let online = true;
   const cdnRequest = {
     url: 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
@@ -4615,10 +4619,12 @@ test('service worker caches successful CDN dependencies for later offline reques
   let onlineResponse;
   handlers.fetch({
     request: cdnRequest,
-    respondWith(promise) { onlineResponse = promise; }
+    respondWith(promise) { onlineResponse = promise; },
+    waitUntil(promise) { lifetimePromises.push(promise); }
   });
   assert.equal(await onlineResponse, cdnResponse);
-  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(lifetimePromises.length, 1, 'runtime cache write must extend the fetch event lifetime');
+  await Promise.all(lifetimePromises);
   assert.ok(dynamicCacheNames.includes(expectedDynamicCache));
   assert.equal(stored.get(cdnRequest.url).source, 'cdn-bootstrap-css');
 
@@ -4626,7 +4632,8 @@ test('service worker caches successful CDN dependencies for later offline reques
   let offlineResponse;
   handlers.fetch({
     request: cdnRequest,
-    respondWith(promise) { offlineResponse = promise; }
+    respondWith(promise) { offlineResponse = promise; },
+    waitUntil(promise) { lifetimePromises.push(promise); }
   });
   assert.equal((await offlineResponse).source, 'cdn-bootstrap-css');
 });
