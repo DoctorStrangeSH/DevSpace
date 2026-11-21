@@ -4525,3 +4525,49 @@ test('service worker activation removes only stale DevSpace caches and claims cl
   ].sort());
   assert.equal(claimed, true, 'new worker should claim clients after cache cleanup');
 });
+
+test('service worker activates only after every required offline asset is cached', async () => {
+  const handlers = {};
+  const requested = [];
+  const stored = [];
+  let skippedWaiting = false;
+  let openedCache = null;
+  const sandbox = {
+    console: { log() {}, error() {} },
+    URL,
+    Promise,
+    self: {
+      addEventListener(name, callback) { handlers[name] = callback; },
+      skipWaiting() { skippedWaiting = true; return Promise.resolve(); },
+      registration: { scope: 'https://example.test/DevSpace/' }
+    },
+    caches: {
+      open: async name => {
+        openedCache = name;
+        return {
+          put: async (url, response) => { stored.push([url, response]); }
+        };
+      }
+    },
+    fetch: async url => {
+      requested.push(url);
+      return { ok: true, url };
+    }
+  };
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const cacheVersion = worker.match(/const CACHE_VERSION = ['"]([^'"]+)['"]/)[1];
+  const assetVersion = worker.match(/const ASSET_VERSION = ['"]([^'"]+)['"]/)[1];
+  const precacheBlock = worker.match(/const PRECACHE_URLS = \[([\s\S]*?)\]\.map/)[1];
+  const baseAssets = [...precacheBlock.matchAll(/['"]([^'"]+)['"]/g)].map(match => match[1]);
+  const expectedAssets = baseAssets.map(url => /^(css|js)\//.test(url) ? url + '?v=' + assetVersion : url);
+
+  vm.runInNewContext(worker, sandbox);
+  let installPromise;
+  handlers.install({ waitUntil(promise) { installPromise = promise; } });
+  await installPromise;
+
+  assert.equal(openedCache, 'static-' + cacheVersion);
+  assert.deepEqual(requested.sort(), expectedAssets.sort());
+  assert.deepEqual(stored.map(([url]) => url).sort(), expectedAssets.sort());
+  assert.equal(skippedWaiting, true, 'worker may skip waiting only after the full offline shell is stored');
+});
