@@ -90,7 +90,7 @@ var ProjectsModule = {
         if (modalTitle) modalTitle.textContent = 'Новый проект';
         this._resetForm();
         StateManager.set('ui.editingProjectId', null);
-        var modal = new bootstrap.Modal(document.getElementById('projectModal'));
+        var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('projectModal'));
         modal.show();
     },
 
@@ -104,39 +104,39 @@ var ProjectsModule = {
         var modalTitle = document.getElementById('modalTitle');
         if (modalTitle) modalTitle.textContent = 'Редактировать проект';
 
-        var modal = new bootstrap.Modal(document.getElementById('projectModal'));
+        // Populate synchronously before opening: delayed writes can leak into a
+        // subsequently reopened dialog after a rapid close/open sequence.
+        var projectIdEl = document.getElementById('projectId');
+        if (projectIdEl) projectIdEl.value = project.id || '';
+
+        var projectNameEl = document.getElementById('projectName');
+        if (projectNameEl) projectNameEl.value = project.name || '';
+
+        var projectDescEl = document.getElementById('projectDescription');
+        if (projectDescEl) projectDescEl.value = project.description || '';
+
+        var projectStatusEl = document.getElementById('projectStatus');
+        if (projectStatusEl) projectStatusEl.value = project.status || 'planning';
+
+        var projectGithubEl = document.getElementById('projectGithub');
+        if (projectGithubEl) projectGithubEl.value = project.github || '';
+
+        var projectSupabaseEl = document.getElementById('projectSupabase');
+        if (projectSupabaseEl) projectSupabaseEl.value = project.supabase || '';
+
+        var projectDemoEl = document.getElementById('projectDemo');
+        if (projectDemoEl) projectDemoEl.value = project.demo || '';
+
+        var projectTechEl = document.getElementById('projectTech');
+        if (projectTechEl) projectTechEl.value = (project.techStack || []).join(', ');
+
+        var projectMilestonesEl = document.getElementById('projectMilestones');
+        if (projectMilestonesEl) projectMilestonesEl.value = (project.milestones || []).join(', ');
+
+        StateManager.set('ui.editingProjectId', projectId);
+
+        var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('projectModal'));
         modal.show();
-
-        setTimeout(function() {
-            var projectIdEl = document.getElementById('projectId');
-            if (projectIdEl) projectIdEl.value = project.id || '';
-            
-            var projectNameEl = document.getElementById('projectName');
-            if (projectNameEl) projectNameEl.value = project.name || '';
-            
-            var projectDescEl = document.getElementById('projectDescription');
-            if (projectDescEl) projectDescEl.value = project.description || '';
-            
-            var projectStatusEl = document.getElementById('projectStatus');
-            if (projectStatusEl) projectStatusEl.value = project.status || 'planning';
-            
-            var projectGithubEl = document.getElementById('projectGithub');
-            if (projectGithubEl) projectGithubEl.value = project.github || '';
-            
-            var projectSupabaseEl = document.getElementById('projectSupabase');
-            if (projectSupabaseEl) projectSupabaseEl.value = project.supabase || '';
-            
-            var projectDemoEl = document.getElementById('projectDemo');
-            if (projectDemoEl) projectDemoEl.value = project.demo || '';
-            
-            var projectTechEl = document.getElementById('projectTech');
-            if (projectTechEl) projectTechEl.value = (project.techStack || []).join(', ');
-            
-            var projectMilestonesEl = document.getElementById('projectMilestones');
-            if (projectMilestonesEl) projectMilestonesEl.value = (project.milestones || []).join(', ');
-
-            StateManager.set('ui.editingProjectId', projectId);
-        }, 100);
     },
 
     _handleSaveProject: function() {
