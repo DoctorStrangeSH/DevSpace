@@ -45,6 +45,26 @@ const StorageService = {
         }
     },
     
+    // Read and parse one exact storage snapshot to avoid a read/parse race between tabs.
+    getSnapshot(key, defaultValue = null) {
+        this._lastReadError = null;
+        this._lastReadKey = key;
+        try {
+            const raw = localStorage.getItem(this._getKey(key));
+            return {
+                raw,
+                value: raw === null ? defaultValue : JSON.parse(raw),
+                error: null
+            };
+        } catch (error) {
+            this._lastReadError = error;
+            if (typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:error', { key, error: error.message });
+            }
+            return { raw: null, value: defaultValue, error };
+        }
+    },
+
     // Read the exact stored representation for optimistic concurrency checks.
     getRaw(key) {
         try {
@@ -72,7 +92,9 @@ const StorageService = {
                 }
                 return false;
             }
-            localStorage.setItem(fullKey, JSON.stringify(data));
+            const serialized = JSON.stringify(data);
+            localStorage.setItem(fullKey, serialized);
+            this._lastWriteValue = serialized;
             return true;
         } catch (error) {
             if (error.name === 'QuotaExceededError' && typeof EventBus !== 'undefined') {
