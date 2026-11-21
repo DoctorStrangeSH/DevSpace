@@ -1691,6 +1691,41 @@ test('App wires cross-tab project storage changes to a visible refresh', () => {
   assert.match(source, /Проекты обновлены из другой вкладки/);
 });
 
+test('StorageService.getSnapshot returns parsed data and the exact raw version from one read', () => {
+  let reads = 0;
+  const raw = '[{"id":"snapshot"}]';
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) {
+        assert.equal(key, 'devspace_projects');
+        reads++;
+        return raw;
+      }
+    },
+    EventBus: { emit() {} }
+  });
+
+  const snapshot = ctx.StorageService.getSnapshot('projects');
+  assert.equal(reads, 1);
+  assert.equal(snapshot.raw, raw);
+  assert.deepEqual(Array.from(snapshot.value, project => project.id), ['snapshot']);
+  assert.equal(snapshot.error, null);
+});
+
+test('StorageService.setIfUnchanged exposes the exact serialized value it committed', () => {
+  const values = new Map([['devspace_projects', '[]']]);
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) { return values.get(key) ?? null; },
+      setItem(key, value) { values.set(key, value); }
+    },
+    EventBus: { emit() {} }
+  });
+
+  assert.equal(ctx.StorageService.setIfUnchanged('projects', [{ id: 'p1' }], '[]'), true);
+  assert.equal(ctx.StorageService._lastWriteValue, values.get('devspace_projects'));
+});
+
 test('StorageService.setIfUnchanged rejects stale writes without overwriting newer tab data', () => {
   const values = new Map([['devspace_projects', '[{"id":"newer","name":"Latest"}]']]);
   const events = [];
