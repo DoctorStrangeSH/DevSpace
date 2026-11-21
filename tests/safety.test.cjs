@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa11'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa12'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -2982,6 +2982,16 @@ test('mobile navigation Escape works when focus remains on the external menu tog
   assert.equal(hidden, 1);
   assert.equal(focused, 1);
   assert.equal(event.prevented, true);
+});
+
+test('profile dropdown exposes its controlled menu and initial collapsed state', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const trigger = html.match(/<button class="profile-trigger dropdown-toggle"[^>]*id="cloudProfileButton"[^>]*>/);
+  assert.ok(trigger, 'profile dropdown trigger exists');
+  assert.match(trigger[0], /aria-haspopup="true"/);
+  assert.match(trigger[0], /aria-expanded="false"/);
+  assert.match(trigger[0], /aria-controls="cloudProfileMenu"/);
+  assert.match(html, /<div class="dropdown-menu dropdown-menu-end profile-menu" id="cloudProfileMenu" aria-labelledby="cloudProfileButton">/);
 });
 
 test('quick access dropdown exposes its controlled menu and initial collapsed state', () => {
@@ -3777,7 +3787,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa11'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa12'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
