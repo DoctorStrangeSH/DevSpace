@@ -4422,3 +4422,48 @@ test('backup importer removes the copy suffix from restored project names', asyn
   assert.equal(errors.length, 0);
   assert.deepEqual(successes, ['1 проектов импортировано']);
 });
+
+test('createBackup rejects invalid workspace data without downloading a backup', () => {
+  let downloads = 0;
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    StateManager: { get(path) {
+      return path === 'projects' ? [{ id: 'bad id', name: 'Invalid project' }] : 'dark';
+    } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; }
+    },
+    Helpers: { downloadFile() { downloads++; } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  assert.equal(service.createBackup(), false);
+  assert.equal(downloads, 0);
+  assert.match(errors[0], /некорректный проект/);
+});
+
+test('createBackup rejects an archive larger than the importer limit', () => {
+  let downloads = 0;
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    StateManager: { get(path) {
+      if (path === 'projects') {
+        return [{ id: 'p1', name: 'Project', description: 'x'.repeat(4 * 1024 * 1024) }];
+      }
+      return 'dark';
+    } },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) {
+        return key === 'settings' ? { note: 'y'.repeat(800 * 1024) } : fallback;
+      }
+    },
+    Helpers: { downloadFile() { downloads++; } },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  assert.equal(service.createBackup(), false);
+  assert.equal(downloads, 0);
+  assert.match(errors[0], /5 МБ/);
+});
