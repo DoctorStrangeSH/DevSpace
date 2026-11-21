@@ -216,3 +216,17 @@ section {
     outline-offset: 2px;
     border-radius: 4px;
 }
+
+/* Respect reduced-motion preferences consistently across the entire application. */
+@media (prefers-reduced-motion: reduce) {
+    html:focus-within { scroll-behavior: auto !important; }
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        transition-delay: 0ms !important;
+    }
+}
