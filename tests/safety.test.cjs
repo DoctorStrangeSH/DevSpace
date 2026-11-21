@@ -2837,6 +2837,59 @@ test('gallery screenshot deletion uses one persisted project update and rejects 
   assert.deepEqual(Array.from(project.screenshots, item => item.id), ['two']);
 });
 
+test('gallery thumbnails reference one in-memory image list without duplicating base64 payloads', () => {
+  const screenshots = Array.from({ length: 80 }, (_, index) => ({
+    id: 'shot-' + index,
+    data: 'data:image/png;base64,payload-' + index,
+    caption: index === 0 ? 'Screenshot "one" <preview>' : 'Screenshot ' + index
+  }));
+  const ctx = execute('js/modules/gallery.js', {});
+  const gallery = ctx.GalleryModule;
+  const markup = gallery.renderGallery(screenshots);
+
+  assert.equal((markup.match(/data-gallery-index=/g) || []).length, 80);
+  assert.equal((markup.match(/data:image\/png;base64,payload-0/g) || []).length, 1);
+  assert.equal((markup.match(/data:image\/png;base64,payload-79/g) || []).length, 1);
+  assert.doesNotMatch(markup, /onclick=/i);
+  assert.match(markup, /<button type="button"/);
+  assert.match(markup, /Screenshot &quot;one&quot; &lt;preview&gt;/);
+  assert.equal(gallery._renderedImages.length, 80);
+  assert.equal(gallery._renderedImages[0], screenshots[0]);
+});
+
+test('gallery delegated click opens only the selected rendered screenshot', () => {
+  let clickHandler;
+  let opened = null;
+  const document = {
+    addEventListener(event, handler) {
+      if (event === 'click') clickHandler = handler;
+    }
+  };
+  const ctx = execute('js/modules/gallery.js', { document });
+  const gallery = ctx.GalleryModule;
+  gallery.openLightbox = (images, index) => { opened = { images, index }; };
+  gallery._renderedImages = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
+
+  gallery._bindGalleryEvents();
+  gallery._bindGalleryEvents();
+  assert.equal(typeof clickHandler, 'function');
+
+  let prevented = false;
+  clickHandler({
+    target: {
+      closest(selector) {
+        assert.equal(selector, '.screenshots-gallery [data-gallery-index]');
+        return { getAttribute: name => name === 'data-gallery-index' ? '2' : null };
+      }
+    },
+    preventDefault() { prevented = true; }
+  });
+
+  assert.equal(prevented, true);
+  assert.equal(opened.index, 2);
+  assert.equal(opened.images, gallery._renderedImages);
+});
+
 test('mobile gallery only swipes from the image and explains touch controls', () => {
   const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
