@@ -2608,6 +2608,104 @@ test('project story keeps the active section tab visible in narrow viewports', (
   assert.ok(source.includes("behavior: 'auto'"));
 });
 
+test('gallery screenshot uploads persist once and report success only after save', async () => {
+  const project = { id: 'p1', screenshots: [{ id: 'old', data: 'data:image/png;base64,old' }] };
+  const events = [];
+  const notifications = [];
+  let writes = 0;
+  let legacySaves = 0;
+  const ctx = execute('js/modules/gallery.js', {
+    StateManager: {
+      getProject: () => project,
+      updateProject(id, updates) {
+        writes++;
+        Object.assign(project, updates);
+        return project;
+      },
+      saveProjects() { legacySaves++; return true; }
+    },
+    AuthService: { isOwner: () => true },
+    Helpers: { generateId: () => 'new-shot' },
+    FileReader: class {
+      readAsDataURL(file) { this.result = 'data:image/png;base64,new'; this.onload(); }
+    },
+    NotificationModule: {
+      success: message => notifications.push(['success', message]),
+      error: message => notifications.push(['error', message])
+    },
+    EventBus: { emit: name => events.push(name) }
+  });
+
+  const result = await ctx.GalleryModule.addScreenshots('p1', [
+    { type: 'image/png', name: 'new.png' },
+    { type: 'text/plain', name: 'ignored.txt' }
+  ]);
+  assert.equal(result, true);
+  assert.equal(writes, 1);
+  assert.equal(legacySaves, 0);
+  assert.equal(project.screenshots.length, 2);
+  assert.equal(project.screenshots[1].id, 'new-shot');
+  assert.deepEqual(events, ['gallery:updated']);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0][0], 'success');
+});
+
+test('gallery screenshot uploads keep existing data and suppress success when persistence fails', async () => {
+  const original = [{ id: 'old', data: 'data:image/png;base64,old' }];
+  const project = { id: 'p1', screenshots: original };
+  const events = [];
+  const notifications = [];
+  let writes = 0;
+  const ctx = execute('js/modules/gallery.js', {
+    StateManager: {
+      getProject: () => project,
+      updateProject() { writes++; return null; }
+    },
+    AuthService: { isOwner: () => true },
+    Helpers: { generateId: () => 'new-shot' },
+    FileReader: class {
+      readAsDataURL() { this.result = 'data:image/png;base64,new'; this.onload(); }
+    },
+    NotificationModule: {
+      success: message => notifications.push(['success', message]),
+      error: message => notifications.push(['error', message])
+    },
+    EventBus: { emit: name => events.push(name) }
+  });
+
+  assert.equal(await ctx.GalleryModule.addScreenshots('p1', [{ type: 'image/png', name: 'new.png' }]), false);
+  assert.equal(writes, 1);
+  assert.equal(project.screenshots, original);
+  assert.deepEqual(events, []);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0][0], 'error');
+});
+
+test('gallery screenshot deletion uses one persisted project update and rejects unauthorized edits', () => {
+  const project = { id: 'p1', screenshots: [{ id: 'one' }, { id: 'two' }] };
+  const events = [];
+  let writes = 0;
+  let owner = true;
+  const ctx = execute('js/modules/gallery.js', {
+    StateManager: {
+      getProject: () => project,
+      updateProject(id, updates) { writes++; Object.assign(project, updates); return project; }
+    },
+    AuthService: { isOwner: () => owner },
+    NotificationModule: { error() {}, success() {} },
+    EventBus: { emit: name => events.push(name) }
+  });
+
+  assert.equal(ctx.GalleryModule.deleteScreenshot('p1', 'one'), true);
+  assert.deepEqual(Array.from(project.screenshots, item => item.id), ['two']);
+  assert.equal(writes, 1);
+  assert.deepEqual(events, ['gallery:updated']);
+  owner = false;
+  assert.equal(ctx.GalleryModule.deleteScreenshot('p1', 'two'), false);
+  assert.equal(writes, 1);
+  assert.deepEqual(Array.from(project.screenshots, item => item.id), ['two']);
+});
+
 test('mobile gallery only swipes from the image and explains touch controls', () => {
   const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
