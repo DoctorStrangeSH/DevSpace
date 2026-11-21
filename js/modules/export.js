@@ -492,7 +492,11 @@ var ExportModule = {
                     }
                     if (previousTheme && typeof ThemeModule !== 'undefined' &&
                         typeof ThemeModule.setTheme === 'function') {
-                        ThemeModule.setTheme(previousTheme, true);
+                        try {
+                            if (ThemeModule.setTheme(previousTheme, true) === false) rollbackSucceeded = false;
+                        } catch (rollbackError) {
+                            rollbackSucceeded = false;
+                        }
                     }
                     if (typeof StateManager._updateStats === 'function') StateManager._updateStats();
                     if (typeof RendererModule !== 'undefined') {
