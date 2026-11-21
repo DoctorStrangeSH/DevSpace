@@ -539,6 +539,80 @@ test('re-importing the same backup replaces projects without creating duplicates
   assert.deepEqual(errors, []);
 });
 
+test('legacy backup without optional sections preserves existing user metadata', async () => {
+  const writes = [];
+  const errors = [];
+  const current = new Map([
+    ['theme', 'light'],
+    ['favorites', ['existing_favorite']],
+    ['achievements', ['existing_achievement']],
+    ['settings', { compactMode: true }],
+    ['activity', [{ type: 'existing-event' }]],
+    ['healthHistory', [{ date: '2026-11-20', scores: { focus: 75 } }]]
+  ]);
+  const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'light' };
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify([
+      { id: 'legacy_project', name: 'Legacy project' }
+    ])) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; writes.push([key, value]); },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return current.has(key) ? current.get(key) : fallback; },
+      set(key, value) { current.set(key, value); writes.push([key, value]); return true; },
+      remove(key) { current.delete(key); return true; }
+    },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(state.projects[0].id, 'legacy_project');
+  assert.deepEqual(current.get('favorites'), ['existing_favorite']);
+  assert.deepEqual(current.get('achievements'), ['existing_achievement']);
+  assert.deepEqual(current.get('settings'), { compactMode: true });
+  assert.deepEqual(current.get('activity'), [{ type: 'existing-event' }]);
+  assert.deepEqual(current.get('healthHistory'), [{ date: '2026-11-20', scores: { focus: 75 } }]);
+  assert.deepEqual(errors, []);
+});
+
+test('cancelled backup import does not write projects or metadata', async () => {
+  const writes = [];
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      favorites: ['new_project'],
+      settings: { compactMode: false }
+    })) },
+    confirm: () => false,
+    StateManager: {
+      set(key, value) { writes.push([key, value]); },
+      saveProjects() { writes.push(['saveProjects']); return true; }
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set(key, value) { writes.push([key, value]); return true; }
+    },
+    NotificationModule: { success() {}, error() {} }
+  }).ExportModule;
+
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(writes, []);
+});
+
 test('backup importer validates payload before confirmation and restores a valid theme', async () => {
   const service = execute('js/modules/export.js', {
     Helpers: { readFile: () => Promise.resolve(JSON.stringify({
