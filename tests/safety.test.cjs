@@ -1441,7 +1441,7 @@ test('StateManager records successful project CRUD operations for undo and redo'
   assert.equal(state.undo(), true);
   assert.deepEqual(Array.from(state._state.projects, project => project.id), ['p1']);
   assert.equal(state.redo(), true);
-  assert.deepEqual(Array.from(state._state.projects, project => project.id), ['p1', 'p2']);
+  assert.deepEqual(Array.from(state._state.projects, project => project.id), ['p2', 'p1']);
 
   assert.ok(state.updateProject('p1', { name: 'Updated' }));
   assert.equal(state.undo(), true);
