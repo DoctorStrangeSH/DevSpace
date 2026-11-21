@@ -3390,6 +3390,49 @@ test('offline page fallback respects GitHub Pages subpath', async () => {
   assert.ok(seen.every(key => !String(key).startsWith('https://doctorstrangesh.github.io/index.html')));
 });
 
+test('service worker serves cached app shell during temporary HTTP 503 outage', async () => {
+  const handlers = {};
+  const seen = [];
+  const cachedPage = { ok: true, source: 'last-known-good-shell' };
+  const scope = 'https://doctorstrangesh.github.io/DevSpace/';
+  const sandbox = {
+    console: { log() {}, error() {} },
+    Promise,
+    URL,
+    Response,
+    self: {
+      registration: { scope },
+      addEventListener(name, callback) { handlers[name] = callback; }
+    },
+    caches: {
+      match: async key => {
+        seen.push(String(key));
+        return String(key) === scope + 'index.html' ? cachedPage : undefined;
+      },
+      open: async () => ({ put: async () => {} })
+    },
+    fetch: async () => ({ ok: false, status: 503, statusText: 'Service Unavailable' })
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+
+  let responsePromise;
+  let lifetimePromise;
+  handlers.fetch({
+    request: {
+      url: scope,
+      method: 'GET',
+      mode: 'navigate',
+      headers: { get: () => 'text/html' }
+    },
+    respondWith(promise) { responsePromise = promise; },
+    waitUntil(promise) { lifetimePromise = promise; }
+  });
+
+  assert.equal(await responsePromise, cachedPage);
+  await lifetimePromise;
+  assert.ok(seen.includes(scope + 'index.html'), '503 fallback must use the app subpath');
+});
+
 test('PWA manifest icon declarations resolve to real PNGs', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.ok(manifest.icons.length >= 2);
