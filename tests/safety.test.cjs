@@ -4382,3 +4382,43 @@ test('deadline alerts keep upcoming tasks visible when overdue backlog is large 
   assert.deepEqual(visible.map(item => item.taskId), ['recent', 'older2', 'oldest', 'today', 'tomorrow']);
   assert.match(fs.readFileSync(path.join(root, 'js/ui/renderer.js'), 'utf8'), /Ещё '\s*\+/);
 });
+
+test('backup importer removes the copy suffix from restored project names', async () => {
+  const saved = [];
+  const errors = [];
+  const successes = [];
+  const service = execute('js/modules/export.js', {
+    Helpers: {
+      readFile: () => Promise.resolve(JSON.stringify({
+        projects: [{ id: 'copy_project', name: '  Проект (копия)  ' }]
+      }))
+    },
+    confirm: () => true,
+    StateManager: {
+      get() { return []; },
+      set(path, value) { saved.push([path, value]); },
+      saveProjects() { return true; }
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set() { return true; },
+      remove() { return true; }
+    },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: {
+      success(message) { successes.push(message); },
+      error(message) { errors.push(message); }
+    }
+  }).ExportModule;
+
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const imported = saved.find(([path]) => path === 'projects');
+  assert.ok(imported, 'projects should be persisted');
+  assert.equal(imported[1][0].name, 'Проект');
+  assert.equal(errors.length, 0);
+  assert.deepEqual(successes, ['1 проектов импортировано']);
+});

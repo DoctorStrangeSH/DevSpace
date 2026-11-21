@@ -331,7 +331,7 @@ var ExportModule = {
                 if (!confirm('Импортировать ' + projects.length + ' проектов? Текущие будут заменены.')) return;
 
                 projects = projects.map(function(p) {
-                    p.name = p.name.replace(/\\s*\\(копия\\)\\s*/gi, '').trim();
+                    p.name = p.name.replace(/\s*\(копия\)\s*/gi, '').trim();
                     p.updatedAt = new Date().toISOString();
                     return p;
                 });
