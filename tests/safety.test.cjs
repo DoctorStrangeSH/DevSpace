@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa16'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa17'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3787,7 +3787,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa16'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa17'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -5281,6 +5281,18 @@ test('create-project and GitHub-import dialogs restore focus to their opener aft
     assert.match(app, /target\.focus\(\{ preventScroll: true \}\)/);
     assert.match(app, /data-bs-target="#' \+ modalId \+ '"\]:not\(:disabled\)/);
     assert.match(app, /modalEl\.dataset\.focusRestoreBound = 'true'/);
+});
+
+test('project detail transitions wait for hidden.bs.modal before editing or deleting', () => {
+    const source = fs.readFileSync(path.join(root, 'js/modules/project-detail.js'), 'utf8');
+    assert.match(source, /_afterDetailModalCloses: function\(callback\)/);
+    assert.match(source, /if \(!modalEl \|\| !modalEl\.classList\.contains\('show'\) \|\| !modal\) \{/);
+    assert.match(source, /if \(this\._pendingModalAction\) return/);
+    assert.match(source, /modalEl\.addEventListener\('hidden\.bs\.modal',[\s\S]*?callback\(\);[\s\S]*?\}, \{ once: true \}\)/);
+    assert.match(source, /openEditAfterClose: function\(projectId\)[\s\S]*?ProjectsModule\.openEditModal\(projectId\)/);
+    assert.match(source, /deleteAfterClose: function\(projectId\)[\s\S]*?ProjectsModule\.deleteProject\(projectId\)/);
+    assert.doesNotMatch(source, /bootstrap\.Modal\.getInstance\(document\.getElementById\('projectDetailModal'\)\)\.hide\(\); ProjectsModule\.openEditModal/);
+    assert.doesNotMatch(source, /if\(confirm\('Удалить проект\?'\)\) \{ bootstrap\.Modal/);
 });
 
 test('project detail modal restores focus to its opener and uses a safe fallback when opener is gone', () => {
