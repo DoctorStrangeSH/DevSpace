@@ -26,7 +26,7 @@ var AchievementsModule = {
         // Загружаем сохранённые достижения
         var saved = StorageService.get('achievements');
         if (saved && Array.isArray(saved) && saved.length > 0) {
-            this.unlocked = saved;
+            this.unlocked = saved.slice();
         }
         
         // НЕ рендерим здесь — app.js сделает это один раз
@@ -88,13 +88,27 @@ var AchievementsModule = {
         
         if (!achievement) return false;
 
-        // Разблокируем
-        this.unlocked.push(achievementId);
-        
-        // Сохраняем локально
-        StorageService.set('achievements', this.unlocked);
-        
-        // Обновляем отображение
+        // Persist the new list before mutating runtime state or showing success.
+        const nextUnlocked = this.unlocked.concat(achievementId);
+        let saved = false;
+        try {
+            saved = StorageService.set('achievements', nextUnlocked) !== false;
+        } catch (error) {
+            console.error('Achievements: persistence failed:', error);
+        }
+
+        if (!saved) {
+            if (typeof NotificationModule !== 'undefined') {
+                var message = 'Не удалось сохранить достижение. Проверьте свободное место в хранилище.';
+                if (typeof NotificationModule.error === 'function') NotificationModule.error(message);
+                else if (typeof NotificationModule.warning === 'function') NotificationModule.warning(message);
+            }
+            return false;
+        }
+
+        this.unlocked = nextUnlocked;
+
+        // Обновляем отображение только после успешной записи
         this._renderAchievements();
         
         // Уведомление
