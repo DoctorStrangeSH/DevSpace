@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa7'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa8'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3754,7 +3754,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa7'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa8'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -4456,6 +4456,19 @@ test('mobile task actions navigate to owner creation, overdue work and search', 
     assert.match(renderer, /event\.target\.closest\('\[data-today-quick\]'\)/);
     assert.match(renderer, /self\._todayView = 'overdue'/);
     assert.match(renderer, /AuthService\.isOwner\(\)/);
+});
+
+test('task project headings and metadata remain readable at narrow viewport and 200% zoom', () => {
+    const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+    assert.ok(css.includes('@media(max-width:380px)'));
+    assert.ok(css.includes('.today-project-heading strong {\n        font-size:.76rem;'));
+    assert.ok(css.includes('white-space:normal;'));
+    assert.ok(css.includes('#todayPanel .today-meta {\n        flex:1 1 100%;'));
+    assert.ok(css.includes('flex-wrap:wrap;'));
+    assert.ok(css.includes('.today-groups-toggle-all { max-width:100%; white-space:normal;'));
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
+    assert.doesNotMatch(html, /maximum-scale\s*=\s*1|user-scalable\s*=\s*no/i);
 });
 
 test('mobile task filters collapse while preserving search and active preferences', () => {
