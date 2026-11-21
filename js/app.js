@@ -179,6 +179,29 @@ var App = {
     },
 
     _initGlobalHandlers: function () {
+        // Restore keyboard focus after the create-project and GitHub-import dialogs close.
+        ['projectModal', 'githubModal'].forEach(function (modalId) {
+            var modalEl = document.getElementById(modalId);
+            if (!modalEl || modalEl.dataset.focusRestoreBound === 'true') return;
+            modalEl.dataset.focusRestoreBound = 'true';
+            var returnFocusTarget = null;
+
+            modalEl.addEventListener('show.bs.modal', function (event) {
+                returnFocusTarget = event.relatedTarget || document.activeElement;
+            });
+
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                var target = returnFocusTarget;
+                returnFocusTarget = null;
+                if (target && target.isConnected && !target.disabled && target.getClientRects().length) {
+                    target.focus({ preventScroll: true });
+                    return;
+                }
+                var fallback = document.querySelector('[data-bs-target="#' + modalId + '"]:not(:disabled)');
+                if (fallback && fallback.getClientRects().length) fallback.focus({ preventScroll: true });
+            });
+        });
+
         window.addEventListener('beforeunload', function () {
             sessionStorage.setItem('devspace_scroll', window.scrollY);
             var activeTab = document.querySelector('.tab-btn.active');
