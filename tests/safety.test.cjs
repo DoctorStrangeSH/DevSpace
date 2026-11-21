@@ -4776,6 +4776,7 @@ test('full backup export and import round-trip restores the same workspace in an
   ctx.ExportModule._importFile({ size: Buffer.byteLength(backupText) });
   await new Promise(resolve => setImmediate(resolve));
 
+  assert.deepEqual(errors, [], 'backup import should complete without validation or storage errors');
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].id, 'roundtrip-project');
   assert.equal(state.projects[0].checklist[0].text, 'Verify restored task');
