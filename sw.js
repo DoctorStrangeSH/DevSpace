@@ -3,7 +3,7 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.66.29-pwa13';
+const CACHE_VERSION = 'devspace-v3.66.29-pwa14';
 const ASSET_VERSION = '3.66.29';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
