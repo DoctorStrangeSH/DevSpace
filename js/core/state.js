@@ -85,8 +85,13 @@ const StateManager = {
                 // Avoid clobbering projects added while the request was pending.
                 if (Array.isArray(initialProjects) && this._state.projects.length === 0) {
                     this._state.projects = initialProjects;
-                    this.saveProjects();
-                    if (typeof RendererModule !== 'undefined') {
+                    if (this.saveProjects()) {
+                        this._saveToHistory();
+                    } else {
+                        this._state.projects = [];
+                        this._updateStats();
+                    }
+                    if (typeof RendererModule !== 'undefined' && this._state.projects.length > 0) {
                         RendererModule.renderProjects();
                         RendererModule.renderStats();
                     }
@@ -137,7 +142,9 @@ const StateManager = {
         
         target[lastKey] = value;
         
-        this._saveToHistory();
+        if (path === 'projects' || path.startsWith('projects.')) {
+            this._saveToHistory();
+        }
         
         EventBus.emit('state:changed', { 
             path, 
@@ -171,6 +178,7 @@ const StateManager = {
             this._updateStats();
             return null;
         }
+        this._saveToHistory();
         EventBus.emit('project:added', project);
         return project;
     },
@@ -195,6 +203,7 @@ const StateManager = {
             this._updateStats();
             return null;
         }
+        this._saveToHistory();
         EventBus.emit('project:updated', updatedProject);
         return updatedProject;
     },
@@ -225,6 +234,7 @@ const StateManager = {
             return null;
         }
 
+        this._saveToHistory();
         replacements.forEach(item => EventBus.emit('project:updated', item.updatedProject));
         return replacements.map(item => item.updatedProject);
     },
@@ -239,6 +249,7 @@ const StateManager = {
             this._updateStats();
             return false;
         }
+        this._saveToHistory();
         EventBus.emit('project:removed', removed);
         return true;
     },
