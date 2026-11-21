@@ -181,22 +181,57 @@ var NotesModule = {
     createTaskFromNote: function(projectId, noteId) {
         if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return null;
         var project = StateManager.getProject(projectId);
-        if (!project || !project.notes || typeof ChecklistModule === 'undefined') return null;
+        if (!project || !Array.isArray(project.notes) || typeof ChecklistModule === 'undefined') return null;
         var note = project.notes.find(function(item) { return item.id === noteId; });
         if (!note) return null;
-        var oldTask = (project.checklist || []).find(function(item) { return item.id === note.linkedTaskId && item.sourceNoteId === note.id; });
+
+        var oldTask = (project.checklist || []).find(function(item) {
+            return item.id === note.linkedTaskId && item.sourceNoteId === note.id;
+        });
         if (oldTask) return oldTask;
+
         var title = String(note.title || note.description || 'Задача из заметки').trim().slice(0, 240);
         if (!title) return null;
-        var task = ChecklistModule.addItem(projectId, title);
-        if (!task) return null;
-        task.sourceNoteId = note.id;
+
+        var snapshot = JSON.parse(JSON.stringify(project));
+        var checklist = Array.isArray(project.checklist) ? project.checklist : [];
+        var now = new Date().toISOString();
+        var task = {
+            id: Helpers.generateId(),
+            text: title,
+            completed: false,
+            createdAt: now,
+            completedAt: null,
+            order: checklist.length,
+            sourceNoteId: note.id
+        };
+
+        if (['critical', 'high'].indexOf(note.priority) !== -1) task.priority = 'high';
+        else if (note.priority === 'low') task.priority = 'low';
+
+        checklist.push(task);
+        project.checklist = checklist;
+        project.notes = project.notes;
         note.linkedTaskId = task.id;
-        note.updatedAt = new Date().toISOString();
-        StateManager.updateProject(projectId, { checklist: project.checklist, notes: project.notes });
-        ChecklistModule._updateChecklistDOM(project);
-        if (['critical', 'high'].indexOf(note.priority) !== -1) ChecklistModule.setPriority(projectId, task.id, 'high');
-        else if (note.priority === 'low') ChecklistModule.setPriority(projectId, task.id, 'low');
+        note.updatedAt = now;
+
+        if (typeof ChecklistModule._recalculateProgress === 'function') {
+            ChecklistModule._recalculateProgress(project);
+        } else {
+            var completed = checklist.filter(function(item) { return item.completed; }).length;
+            project.progress = checklist.length ? Math.round((completed / checklist.length) * 100) : 0;
+        }
+
+        if (!this._persistMutation(projectId, project, snapshot, {
+            checklist: project.checklist,
+            notes: project.notes,
+            progress: project.progress
+        })) return null;
+
+        if (typeof ChecklistModule._updateChecklistDOM === 'function') {
+            ChecklistModule._updateChecklistDOM(project);
+        }
+        EventBus.emit('checklist:changed', { projectId: projectId, itemId: task.id });
         EventBus.emit('notes:task-linked', { projectId: projectId, noteId: note.id, taskId: task.id });
         return task;
     },
