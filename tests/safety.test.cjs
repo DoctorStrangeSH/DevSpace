@@ -2433,7 +2433,7 @@ test('all external scripts load in parallel while preserving execution order', (
   }
   const sources = scripts.map(match => match[1]);
   assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.28'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -3799,7 +3799,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.28/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.29/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
