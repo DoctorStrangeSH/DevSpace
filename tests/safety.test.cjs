@@ -4721,7 +4721,7 @@ test('full backup export and import round-trip restores the same workspace in an
     theme: 'light'
   };
   const favorites = { favorites: ['roundtrip-project'] };
-  const achievements = { unlocked: ['first_project'] };
+  const achievements = { unlocked: ['first_project'], _renderAchievements() {} };
   const values = new Map([
     ['settings', { compactMode: true, taskView: 'board' }],
     ['activity', [{ id: 'event-1', type: 'project-created' }]],
