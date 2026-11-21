@@ -438,6 +438,107 @@ test('backup project validator rejects malformed, duplicate and unsafe records',
   assert.throws(() => service._validateBackupProjects(Array(1001).fill({ id: 'p', name: 'Too many' })), /список проектов/);
 });
 
+test('backup importer rejects malformed JSON before confirmation or writes', async () => {
+  const writes = [];
+  const errors = [];
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve('{ this is not valid JSON') },
+    confirm() { throw new Error('Malformed JSON must not ask for confirmation'); },
+    StateManager: {
+      set(key, value) { writes.push([key, value]); },
+      saveProjects() { writes.push(['saveProjects']); return true; }
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set(key, value) { writes.push([key, value]); return true; }
+    },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(writes, []);
+  assert.match(errors[0], /Ошибка/);
+});
+
+test('backup importer keeps legacy project-array backups supported', async () => {
+  const writes = [];
+  const errors = [];
+  let successes = 0;
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify([
+      { id: 'legacy_project', name: 'Legacy project', checklist: [] }
+    ])) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return key === 'projects' ? [] : undefined; },
+      set(key, value) { writes.push([key, value]); },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set() { return true; },
+      remove() { return true; }
+    },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: { success() { successes++; }, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  service._importFile({ size: 20 });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const imported = writes.find(([key]) => key === 'projects');
+  assert.ok(imported, 'legacy array should be applied as projects');
+  assert.equal(imported[1].length, 1);
+  assert.equal(imported[1][0].id, 'legacy_project');
+  assert.equal(successes, 1);
+  assert.deepEqual(errors, []);
+});
+
+test('re-importing the same backup replaces projects without creating duplicates', async () => {
+  const writes = [];
+  const errors = [];
+  let successes = 0;
+  const backup = JSON.stringify({ projects: [{ id: 'stable_project', name: 'Stable project' }] });
+  const service = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(backup) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return key === 'projects' ? [] : undefined; },
+      set(key, value) { writes.push([key, value]); },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return fallback; },
+      set() { return true; },
+      remove() { return true; }
+    },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {} },
+    NotificationModule: { success() { successes++; }, error(message) { errors.push(message); } }
+  }).ExportModule;
+
+  for (let i = 0; i < 2; i++) {
+    service._importFile({ size: Buffer.byteLength(backup) });
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  const projectWrites = writes.filter(([key]) => key === 'projects');
+  assert.equal(projectWrites.length, 2);
+  assert.equal(projectWrites[1][1].length, 1);
+  assert.equal(projectWrites[1][1][0].id, 'stable_project');
+  assert.equal(successes, 2);
+  assert.deepEqual(errors, []);
+});
+
 test('backup importer validates payload before confirmation and restores a valid theme', async () => {
   const service = execute('js/modules/export.js', {
     Helpers: { readFile: () => Promise.resolve(JSON.stringify({
