@@ -34,6 +34,8 @@ var App = {
 
     _restoreStateBeforeRender: function () {
         var savedTab = sessionStorage.getItem('devspace_tab') || 'projects';
+        if (!['projects', 'stats', 'achievements'].includes(savedTab)) savedTab = 'projects';
+        sessionStorage.setItem('devspace_tab', savedTab);
 
         var tp = document.getElementById('tabProjects');
         var ts = document.getElementById('tabStats');
