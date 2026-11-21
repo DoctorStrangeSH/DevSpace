@@ -326,6 +326,7 @@ const StateManager = {
         }
 
         this._historyIndex = targetIndex;
+        this._projectMutationVersion++;
         EventBus.emit('undo:performed');
         return true;
     },
@@ -344,6 +345,7 @@ const StateManager = {
         }
 
         this._historyIndex = targetIndex;
+        this._projectMutationVersion++;
         EventBus.emit('redo:performed');
         return true;
     },
@@ -400,6 +402,7 @@ const StateManager = {
         }
 
         this._state.projects = data.projects;
+        this._projectMutationVersion++;
         if (hasTheme) {
             this._state.theme = data.theme;
             document.documentElement.setAttribute('data-bs-theme', data.theme);
