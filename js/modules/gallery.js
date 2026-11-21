@@ -13,38 +13,60 @@ const GalleryModule = {
     },
 
     async addScreenshots(projectId, files) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         const project = StateManager.getProject(projectId);
-        if (!project) return;
+        if (!project || !files || typeof files[Symbol.iterator] !== 'function') return false;
 
         const screenshots = [];
-        
-        for (const file of files) {
-            if (!file.type.startsWith('image/')) continue;
-            
-            const base64 = await this._fileToBase64(file);
-            screenshots.push({
-                id: Helpers.generateId(),
-                data: base64,
-                caption: file.name,
-                uploadedAt: new Date().toISOString()
-            });
+
+        try {
+            for (const file of files) {
+                if (!file || typeof file.type !== 'string' || !file.type.startsWith('image/')) continue;
+
+                const base64 = await this._fileToBase64(file);
+                screenshots.push({
+                    id: Helpers.generateId(),
+                    data: base64,
+                    caption: typeof file.name === 'string' ? file.name : 'Скриншот',
+                    uploadedAt: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error('GalleryModule: screenshot read failed:', error);
+            NotificationModule.error('Не удалось прочитать изображения. Скриншоты не добавлены.');
+            return false;
         }
 
-        project.screenshots = [...(project.screenshots || []), ...screenshots];
-        StateManager.updateProject(projectId, { screenshots: project.screenshots });
-        StateManager.saveProjects();
+        if (screenshots.length === 0) return false;
+
+        const nextScreenshots = [...(Array.isArray(project.screenshots) ? project.screenshots : []), ...screenshots];
+        const updatedProject = StateManager.updateProject(projectId, { screenshots: nextScreenshots });
+        if (!updatedProject) {
+            NotificationModule.error('Не удалось сохранить скриншоты. Проверьте свободное место в хранилище.');
+            return false;
+        }
 
         NotificationModule.success(`${screenshots.length} скриншотов добавлено`);
         EventBus.emit('gallery:updated', projectId);
+        return true;
     },
 
     deleteScreenshot(projectId, screenshotId) {
+        if (typeof AuthService !== 'undefined' && !AuthService.isOwner()) return false;
         const project = StateManager.getProject(projectId);
-        if (!project) return;
+        if (!project || !Array.isArray(project.screenshots)) return false;
 
-        project.screenshots = (project.screenshots || []).filter(s => s.id !== screenshotId);
-        StateManager.updateProject(projectId, { screenshots: project.screenshots });
-        StateManager.saveProjects();
+        const nextScreenshots = project.screenshots.filter(s => s.id !== screenshotId);
+        if (nextScreenshots.length === project.screenshots.length) return false;
+
+        const updatedProject = StateManager.updateProject(projectId, { screenshots: nextScreenshots });
+        if (!updatedProject) {
+            NotificationModule.error('Не удалось удалить скриншот. Изменения не сохранены.');
+            return false;
+        }
+
+        EventBus.emit('gallery:updated', projectId);
+        return true;
     },
 
     openLightbox(images, startIndex = 0) {
