@@ -4606,11 +4606,10 @@ test('service worker caches successful CDN dependencies for later offline reques
     }
   };
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const dynamicCache = worker.match(/const DYNAMIC_CACHE = ['"]([^'"]+)' \\+ CACHE_VERSION/);
-  assert.ok(dynamicCache, 'worker must declare a versioned dynamic cache');
+  assert.ok(worker.includes("const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;"), 'worker must derive the dynamic cache name from its version');
   const cacheVersion = worker.match(/const CACHE_VERSION = ['"]([^'"]+)['"]/);
   assert.ok(cacheVersion, 'worker must declare its cache version');
-  const expectedDynamicCache = dynamicCache[1] + cacheVersion[1];
+  const expectedDynamicCache = 'dynamic-' + cacheVersion[1];
   vm.runInNewContext(worker, sandbox);
 
   let onlineResponse;
