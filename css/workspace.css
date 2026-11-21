@@ -213,6 +213,59 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
     #projectDetailModal .modal-content,#githubModal .modal-content { max-height:calc(100dvh - 20px); }
 }
 
+/* Compact landscape / on-screen keyboard: keep modal actions reachable. */
+@media(max-height:520px) {
+    .modal.show {
+        padding-top:max(4px,env(safe-area-inset-top));
+        padding-bottom:max(4px,env(safe-area-inset-bottom));
+    }
+    .modal.show .modal-dialog {
+        margin:4px auto;
+        min-height:0;
+        max-height:calc(100dvh - 8px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    }
+    .modal.show .modal-content {
+        min-height:0;
+        max-height:inherit;
+        display:flex;
+        flex-direction:column;
+    }
+    .modal.show .modal-header,
+    .modal.show .modal-footer { flex:0 0 auto; padding-top:8px; padding-bottom:8px; }
+    .modal.show .modal-body {
+        min-height:0;
+        overflow-y:auto;
+        overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch;
+    }
+    .modal.show .modal-footer .btn { min-height:40px; }
+    .checklist-editor-backdrop { align-items:flex-start; overflow-y:auto; padding:8px; }
+    .checklist-editor { max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+}
+
+/* Keep narrow forms from forcing horizontal scrolling at 320–375 px. */
+@media(max-width:380px) {
+    #projectModal .modal-dialog,
+    #projectDetailModal .modal-dialog,
+    #githubModal .modal-dialog { margin:6px; }
+    #projectModal .modal-body,
+    #projectDetailModal .modal-body,
+    #githubModal .modal-body { padding:12px; }
+    .modal.show input,
+    .modal.show select,
+    .modal.show textarea,
+    .checklist-editor input,
+    .checklist-editor select,
+    .checklist-editor textarea { min-width:0; max-width:100%; }
+    .modal.show .modal-footer { flex-wrap:wrap; gap:8px; }
+    .modal.show .modal-footer .btn { flex:1 1 120px; }
+}
+
+/* Orientation changes must not freeze a previously measured modal height. */
+@media(orientation:landscape) and (max-height:520px) {
+    .modal.show .modal-dialog { width:min(calc(100% - 12px),760px); }
+}
+
 /* Account menu: one intentional entry point instead of scattered cloud controls. */
 .profile-trigger { display:inline-flex; align-items:center; gap:9px; min-height:40px; padding:4px 11px 4px 5px; border:1px solid rgba(160,146,226,.3); border-radius:13px; background:rgba(116,102,217,.11); color:#eee9ff; font-size:.81rem; font-weight:700; cursor:pointer; white-space:nowrap; }
 .profile-trigger::after { margin-left:2px; opacity:.6; }
