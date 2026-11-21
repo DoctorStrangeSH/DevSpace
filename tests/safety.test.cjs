@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa5'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa6'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3743,7 +3743,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa5'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa6'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
