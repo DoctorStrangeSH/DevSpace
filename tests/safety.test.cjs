@@ -4486,3 +4486,42 @@ test('createBackup rejects an archive larger than the importer limit', () => {
   assert.equal(downloads, 0);
   assert.match(errors[0], /5 МБ/);
 });
+
+test('service worker activation removes only stale DevSpace caches and claims clients', async () => {
+  const handlers = {};
+  const deleted = [];
+  let claimed = false;
+  const cacheNames = [
+    'static-devspace-v3.66.28-pwa2',
+    'dynamic-devspace-v3.66.28-pwa2',
+    'images-devspace-v3.66.28-pwa2',
+    'static-devspace-v3.66.28',
+    'dynamic-devspace-v3.66.27',
+    'images-devspace-v3.66.27',
+    'firebase-sdk-cache'
+  ];
+  const sandbox = {
+    console: { log() {}, error() {} },
+    Promise,
+    self: {
+      addEventListener(name, callback) { handlers[name] = callback; },
+      clients: { claim() { claimed = true; return Promise.resolve(); } }
+    },
+    caches: {
+      keys: async () => cacheNames,
+      delete: async name => { deleted.push(name); return true; }
+    }
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+
+  let activationPromise;
+  handlers.activate({ waitUntil(promise) { activationPromise = promise; } });
+  await activationPromise;
+
+  assert.deepEqual(deleted.sort(), [
+    'static-devspace-v3.66.28',
+    'dynamic-devspace-v3.66.27',
+    'images-devspace-v3.66.27'
+  ].sort());
+  assert.equal(claimed, true, 'new worker should claim clients after cache cleanup');
+});
