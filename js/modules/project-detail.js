@@ -6,6 +6,7 @@
 var ProjectDetailModule = {
     _currentProjectId: null,
     _returnFocusTarget: null,
+    _pendingModalAction: false,
     _notesFilter: null,
     _selectedNoteIds: null,
 
@@ -65,6 +66,38 @@ var ProjectDetailModule = {
             row.scrollIntoView({ behavior: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
         }, { once: true });
         this.show(projectId);
+    },
+
+    _afterDetailModalCloses: function(callback) {
+        var modalEl = document.getElementById('projectDetailModal');
+        var modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+
+        if (!modalEl || !modalEl.classList.contains('show') || !modal) {
+            callback();
+            return;
+        }
+        if (this._pendingModalAction) return;
+
+        this._pendingModalAction = true;
+        var self = this;
+        modalEl.addEventListener('hidden.bs.modal', function() {
+            self._pendingModalAction = false;
+            callback();
+        }, { once: true });
+        modal.hide();
+    },
+
+    openEditAfterClose: function(projectId) {
+        this._afterDetailModalCloses(function() {
+            ProjectsModule.openEditModal(projectId);
+        });
+    },
+
+    deleteAfterClose: function(projectId) {
+        if (!window.confirm('Удалить проект?')) return;
+        this._afterDetailModalCloses(function() {
+            ProjectsModule.deleteProject(projectId);
+        });
     },
 
     show: function(projectId) {
@@ -297,14 +330,14 @@ var ProjectDetailModule = {
         if (isOwner) {
             actionsHTML += '<h5><i class="bi bi-gear me-1"></i>Действия</h5>' +
                 '<div class="d-grid gap-2">' +
-                    '<button class="btn btn-glass btn-sm w-100" onclick="bootstrap.Modal.getInstance(document.getElementById(\'projectDetailModal\')).hide(); ProjectsModule.openEditModal(\'' + project.id + '\')">' +
+                    '<button class="btn btn-glass btn-sm w-100" onclick="ProjectDetailModule.openEditAfterClose(\'' + project.id + '\')">' +
                         '<i class="bi bi-pencil me-1"></i>Редактировать' +
                     '</button>' +
                     '<button class="btn btn-glass btn-sm w-100" onclick="ProjectsModule.duplicateProject(\'' + project.id + '\')">' +
                         '<i class="bi bi-copy me-1"></i>Дублировать' +
                     '</button>' +
                     '<button class="btn btn-sm w-100" style="background: var(--color-danger-bg); color: var(--color-danger); border: 1px solid var(--color-danger-border);" ' +
-                        'onclick="if(confirm(\'Удалить проект?\')) { bootstrap.Modal.getInstance(document.getElementById(\'projectDetailModal\')).hide(); ProjectsModule.deleteProject(\'' + project.id + '\'); }">' +
+                        'onclick="ProjectDetailModule.deleteAfterClose(\'' + project.id + '\'); }">' +
                         '<i class="bi bi-trash me-1"></i>Удалить' +
                     '</button>' +
                 '</div>';
