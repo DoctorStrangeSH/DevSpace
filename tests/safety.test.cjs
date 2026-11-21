@@ -402,7 +402,7 @@ test('createBackup serializes every supported workspace data section', () => {
   ctx.ExportModule.createBackup();
   assert.ok(downloaded);
   const backup = JSON.parse(downloaded.data);
-  assert.equal(backup.version, '3.66.28');
+  assert.equal(backup.version, '3.66.29');
   assert.equal(backup.projects[0].checklist[0].text, 'Task');
   assert.equal(backup.projects[0].notes[0].title, 'Note');
   assert.equal(backup.theme, 'light');
@@ -2432,7 +2432,7 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.28'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
   assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.28'));
 });
 
@@ -5000,9 +5000,9 @@ test('service worker activation removes only stale DevSpace caches and claims cl
   const deleted = [];
   let claimed = false;
   const cacheNames = [
-    'static-devspace-v3.66.29-pwa3',
-    'dynamic-devspace-v3.66.29-pwa3',
-    'images-devspace-v3.66.29-pwa3',
+    'static-devspace-v3.66.28-pwa2',
+    'dynamic-devspace-v3.66.28-pwa2',
+    'images-devspace-v3.66.28-pwa2',
     'static-devspace-v3.66.28',
     'dynamic-devspace-v3.66.27',
     'images-devspace-v3.66.27',
