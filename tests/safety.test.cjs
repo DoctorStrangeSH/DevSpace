@@ -699,6 +699,59 @@ test('backup importer rejects invalid settings before writing any project data',
   assert.match(errors[0], /настройки/);
 });
 
+test('AchievementsModule persists an unlock before changing runtime state or rendering success', () => {
+  const notifications = [];
+  const writes = [];
+  const container = { innerHTML: '' };
+  const ctx = execute('js/modules/achievements.js', {
+    StorageService: {
+      set(key, value) { writes.push([key, value]); return true; }
+    },
+    NotificationModule: {
+      show(...args) { notifications.push(args); },
+      error(message) { notifications.push(['error', message]); },
+      warning(message) { notifications.push(['warning', message]); }
+    },
+    document: { getElementById: id => id === 'achievementsContainer' ? container : null }
+  });
+  const module = ctx.AchievementsModule;
+
+  assert.equal(module.check('first_project'), true);
+  assert.deepEqual(Array.from(module.unlocked), ['first_project']);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], 'achievements');
+  assert.deepEqual(Array.from(writes[0][1]), ['first_project']);
+  assert.match(container.innerHTML, /Первый проект/);
+  assert.equal(notifications.length, 1);
+  assert.equal(module.check('first_project'), false);
+  assert.equal(writes.length, 1);
+});
+
+test('AchievementsModule leaves an achievement locked and shows an error when persistence fails', () => {
+  const notifications = [];
+  const container = { innerHTML: 'unchanged' };
+  let writes = 0;
+  const ctx = execute('js/modules/achievements.js', {
+    StorageService: {
+      set() { writes++; return false; }
+    },
+    NotificationModule: {
+      show(...args) { notifications.push(args); },
+      error(message) { notifications.push(['error', message]); },
+      warning(message) { notifications.push(['warning', message]); }
+    },
+    document: { getElementById: id => id === 'achievementsContainer' ? container : null }
+  });
+  const module = ctx.AchievementsModule;
+
+  assert.equal(module.check('first_project'), false);
+  assert.deepEqual(Array.from(module.unlocked), []);
+  assert.equal(writes, 1);
+  assert.equal(container.innerHTML, 'unchanged');
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0][0], 'error');
+});
+
 test('backup importer rejects malformed favorites and achievements before changing state', async () => {
   for (const payload of [
     { favorites: ['p1', { unsafe: true }] },
