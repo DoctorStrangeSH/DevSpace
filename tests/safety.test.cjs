@@ -4571,3 +4571,62 @@ test('service worker activates only after every required offline asset is cached
   assert.deepEqual(stored.map(([url]) => url).sort(), expectedAssets.sort());
   assert.equal(skippedWaiting, true, 'worker may skip waiting only after the full offline shell is stored');
 });
+
+test('service worker caches successful CDN dependencies for later offline requests', async () => {
+  const handlers = {};
+  const stored = new Map();
+  const dynamicCacheNames = [];
+  let online = true;
+  const cdnRequest = {
+    url: 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
+    method: 'GET',
+    mode: 'cors',
+    headers: { get: name => name === 'accept' ? 'text/css,*/*' : null }
+  };
+  const cdnResponse = { ok: true, clone() { return { source: 'cdn-bootstrap-css' }; } };
+  const sandbox = {
+    console: { log() {}, error() {} },
+    URL,
+    Promise,
+    Response,
+    self: {
+      addEventListener(name, callback) { handlers[name] = callback; },
+      registration: { scope: 'https://example.test/DevSpace/' }
+    },
+    caches: {
+      match: async request => stored.get(request.url) || null,
+      open: async name => {
+        dynamicCacheNames.push(name);
+        return { put: async (request, response) => { stored.set(request.url, response); } };
+      }
+    },
+    fetch: async () => {
+      if (!online) throw new Error('offline');
+      return cdnResponse;
+    }
+  };
+  const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(worker.includes("const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;"), 'worker must derive the dynamic cache name from its version');
+  const cacheVersion = worker.match(/const CACHE_VERSION = ['"]([^'"]+)['"]/);
+  assert.ok(cacheVersion, 'worker must declare its cache version');
+  const expectedDynamicCache = 'dynamic-' + cacheVersion[1];
+  vm.runInNewContext(worker, sandbox);
+
+  let onlineResponse;
+  handlers.fetch({
+    request: cdnRequest,
+    respondWith(promise) { onlineResponse = promise; }
+  });
+  assert.equal(await onlineResponse, cdnResponse);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(dynamicCacheNames.includes(expectedDynamicCache));
+  assert.equal(stored.get(cdnRequest.url).source, 'cdn-bootstrap-css');
+
+  online = false;
+  let offlineResponse;
+  handlers.fetch({
+    request: cdnRequest,
+    respondWith(promise) { offlineResponse = promise; }
+  });
+  assert.equal((await offlineResponse).source, 'cdn-bootstrap-css');
+});
