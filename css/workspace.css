@@ -393,6 +393,49 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 #todayPanel .today-select-label input { width:17px; height:17px; accent-color:var(--accent); cursor:pointer; }
 @media(max-width:580px) { .today-sort { justify-content:space-between; width:100%; } .today-sort select { flex:1; max-width:220px; } }
 @media(max-width:580px) { .today-bulk strong { width:100%; } .today-bulk label { flex:1 1 120px; } .today-bulk button { flex:1 1 120px; } }
+
+/* At 200% zoom, task metadata must not compete with project titles. */
+@media(max-width:380px) {
+    .today-project-heading {
+        align-items:flex-start;
+        gap:7px;
+        padding:10px;
+    }
+    .today-project-heading strong {
+        font-size:.76rem;
+        overflow-wrap:anywhere;
+        white-space:normal;
+        text-overflow:clip;
+    }
+    .today-project-heading span {
+        flex:0 0 auto;
+        gap:5px;
+        font-size:.65rem;
+    }
+    #todayPanel .today-task {
+        min-width:0;
+        flex-wrap:wrap;
+        align-items:flex-start;
+        gap:8px;
+        padding:10px;
+    }
+    #todayPanel .today-open {
+        flex:1 1 calc(100% - 48px);
+        overflow-wrap:anywhere;
+    }
+    #todayPanel .today-meta {
+        flex:1 1 100%;
+        flex-direction:row;
+        flex-wrap:wrap;
+        align-items:center;
+        justify-content:flex-start;
+        gap:6px;
+        padding-left:43px;
+    }
+    #todayPanel .today-priority { white-space:normal; }
+    .today-groups-toggle-all { max-width:100%; white-space:normal; text-align:left; }
+}
+
 .weekly-load { margin:0 0 17px; padding:15px; border:1px solid rgba(140,127,216,.22); border-radius:15px; background:linear-gradient(130deg,rgba(115,100,218,.09),rgba(30,30,55,.1)); }
 .today-mobile-actions { display:none; }
 @media(max-width:600px) {
