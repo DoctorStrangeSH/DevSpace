@@ -18,6 +18,9 @@ var App = {
             StateManager.init();
             document.documentElement.setAttribute('data-bs-theme', StateManager.get('theme'));
             this._initModules();
+            if (StateManager._projectsLoadError && typeof NotificationModule !== 'undefined') {
+                NotificationModule.warning('Сохранённые проекты повреждены или недоступны. Исходные данные не перезаписаны. Проверьте хранилище или восстановите резервную копию.');
+            }
             this._restoreStateBeforeRender();
             this._renderOnce();
             this._initVendors();
