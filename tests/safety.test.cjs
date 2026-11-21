@@ -199,17 +199,21 @@ test('cloud migration preview reports a read failure without changing local proj
   assert.equal(button.disabled, false);
 });
 
-test('cloud sync security plan requires UID ownership and preserves disabled client writes', () => {
+test('cloud migration documentation matches active repository rules and client gates', () => {
   const plan = fs.readFileSync(path.join(root, 'docs/FIREBASE_SECURITY_PLAN.md'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
-  assert.match(plan, /Единственный актуальный прототип/);
-  assert.match(fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8'), /request\.auth\.uid == uid/);
-  assert.match(plan, /подтвердил публикацию правил/);
-  assert.match(plan, /Перед будущим деплоем обязательны успешные эмуляторные тесты/);
+  const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
+  const firebaseConfig = fs.readFileSync(path.join(root, 'firebase.json'), 'utf8');
+  assert.match(plan, /Актуальный статус на 21\.11\.2026/);
+  assert.match(plan, /Production rules в Firebase Console этим репозиторием не проверяются/);
+  assert.match(plan, /firestore\.create-only\.rules.*прототип/);
+  assert.match(rules, /allow write: if false/);
+  assert.match(firebaseConfig, /"rules": "firestore\.rules"/);
   assert.match(firebaseService, /_writesEnabled: false/);
+  assert.match(firebaseService, /_privateProjectCreatesEnabled: true/);
 });
 
-test('Google identity is separated from local owner editing and cloud writes remain disabled', () => {
+test('Google identity is separate from local editing and automatic sync stays read-only', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const identity = fs.readFileSync(path.join(root, 'js/services/firebase-identity.js'), 'utf8');
   const firebaseService = fs.readFileSync(path.join(root, 'js/services/firebase.js'), 'utf8');
@@ -217,8 +221,10 @@ test('Google identity is separated from local owner editing and cloud writes rem
   assert.match(html, /id="cloudIdentityBtn"/);
   assert.match(identity, /signInWithPopup\(new firebase\.auth\.GoogleAuthProvider\(\)\)/);
   assert.match(identity, /onAuthStateChanged/);
-  assert.doesNotMatch(identity, /AuthService\.login|_writesEnabled\s*=\s*true|uploadToCloud/);
+  assert.match(identity, /uploadOneProject: function/);
+  assert.match(identity, /_backupReady/);
   assert.match(firebaseService, /_writesEnabled: false/);
+  assert.match(firebaseService, /_privateProjectCreatesEnabled: true/);
   assert.match(sync, /uploadToCloud: function\(\) \{\s*return Promise\.resolve\(false\)/);
 });
 
