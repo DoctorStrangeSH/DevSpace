@@ -4706,3 +4706,85 @@ test('service worker keeps its lifetime open until a fetched image is cached', a
   });
   assert.equal((await offlineResult).source, 'downloaded-image');
 });
+
+test('full backup export and import round-trip restores the same workspace in an isolated store', async () => {
+  let backupText = null;
+  const errors = [];
+  const state = {
+    projects: [{
+      id: 'roundtrip-project',
+      name: 'Round-trip project',
+      description: 'Backup integrity check',
+      checklist: [{ id: 'roundtrip-task', text: 'Verify restored task', completed: false }],
+      notes: [{ id: 'roundtrip-note', title: 'Restored note', content: 'Keep this content' }]
+    }],
+    theme: 'light'
+  };
+  const favorites = { favorites: ['roundtrip-project'] };
+  const achievements = { unlocked: ['first_project'] };
+  const values = new Map([
+    ['settings', { compactMode: true, taskView: 'board' }],
+    ['activity', [{ id: 'event-1', type: 'project-created' }]],
+    ['healthHistory', [{ date: '2026-11-20', scores: { focus: 82 } }]]
+  ]);
+  const storage = {
+    KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+    get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+    set(key, value) { values.set(key, value); return true; },
+    remove(key) { values.delete(key); return true; }
+  };
+  const ctx = execute('js/modules/export.js', {
+    App: { config: { version: '3.66.28' } },
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { values.set('projects', state.projects); return true; },
+      _updateStats() {}
+    },
+    StorageService: storage,
+    FavoritesModule: favorites,
+    AchievementsModule: achievements,
+    ThemeModule: {
+      setTheme(theme) {
+        state.theme = theme;
+        values.set('theme', theme);
+      }
+    },
+    Helpers: {
+      downloadFile(data) { backupText = data; },
+      readFile() { return Promise.resolve(backupText); }
+    },
+    confirm: () => true,
+    RendererModule: {
+      renderProjects() {}, renderStats() {}, _renderInsights() {},
+      _updateQuickAccess() {}, _renderAchievements() {}
+    },
+    NotificationModule: { success() {}, error(message) { errors.push(message); } }
+  });
+
+  assert.equal(ctx.ExportModule.createBackup(), true);
+  assert.ok(backupText, 'export should produce a JSON backup');
+
+  state.projects = [{ id: 'temporary', name: 'Temporary project' }];
+  state.theme = 'dark';
+  favorites.favorites = [];
+  achievements.unlocked = [];
+  values.set('settings', { compactMode: false });
+  values.set('activity', []);
+  values.set('healthHistory', []);
+
+  ctx.ExportModule._importFile({ size: Buffer.byteLength(backupText) });
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(state.projects.length, 1);
+  assert.equal(state.projects[0].id, 'roundtrip-project');
+  assert.equal(state.projects[0].checklist[0].text, 'Verify restored task');
+  assert.equal(state.projects[0].notes[0].content, 'Keep this content');
+  assert.equal(state.theme, 'light');
+  assert.deepEqual(favorites.favorites, ['roundtrip-project']);
+  assert.deepEqual(achievements.unlocked, ['first_project']);
+  assert.deepEqual(values.get('settings'), { compactMode: true, taskView: 'board' });
+  assert.deepEqual(values.get('activity'), [{ id: 'event-1', type: 'project-created' }]);
+  assert.deepEqual(values.get('healthHistory'), [{ date: '2026-11-20', scores: { focus: 82 } }]);
+  assert.deepEqual(errors, []);
+});
