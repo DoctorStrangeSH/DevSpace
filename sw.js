@@ -188,7 +188,7 @@ self.addEventListener('fetch', (event) => {
             if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
                 return caches.match(new URL('index.html', self.registration.scope).href)
                     .then(page => page || caches.match(new URL('./', self.registration.scope).href))
-                    .then(page => page || Response.error());
+                    .then(page => page || null);
             }
 
             return null;
