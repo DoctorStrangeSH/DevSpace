@@ -2935,7 +2935,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa8'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa9'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3172,6 +3172,19 @@ test('mobile gallery only swipes from the image and explains touch controls', ()
   assert.ok(html.includes('aria-keyshortcuts="ArrowLeft"'));
   assert.ok(html.includes('aria-keyshortcuts="ArrowRight"'));
   assert.ok(css.includes('touch-action:pan-y pinch-zoom'));
+});
+
+test('gallery controls and original-image link have a clear keyboard-only focus indicator', () => {
+  const css = fs.readFileSync(path.join(root, 'css/portfolio.css'), 'utf8');
+  const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
+  assert.ok(css.includes('.portfolio-gallery-viewer button:focus-visible {'));
+  assert.ok(css.includes('outline:3px solid #e6caad;'));
+  assert.ok(css.includes('outline-offset:3px;'));
+  assert.ok(css.includes('#portfolioGalleryOriginal:focus-visible {'));
+  assert.ok(css.includes('outline-offset:5px;'));
+  assert.ok(script.includes("else if (event.key === 'Tab')"));
+  assert.ok(script.includes('focusIsOutside'));
+  assert.ok(script.includes('returnFocus.focus()'));
 });
 
 test('screenshot viewer distinguishes loading, loaded and failed images', () => {
@@ -3754,7 +3767,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa8'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa9'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
