@@ -1181,6 +1181,8 @@ test('StorageService.clearAll removes every app key but preserves unrelated orig
   const localStorage = {
     get length() { return values.size; },
     key(index) { return Array.from(values.keys())[index] ?? null; },
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, value); },
     removeItem(key) { values.delete(key); }
   };
   const ctx = execute('js/core/storage.js', {
@@ -1192,6 +1194,76 @@ test('StorageService.clearAll removes every app key but preserves unrelated orig
   assert.deepEqual(events, ['storage:cleared']);
 });
 
+
+
+
+test('StorageService.clearAll restores removed app keys when a later removal fails', () => {
+  const initial = [
+    ['devspace_projects', '[{"id":"p1"}]'],
+    ['devspace_favorites', '["p1"]'],
+    ['other-app-session', 'keep']
+  ];
+  const values = new Map(initial);
+  const events = [];
+  let failed = false;
+  const localStorage = {
+    get length() { return values.size; },
+    key(index) { return Array.from(values.keys())[index] ?? null; },
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) {
+      if (key === 'devspace_favorites' && !failed) {
+        failed = true;
+        throw new Error('Removal blocked');
+      }
+      values.delete(key);
+    }
+  };
+  const ctx = execute('js/core/storage.js', {
+    localStorage,
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+
+  assert.equal(ctx.StorageService.clearAll(), false);
+  assert.deepEqual(Array.from(values.entries()), initial);
+  assert.deepEqual(events.map(event => event.name), ['storage:error']);
+  assert.equal(events[0].payload.rollbackFailed, false);
+});
+
+test('StorageService.clearAll reports when rollback itself cannot restore removed keys', () => {
+  const values = new Map([
+    ['devspace_projects', '[]'],
+    ['devspace_favorites', '[]']
+  ]);
+  const events = [];
+  let removeFailed = false;
+  const localStorage = {
+    get length() { return values.size; },
+    key(index) { return Array.from(values.keys())[index] ?? null; },
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) {
+      if (key === 'devspace_projects') throw new Error('Restore blocked');
+      values.set(key, value);
+    },
+    removeItem(key) {
+      if (key === 'devspace_favorites' && !removeFailed) {
+        removeFailed = true;
+        throw new Error('Removal blocked');
+      }
+      values.delete(key);
+    }
+  };
+  const ctx = execute('js/core/storage.js', {
+    localStorage,
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+
+  assert.equal(ctx.StorageService.clearAll(), false);
+  assert.equal(values.has('devspace_projects'), false);
+  assert.equal(events.some(event => event.name === 'storage:cleared'), false);
+  assert.equal(events[0].name, 'storage:error');
+  assert.equal(events[0].payload.rollbackFailed, true);
+});
 
 test('StorageService.has returns false and reports restricted localStorage access', () => {
   const events = [];
