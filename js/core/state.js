@@ -59,12 +59,23 @@ const StateManager = {
 
         // 3. Загружаем проекты
         const projectsKey = StorageService.KEYS.PROJECTS;
-        const savedProjects = StorageService.get(projectsKey);
-        if (typeof StorageService.getRaw === 'function') {
+        const projectSnapshot = typeof StorageService.getSnapshot === 'function'
+            ? StorageService.getSnapshot(projectsKey)
+            : null;
+        const savedProjects = projectSnapshot
+            ? projectSnapshot.value
+            : StorageService.get(projectsKey);
+        if (projectSnapshot) {
+            this._projectsStorageSnapshot = projectSnapshot.raw;
+        } else if (typeof StorageService.getRaw === 'function') {
             this._projectsStorageSnapshot = StorageService.getRaw(projectsKey);
         }
-        const projectsKeyExists = typeof StorageService.has === 'function' && StorageService.has(projectsKey);
-        const projectsReadFailed = StorageService._lastReadKey === projectsKey && !!StorageService._lastReadError;
+        const projectsKeyExists = projectSnapshot
+            ? projectSnapshot.raw !== null
+            : typeof StorageService.has === 'function' && StorageService.has(projectsKey);
+        const projectsReadFailed = projectSnapshot
+            ? !!projectSnapshot.error
+            : StorageService._lastReadKey === projectsKey && !!StorageService._lastReadError;
 
         if (savedProjects && Array.isArray(savedProjects)) {
             this._state.projects = savedProjects;
@@ -234,7 +245,9 @@ const StateManager = {
             }
             return false;
         }
-        if (typeof StorageService.getRaw === 'function') {
+        if (typeof StorageService.setIfUnchanged === 'function') {
+            this._projectsStorageSnapshot = StorageService._lastWriteValue;
+        } else if (typeof StorageService.getRaw === 'function') {
             this._projectsStorageSnapshot = StorageService.getRaw(key);
         } else {
             this._projectsStorageSnapshot = JSON.stringify(this._state.projects);
