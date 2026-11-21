@@ -178,6 +178,119 @@ var App = {
         }
     },
 
+    _githubImportBound: false,
+    _githubImportLoading: false,
+
+    _initGithubImport: function () {
+        if (this._githubImportBound) return;
+        var self = this;
+        var modalEl = document.getElementById('githubModal');
+        var listEl = document.getElementById('githubReposList');
+        if (!modalEl || !listEl) return;
+
+        this._githubImportBound = true;
+        [
+            document.getElementById('importGithubBtn'),
+            document.getElementById('footerImportBtn')
+        ].filter(Boolean).forEach(function (button) {
+            button.addEventListener('click', function () {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                self._loadGithubRepositories(listEl);
+            });
+        });
+    },
+
+    _loadGithubRepositories: function (listEl) {
+        if (this._githubImportLoading) return;
+        this._githubImportLoading = true;
+        listEl.replaceChildren();
+        var loading = document.createElement('div');
+        loading.className = 'text-center py-5';
+        loading.setAttribute('role', 'status');
+        loading.textContent = 'Загрузка репозиториев…';
+        listEl.appendChild(loading);
+
+        var self = this;
+        GitHubService.getRepos().then(function (repos) {
+            self._githubImportLoading = false;
+            listEl.replaceChildren();
+
+            if (!repos.length) {
+                var empty = document.createElement('p');
+                empty.className = 'text-muted text-center py-4';
+                empty.textContent = 'Не удалось загрузить публичные репозитории GitHub. Попробуйте открыть окно ещё раз.';
+                listEl.appendChild(empty);
+                return;
+            }
+
+            var existingProjects = StateManager.get('projects') || [];
+            repos.forEach(function (repo) {
+                var alreadyImported = existingProjects.some(function (project) {
+                    return project.github && project.github === repo.url;
+                });
+                var card = document.createElement('article');
+                card.className = 'github-import-item d-flex align-items-center justify-content-between gap-3 py-3 border-bottom';
+
+                var details = document.createElement('div');
+                details.className = 'min-w-0 flex-grow-1';
+                var title = document.createElement('h6');
+                title.className = 'mb-1';
+                title.textContent = repo.name || 'Без названия';
+                var description = document.createElement('p');
+                description.className = 'small text-muted mb-1';
+                description.textContent = repo.description || 'Описание отсутствует';
+                var metadata = document.createElement('span');
+                metadata.className = 'small text-muted';
+                metadata.textContent = [repo.language || 'Язык не указан', '★ ' + (repo.stars || 0)].join(' · ');
+                details.appendChild(title);
+                details.appendChild(description);
+                details.appendChild(metadata);
+
+                var importButton = document.createElement('button');
+                importButton.type = 'button';
+                importButton.className = 'btn btn-sm btn-glass flex-shrink-0';
+                importButton.textContent = alreadyImported ? 'Уже добавлен' : 'Импортировать';
+                importButton.disabled = alreadyImported;
+                importButton.addEventListener('click', function () {
+                    if (importButton.disabled) return;
+                    var latestProjects = StateManager.get('projects') || [];
+                    if (latestProjects.some(function (project) { return project.github && project.github === repo.url; })) {
+                        importButton.disabled = true;
+                        importButton.textContent = 'Уже добавлен';
+                        return;
+                    }
+                    if (!repo.name || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/.test(repo.url || '')) {
+                        importButton.disabled = true;
+                        importButton.textContent = 'Некорректная ссылка';
+                        return;
+                    }
+                    var imported = ProjectsModule.createProject(GitHubService.importAsProject(repo));
+                    if (!imported) {
+                        if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось импортировать репозиторий');
+                        return;
+                    }
+                    importButton.disabled = true;
+                    importButton.textContent = 'Добавлен';
+                    if (typeof RendererModule !== 'undefined') {
+                        RendererModule.renderProjects();
+                        RendererModule.renderStats();
+                    }
+                    if (typeof NotificationModule !== 'undefined') NotificationModule.success('Репозиторий «' + imported.name + '» добавлен в проекты');
+                });
+                card.appendChild(details);
+                card.appendChild(importButton);
+                listEl.appendChild(card);
+            });
+        }).catch(function () {
+            self._githubImportLoading = false;
+            listEl.replaceChildren();
+            var error = document.createElement('p');
+            error.className = 'text-danger text-center py-4';
+            error.textContent = 'Не удалось загрузить репозитории. Проверьте подключение и попробуйте снова.';
+            listEl.appendChild(error);
+        });
+    },
+
     _initGlobalHandlers: function () {
         // Restore keyboard focus after the create-project and GitHub-import dialogs close.
         ['projectModal', 'githubModal'].forEach(function (modalId) {
@@ -201,6 +314,8 @@ var App = {
                 if (fallback && fallback.getClientRects().length) fallback.focus({ preventScroll: true });
             });
         });
+
+        this._initGithubImport();
 
         window.addEventListener('beforeunload', function () {
             sessionStorage.setItem('devspace_scroll', window.scrollY);
