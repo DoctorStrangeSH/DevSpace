@@ -1238,6 +1238,7 @@ var RendererModule = {
     },
 
     _switchTab: function(tab) {
+        if (!['projects', 'stats', 'achievements'].includes(tab)) return;
         sessionStorage.setItem('devspace_tab', tab);
 
         document.querySelectorAll('.tab-btn').forEach(function(b) {
