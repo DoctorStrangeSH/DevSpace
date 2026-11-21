@@ -1566,6 +1566,51 @@ test('project import supersedes an in-flight initial project seed', async () => 
   assert.deepEqual(Array.from(stored.get('projects'), project => project.id), ['imported-project']);
 });
 
+test('StorageService.get records malformed JSON without changing the stored value', () => {
+  const values = new Map([['devspace_projects', '{broken json']]);
+  const events = [];
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) { return values.has(key) ? values.get(key) : null; },
+      setItem(key, value) { values.set(key, value); },
+      removeItem(key) { values.delete(key); }
+    },
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+
+  assert.equal(ctx.StorageService.get('projects'), null);
+  assert.equal(ctx.StorageService._lastReadKey, 'projects');
+  assert.ok(ctx.StorageService._lastReadError);
+  assert.equal(values.get('devspace_projects'), '{broken json');
+  assert.equal(events[0].name, 'storage:error');
+});
+
+test('StateManager never replaces an existing malformed project store with starter data', () => {
+  let fetchCalls = 0;
+  let writes = 0;
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      _lastReadKey: 'projects',
+      _lastReadError: new SyntaxError('Unexpected token'),
+      get(key) { return key === 'theme' ? 'dark' : null; },
+      has(key) { return key === 'projects'; },
+      set() { writes++; return true; }
+    },
+    EventBus: { emit(name) { events.push(name); } },
+    document: { documentElement: { setAttribute() {} } },
+    fetch() { fetchCalls++; return Promise.resolve({ ok: true, json: async () => [{ id: 'demo' }] }); }
+  });
+
+  ctx.StateManager.init();
+  assert.equal(ctx.StateManager._projectsLoadError, true);
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects')), []);
+  assert.equal(fetchCalls, 0);
+  assert.equal(writes, 0);
+  assert.equal(events.includes('state:initialized'), true);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
