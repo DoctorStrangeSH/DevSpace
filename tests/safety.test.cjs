@@ -582,6 +582,70 @@ test('backup importer rolls back every store when a later write fails', async ()
   assert.match(errors[0], /Импорт отменён, прежние данные восстановлены/);
 });
 
+test('backup importer continues rollback after a storage restoration throws', async () => {
+  const errors = [];
+  const values = new Map([
+    ['theme', 'dark'],
+    ['favorites', ['old_favorite']],
+    ['settings', { compactMode: false }],
+    ['activity', [{ type: 'old-event' }]]
+  ]);
+  let activityWriteFailed = false;
+  let settingsRestoreShouldThrow = false;
+  const restoredAfterThrow = [];
+  const storage = {
+    KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+    get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+    set(key, value) {
+      if (key === 'activity' && !activityWriteFailed) {
+        activityWriteFailed = true;
+        return false;
+      }
+      if (key === 'settings' && settingsRestoreShouldThrow && value.compactMode === false) {
+        throw new Error('simulated storage exception during rollback');
+      }
+      values.set(key, value);
+      if (key === 'settings' && value.compactMode === true) settingsRestoreShouldThrow = true;
+      if (key === 'favorites' && value[0] === 'old_favorite') restoredAfterThrow.push(key);
+      if (key === 'theme' && value === 'dark') restoredAfterThrow.push(key);
+      return true;
+    },
+    remove(key) { values.delete(key); return true; }
+  };
+  const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'dark' };
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      theme: 'light',
+      favorites: ['new_favorite'],
+      settings: { compactMode: true },
+      activity: [{ type: 'new-event' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: storage,
+    ThemeModule: { setTheme(value) { state.theme = value; values.set('theme', value); return true; } },
+    FavoritesModule: { favorites: ['old_favorite'] },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {}, _updateQuickAccess() {} },
+    NotificationModule: { success() { throw new Error('must not report success'); }, error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(state.projects, [{ id: 'old_project', name: 'Old project' }]);
+  assert.deepEqual(values.get('favorites'), ['old_favorite']);
+  assert.deepEqual(values.get('theme'), 'dark');
+  assert.deepEqual(restoredAfterThrow, ['favorites', 'theme']);
+  assert.match(errors[0], /автоматическое восстановление завершилось не полностью/);
+});
+
 test('backup importer warns when rollback itself cannot restore every storage key', async () => {
   const errors = [];
   const values = new Map([
