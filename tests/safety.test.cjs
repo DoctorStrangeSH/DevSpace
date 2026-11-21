@@ -2904,6 +2904,30 @@ test('scroll controls honour reduced motion and expose an accessible name', () =
   assert.ok((app.match(/reduceMotion \? 'instant' : 'smooth'/g) || []).length >= 2);
 });
 
+test('mobile modals remain scrollable above the on-screen keyboard in short landscape viewports', () => {
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.ok(css.includes('@media(max-height:520px)'));
+  assert.ok(css.includes('max-height:calc(100dvh - 8px - env(safe-area-inset-top) - env(safe-area-inset-bottom))'));
+  assert.ok(css.includes('.modal.show .modal-body'));
+  assert.ok(css.includes('overflow-y:auto'));
+  assert.ok(css.includes('.modal.show .modal-footer .btn { min-height:40px; }'));
+  assert.ok(css.includes('.checklist-editor-backdrop { align-items:flex-start; overflow-y:auto;'));
+});
+
+test('project forms and modal actions fit narrow 320–375 pixel screens', () => {
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.ok(css.includes('@media(max-width:380px)'));
+  assert.ok(css.includes('.modal.show textarea { min-width:0; max-width:100%; }'));
+  assert.ok(css.includes('.modal.show .modal-footer { flex-wrap:wrap; gap:8px; }'));
+  assert.ok(css.includes('.modal.show .modal-footer .btn { flex:1 1 120px; }'));
+});
+
+test('short landscape orientation constrains modal width and height without fixed measurements', () => {
+  const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
+  assert.ok(css.includes('@media(orientation:landscape) and (max-height:520px)'));
+  assert.ok(css.includes('width:min(calc(100% - 12px),760px)'));
+});
+
 test('mobile viewport respects device safe areas and keeps the workspace shortcut reachable', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
