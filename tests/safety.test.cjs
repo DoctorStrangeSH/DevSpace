@@ -1513,6 +1513,59 @@ test('failed initial project request cannot clear projects created while it was 
   assert.deepEqual(Array.from(stored.get('projects'), project => project.id), ['user-project']);
 });
 
+test('initial project seeding stays disabled after create-then-delete leaves an empty list', async () => {
+  let resolveSeed;
+  const stored = new Map();
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      get(key) { return key === 'theme' ? 'dark' : null; },
+      has() { return false; },
+      set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
+    },
+    EventBus: { emit() {} },
+    document: { documentElement: { setAttribute() {} } },
+    fetch() { return new Promise(resolve => { resolveSeed = resolve; }); }
+  });
+
+  ctx.StateManager.init();
+  assert.ok(ctx.StateManager.addProject({ id: 'temporary', name: 'Временный проект' }));
+  assert.equal(ctx.StateManager.removeProject('temporary'), true);
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects')), []);
+
+  resolveSeed({ ok: true, json: async () => [{ id: 'seed-project', name: 'Стартовый проект' }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects')), []);
+  assert.deepEqual(Array.from(stored.get('projects')), []);
+});
+
+test('project import supersedes an in-flight initial project seed', async () => {
+  let resolveSeed;
+  const stored = new Map();
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      get(key) { return key === 'theme' ? 'dark' : null; },
+      has() { return false; },
+      set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; },
+      remove() { return true; }
+    },
+    EventBus: { emit() {} },
+    document: { documentElement: { setAttribute() {} } },
+    fetch() { return new Promise(resolve => { resolveSeed = resolve; }); }
+  });
+
+  ctx.StateManager.init();
+  assert.equal(ctx.StateManager.importData({
+    projects: [{ id: 'imported-project', name: 'Импортированный проект' }]
+  }), true);
+
+  resolveSeed({ ok: true, json: async () => [{ id: 'seed-project', name: 'Стартовый проект' }] });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(Array.from(ctx.StateManager.get('projects'), project => project.id), ['imported-project']);
+  assert.deepEqual(Array.from(stored.get('projects'), project => project.id), ['imported-project']);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
