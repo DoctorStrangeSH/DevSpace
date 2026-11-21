@@ -4782,10 +4782,10 @@ test('full backup export and import round-trip restores the same workspace in an
   assert.equal(state.projects[0].checklist[0].text, 'Verify restored task');
   assert.equal(state.projects[0].notes[0].content, 'Keep this content');
   assert.equal(state.theme, 'light');
-  assert.deepEqual(favorites.favorites, ['roundtrip-project']);
-  assert.deepEqual(achievements.unlocked, ['first_project']);
-  assert.deepEqual(values.get('settings'), { compactMode: true, taskView: 'board' });
-  assert.deepEqual(values.get('activity'), [{ id: 'event-1', type: 'project-created' }]);
-  assert.deepEqual(values.get('healthHistory'), [{ date: '2026-11-20', scores: { focus: 82 } }]);
+  assert.equal(JSON.stringify(favorites.favorites), JSON.stringify(['roundtrip-project']));
+  assert.equal(JSON.stringify(achievements.unlocked), JSON.stringify(['first_project']));
+  assert.equal(JSON.stringify(values.get('settings')), JSON.stringify({ compactMode: true, taskView: 'board' }));
+  assert.equal(JSON.stringify(values.get('activity')), JSON.stringify([{ id: 'event-1', type: 'project-created' }]));
+  assert.equal(JSON.stringify(values.get('healthHistory')), JSON.stringify([{ date: '2026-11-20', scores: { focus: 82 } }]));
   assert.deepEqual(errors, []);
 });
