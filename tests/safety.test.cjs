@@ -4606,8 +4606,11 @@ test('service worker caches successful CDN dependencies for later offline reques
     }
   };
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  const dynamicCache = worker.match(/const DYNAMIC_CACHE = ['"]([^'"]+)['"]/);
-  assert.ok(dynamicCache, 'worker must declare a dynamic cache');
+  const dynamicCache = worker.match(/const DYNAMIC_CACHE = ['"]([^'"]+)' \\+ CACHE_VERSION/);
+  assert.ok(dynamicCache, 'worker must declare a versioned dynamic cache');
+  const cacheVersion = worker.match(/const CACHE_VERSION = ['"]([^'"]+)['"]/);
+  assert.ok(cacheVersion, 'worker must declare its cache version');
+  const expectedDynamicCache = dynamicCache[1] + cacheVersion[1];
   vm.runInNewContext(worker, sandbox);
 
   let onlineResponse;
@@ -4616,9 +4619,8 @@ test('service worker caches successful CDN dependencies for later offline reques
     respondWith(promise) { onlineResponse = promise; }
   });
   assert.equal(await onlineResponse, cdnResponse);
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.ok(dynamicCacheNames.includes(dynamicCache[1]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(dynamicCacheNames.includes(expectedDynamicCache));
   assert.equal(stored.get(cdnRequest.url).source, 'cdn-bootstrap-css');
 
   online = false;
