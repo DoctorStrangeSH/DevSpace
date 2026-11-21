@@ -320,6 +320,12 @@ var App = {
 
         this._initGithubImport();
 
+        EventBus.on('projects:conflict', function () {
+            if (typeof NotificationModule !== 'undefined' && typeof NotificationModule.warning === 'function') {
+                NotificationModule.warning('Проект изменён в другой вкладке. Сохранение отменено, чтобы не затереть более свежие данные. Дождитесь синхронизации и повторите действие.');
+            }
+        });
+
         window.addEventListener('storage', function (event) {
             if (!StateManager.handleExternalProjectsStorageChange(event)) return;
             if (typeof RendererModule !== 'undefined') {
