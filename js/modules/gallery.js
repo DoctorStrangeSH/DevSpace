@@ -6,10 +6,37 @@
 const GalleryModule = {
     currentImages: [],
     currentIndex: 0,
+    _renderedImages: [],
+    _galleryEventsBound: false,
 
     init() {
         this._bindLightboxEvents();
+        this._bindGalleryEvents();
         console.log('GalleryModule initialized');
+    },
+
+    _bindGalleryEvents() {
+        if (this._galleryEventsBound) return;
+        document.addEventListener('click', (event) => {
+            const trigger = event.target && typeof event.target.closest === 'function'
+                ? event.target.closest('.screenshots-gallery [data-gallery-index]')
+                : null;
+            if (!trigger) return;
+            const index = Number(trigger.getAttribute('data-gallery-index'));
+            if (!Number.isInteger(index) || index < 0 || index >= this._renderedImages.length) return;
+            event.preventDefault();
+            this.openLightbox(this._renderedImages, index);
+        });
+        this._galleryEventsBound = true;
+    },
+
+    _escapeAttribute(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/'/g, '&#39;');
     },
 
     async addScreenshots(projectId, files) {
@@ -70,8 +97,8 @@ const GalleryModule = {
     },
 
     openLightbox(images, startIndex = 0) {
-        this.currentImages = images;
-        this.currentIndex = startIndex;
+        this.currentImages = Array.isArray(images) ? images.slice() : [];
+        this.currentIndex = Number.isInteger(startIndex) && startIndex >= 0 && startIndex < this.currentImages.length ? startIndex : 0;
         this._showImage();
         document.getElementById('lightbox').classList.add('active');
     },
@@ -133,20 +160,28 @@ const GalleryModule = {
     },
 
     renderGallery(screenshots) {
-        if (!screenshots || screenshots.length === 0) return '';
-        
+        if (!Array.isArray(screenshots) || screenshots.length === 0) {
+            this._renderedImages = [];
+            return '';
+        }
+
+        // Keep one in-memory reference for delegated clicks instead of
+        // serializing the entire image collection into every thumbnail.
+        this._renderedImages = screenshots.slice();
+
         return `
             <div class="screenshots-gallery">
-                ${screenshots.map((img, index) => `
-                    <div class="screenshot-thumb" onclick="GalleryModule.openLightbox(
-                        ${JSON.stringify(screenshots.map(s => s.data || s).join('|||').split('|||'))}, 
-                        ${index}
-                    )">
-                        <img src="${img.data || img}" 
-                             alt="${img.caption || 'Скриншот'}" 
+                ${screenshots.map((img, index) => {
+                    const source = img && typeof img === 'object' ? img.data : img;
+                    const caption = img && typeof img === 'object' ? img.caption : '';
+                    return `
+                    <button type="button" class="screenshot-thumb" data-gallery-index="${index}"
+                            aria-label="Открыть скриншот ${index + 1} из ${screenshots.length}">
+                        <img src="${this._escapeAttribute(source || '')}"
+                             alt="${this._escapeAttribute(caption || 'Скриншот')}"
                              loading="lazy">
-                    </div>
-                `).join('')}
+                    </button>`;
+                }).join('')}
             </div>
         `;
     }

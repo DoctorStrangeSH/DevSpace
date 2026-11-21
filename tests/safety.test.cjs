@@ -378,7 +378,7 @@ test('full backup with malformed health history is rejected before replacing pro
 test('createBackup serializes every supported workspace data section', () => {
   let downloaded = null;
   const ctx = execute('js/modules/export.js', {
-    App: { config: { version: '3.66.28' } },
+    App: { config: { version: '3.66.29' } },
     StateManager: { get(path) {
       return path === 'projects' ? [{ id: 'p1', name: 'Project One', checklist: [{ id: 't1', text: 'Task' }], notes: [{ id: 'n1', title: 'Note' }] }]
         : path === 'theme' ? 'light' : null;
@@ -402,7 +402,7 @@ test('createBackup serializes every supported workspace data section', () => {
   ctx.ExportModule.createBackup();
   assert.ok(downloaded);
   const backup = JSON.parse(downloaded.data);
-  assert.equal(backup.version, '3.66.28');
+  assert.equal(backup.version, '3.66.29');
   assert.equal(backup.projects[0].checklist[0].text, 'Task');
   assert.equal(backup.projects[0].notes[0].title, 'Note');
   assert.equal(backup.theme, 'light');
@@ -2432,8 +2432,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.28') < sources.indexOf('js/app.js?v=3.66.28'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.28') < sources.indexOf('js/app.js?v=3.66.28'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -2837,6 +2837,59 @@ test('gallery screenshot deletion uses one persisted project update and rejects 
   assert.deepEqual(Array.from(project.screenshots, item => item.id), ['two']);
 });
 
+test('gallery thumbnails reference one in-memory image list without duplicating base64 payloads', () => {
+  const screenshots = Array.from({ length: 80 }, (_, index) => ({
+    id: 'shot-' + index,
+    data: 'data:image/png;base64,payload-' + index,
+    caption: index === 0 ? 'Screenshot "one" <preview>' : 'Screenshot ' + index
+  }));
+  const ctx = execute('js/modules/gallery.js', {});
+  const gallery = ctx.GalleryModule;
+  const markup = gallery.renderGallery(screenshots);
+
+  assert.equal((markup.match(/data-gallery-index=/g) || []).length, 80);
+  assert.equal((markup.match(/data:image\/png;base64,payload-0/g) || []).length, 1);
+  assert.equal((markup.match(/data:image\/png;base64,payload-79/g) || []).length, 1);
+  assert.doesNotMatch(markup, /onclick=/i);
+  assert.match(markup, /<button type="button"/);
+  assert.match(markup, /Screenshot &quot;one&quot; &lt;preview&gt;/);
+  assert.equal(gallery._renderedImages.length, 80);
+  assert.equal(gallery._renderedImages[0], screenshots[0]);
+});
+
+test('gallery delegated click opens only the selected rendered screenshot', () => {
+  let clickHandler;
+  let opened = null;
+  const document = {
+    addEventListener(event, handler) {
+      if (event === 'click') clickHandler = handler;
+    }
+  };
+  const ctx = execute('js/modules/gallery.js', { document });
+  const gallery = ctx.GalleryModule;
+  gallery.openLightbox = (images, index) => { opened = { images, index }; };
+  gallery._renderedImages = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
+
+  gallery._bindGalleryEvents();
+  gallery._bindGalleryEvents();
+  assert.equal(typeof clickHandler, 'function');
+
+  let prevented = false;
+  clickHandler({
+    target: {
+      closest(selector) {
+        assert.equal(selector, '.screenshots-gallery [data-gallery-index]');
+        return { getAttribute: name => name === 'data-gallery-index' ? '2' : null };
+      }
+    },
+    preventDefault() { prevented = true; }
+  });
+
+  assert.equal(prevented, true);
+  assert.equal(opened.index, 2);
+  assert.equal(opened.images, gallery._renderedImages);
+});
+
 test('mobile gallery only swipes from the image and explains touch controls', () => {
   const script = fs.readFileSync(path.join(root, 'js/portfolio-gallery.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -2877,7 +2930,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.28" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.29" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -2907,7 +2960,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.28"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.29"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -2934,7 +2987,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.28"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.29"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -3034,7 +3087,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.28"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.29"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -3331,13 +3384,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.66.28 cache, HTML fallback and visible application version are aligned', () => {
+test('3.66.29 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.66.28'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.28-pwa2'"));
-  assert.ok(html.includes('id="appVersion">v3.66.28</span>'));
+  assert.ok(app.includes("version: '3.66.29'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa3'"));
+  assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -3347,10 +3400,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.66.28', `${file} is not versioned`);
+    assert.equal(version, '?v=3.66.29', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.66.28'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.66.29'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
@@ -3746,7 +3799,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.28/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.29/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
@@ -4977,6 +5030,9 @@ test('service worker activation removes only stale DevSpace caches and claims cl
   await activationPromise;
 
   assert.deepEqual(deleted.sort(), [
+    'static-devspace-v3.66.28-pwa2',
+    'dynamic-devspace-v3.66.28-pwa2',
+    'images-devspace-v3.66.28-pwa2',
     'static-devspace-v3.66.28',
     'dynamic-devspace-v3.66.27',
     'images-devspace-v3.66.27'
@@ -5180,7 +5236,7 @@ test('full backup export and import round-trip restores the same workspace in an
     remove(key) { values.delete(key); return true; }
   };
   const ctx = execute('js/modules/export.js', {
-    App: { config: { version: '3.66.28' } },
+    App: { config: { version: '3.66.29' } },
     StateManager: {
       get(key) { return state[key]; },
       set(key, value) { state[key] = value; },

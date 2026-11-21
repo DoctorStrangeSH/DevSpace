@@ -161,6 +161,12 @@
 }
 
 .screenshot-thumb {
+    display: block;
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    appearance: none;
     aspect-ratio: 16/10;
     border-radius: var(--border-radius);
     overflow: hidden;
