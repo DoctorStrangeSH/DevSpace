@@ -45,6 +45,46 @@ const StorageService = {
         }
     },
     
+    // Read the exact stored representation for optimistic concurrency checks.
+    getRaw(key) {
+        try {
+            return localStorage.getItem(this._getKey(key));
+        } catch (error) {
+            this._lastReadError = error;
+            this._lastReadKey = key;
+            if (typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:error', { key, error: error.message });
+            }
+            return null;
+        }
+    },
+
+    // Compare and write in one synchronous task so stale tabs cannot overwrite newer data.
+    setIfUnchanged(key, data, expectedRawValue) {
+        this._lastWriteConflict = false;
+        try {
+            const fullKey = this._getKey(key);
+            const currentRawValue = localStorage.getItem(fullKey);
+            if (currentRawValue !== expectedRawValue) {
+                this._lastWriteConflict = true;
+                if (typeof EventBus !== 'undefined') {
+                    EventBus.emit('storage:conflict', { key });
+                }
+                return false;
+            }
+            localStorage.setItem(fullKey, JSON.stringify(data));
+            return true;
+        } catch (error) {
+            if (error.name === 'QuotaExceededError' && typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:quota-exceeded');
+            }
+            if (typeof EventBus !== 'undefined') {
+                EventBus.emit('storage:error', { key, error: error.message });
+            }
+            return false;
+        }
+    },
+
     // Загрузка данных
     get(key, defaultValue = null) {
         this._lastReadError = null;
