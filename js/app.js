@@ -320,6 +320,18 @@ var App = {
 
         this._initGithubImport();
 
+        window.addEventListener('storage', function (event) {
+            if (!StateManager.handleExternalProjectsStorageChange(event)) return;
+            if (typeof RendererModule !== 'undefined') {
+                RendererModule.renderProjects();
+                RendererModule.renderStats();
+                if (typeof RendererModule._updateQuickAccess === 'function') RendererModule._updateQuickAccess();
+            }
+            if (typeof NotificationModule !== 'undefined' && typeof NotificationModule.info === 'function') {
+                NotificationModule.info('Проекты обновлены из другой вкладки.');
+            }
+        });
+
         window.addEventListener('beforeunload', function () {
             sessionStorage.setItem('devspace_scroll', window.scrollY);
             var activeTab = document.querySelector('.tab-btn.active');
