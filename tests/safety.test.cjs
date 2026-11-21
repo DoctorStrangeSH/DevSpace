@@ -4045,35 +4045,81 @@ test('bulk note actions do not mutate or report success when persistence fails',
     assert.equal(errors.length, 3);
 });
 
-test('note-to-task conversion retains links and prevents duplicate tasks', () => {
-    const src = fs.readFileSync(path.join(root, 'js/modules/notes.js'), 'utf8');
+test('note-to-task conversion saves task, link and priority in one project write', () => {
     const note = { id: 'n1', title: 'Поправить карту', priority: 'critical', description: 'Длинные детали' };
-    const project = { id: 'p1', notes: [note], checklist: [] };
-    let created = 0;
+    const project = { id: 'p1', notes: [note], checklist: [], progress: 0 };
     let updates = 0;
-    let assignedPriority = '';
+    let domUpdates = 0;
+    const events = [];
     const sandbox = {
-        StateManager: { getProject: () => project, updateProject: () => { updates++; } },
-        ChecklistModule: {
-            addItem: (id, title) => { created++; const task = { id: 'task1', text: title }; project.checklist.push(task); return task; },
-            setPriority: (id, itemId, priority) => { assignedPriority = priority; },
-            _updateChecklistDOM: () => {}
+        StateManager: {
+            getProject: () => project,
+            updateProject: (id, data) => { updates++; Object.assign(project, data); return project; }
         },
+        ChecklistModule: {
+            _recalculateProgress(target) {
+                target.progress = target.checklist.length
+                    ? Math.round(target.checklist.filter(item => item.completed).length / target.checklist.length * 100)
+                    : 0;
+            },
+            _updateChecklistDOM: () => { domUpdates++; }
+        },
+        Helpers: { generateId: () => 'task1' },
         AuthService: { isOwner: () => true },
-        EventBus: { emit: () => {} },
+        EventBus: { emit: name => events.push(name) },
         window: {}, console
     };
-    vm.runInNewContext(src, sandbox);
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/notes.js'), 'utf8'), sandbox);
     const api = sandbox.window.NotesModule;
     const first = api.createTaskFromNote('p1', 'n1');
+
     assert.equal(first.id, 'task1');
+    assert.equal(first.text, 'Поправить карту');
     assert.equal(first.sourceNoteId, 'n1');
+    assert.equal(first.priority, 'high');
     assert.equal(note.linkedTaskId, 'task1');
-    assert.equal(assignedPriority, 'high');
+    assert.equal(project.checklist.length, 1);
+    assert.equal(project.progress, 0);
+    assert.equal(updates, 1);
+    assert.equal(domUpdates, 1);
+    assert.deepEqual(events, ['checklist:changed', 'notes:task-linked']);
     assert.equal(api.createTaskFromNote('p1', 'n1'), first);
-    assert.equal(created, 1);
     assert.equal(updates, 1);
     assert.equal(api.createTaskFromNote('p1', 'missing'), null);
+});
+
+test('note-to-task conversion restores note and checklist when the single project write fails', () => {
+    const originalNote = { id: 'n1', title: 'Поправить карту', priority: 'high', linkedTaskId: undefined };
+    const project = { id: 'p1', notes: [originalNote], checklist: [], progress: 0 };
+    const events = [];
+    const errors = [];
+    let updates = 0;
+    const sandbox = {
+        StateManager: {
+            getProject: () => project,
+            updateProject: () => { updates++; return null; },
+            _updateStats() {}
+        },
+        ChecklistModule: {
+            _recalculateProgress(target) { target.progress = target.checklist.length ? 100 : 0; },
+            _updateChecklistDOM() {}
+        },
+        Helpers: { generateId: () => 'task1' },
+        AuthService: { isOwner: () => true },
+        EventBus: { emit: name => events.push(name) },
+        NotificationModule: { error: message => errors.push(message) },
+        window: {}, console
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/modules/notes.js'), 'utf8'), sandbox);
+    const result = sandbox.window.NotesModule.createTaskFromNote('p1', 'n1');
+
+    assert.equal(result, null);
+    assert.equal(updates, 1);
+    assert.equal(project.checklist.length, 0);
+    assert.equal(project.notes[0].linkedTaskId, undefined);
+    assert.equal(project.progress, 0);
+    assert.deepEqual(events, []);
+    assert.equal(errors.length, 1);
 });
 
 test('linked notes and tasks have navigation buttons without toggling task completion', () => {
