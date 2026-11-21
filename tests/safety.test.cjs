@@ -1225,7 +1225,8 @@ test('StorageService.clearAll restores removed app keys when a later removal fai
   });
 
   assert.equal(ctx.StorageService.clearAll(), false);
-  assert.deepEqual(Array.from(values.entries()), initial);
+  assert.equal(values.size, initial.length);
+  initial.forEach(([key, value]) => assert.equal(values.get(key), value));
   assert.deepEqual(events.map(event => event.name), ['storage:error']);
   assert.equal(events[0].payload.rollbackFailed, false);
 });
