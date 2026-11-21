@@ -350,8 +350,6 @@ const StateManager = {
             throw new Error('Invalid theme');
         }
 
-        const previousProjects = this._state.projects;
-        const previousTheme = this._state.theme;
         const previousStoredTheme = hasTheme
             ? StorageService.get(StorageService.KEYS.THEME)
             : null;
