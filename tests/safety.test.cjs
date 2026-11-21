@@ -410,8 +410,8 @@ test('createBackup serializes every supported workspace data section', () => {
 
 test('full backup includes settings and activity alongside projects and theme', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
-  assert.match(source, /settings: StorageService\.get\(StorageService\.KEYS\.SETTINGS, \{\}\)/);
-  assert.match(source, /activity: StorageService\.get\(StorageService\.KEYS\.ACTIVITY, \[\]\)/);
+  assert.match(source, /settings: this\._validateBackupMetadata\(/);
+  assert.match(source, /activity: this\._validateBackupMetadata\(/);
   assert.match(source, /StorageService\.set\(StorageService\.KEYS\.SETTINGS, importedSettings\)/);
   assert.match(source, /StorageService\.set\(StorageService\.KEYS\.ACTIVITY, importedActivity\)/);
   assert.match(source, /_validateBackupMetadata/);
@@ -757,7 +757,7 @@ test('theme remains unchanged and reports an error when preference persistence f
 
 test('project backup carries health history while legacy backup import remains supported', () => {
   const source = fs.readFileSync(path.join(root, 'js/modules/export.js'), 'utf8');
-  assert.match(source, /healthHistory: this\._cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
+  assert.match(source, /healthHistory: this\._validateImportedHealthHistory\(/);\n  assert.match(source, /_cleanHealthHistory\(StorageService\.get\('healthHistory', \[\]\)\)/);
   assert.match(source, /_validateImportedHealthHistory\(data\.healthHistory\)/);
   assert.match(source, /data\.healthHistory !== undefined/);
   assert.match(source, /StorageService\.set\('healthHistory', mergedHistory\)/);
@@ -4449,7 +4449,7 @@ test('createBackup rejects an archive larger than the importer limit', () => {
   const service = execute('js/modules/export.js', {
     StateManager: { get(path) {
       if (path === 'projects') {
-        return [{ id: 'p1', name: 'Project', description: 'x'.repeat(4 * 1024 * 1024) }];
+        return [{ id: 'p1', name: 'Project', description: 'x'.repeat(6 * 1024 * 1024) }];
       }
       return 'dark';
     } },
