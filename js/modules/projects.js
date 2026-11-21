@@ -232,7 +232,8 @@ var ProjectsModule = {
             updates: [],
             notes: [],
             screenshots: [],
-            tags: [],
+            tags: Array.isArray(data.tags) ? data.tags : [],
+            source: data.source || 'manual',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
