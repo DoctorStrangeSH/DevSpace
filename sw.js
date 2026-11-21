@@ -123,10 +123,12 @@ self.addEventListener('activate', (event) => {
             .then(cacheNames => {
                 return Promise.all(
                     cacheNames
+                        // CacheStorage is shared by every GitHub Pages project on this origin.
+                        // Only remove caches owned by this app; never touch another project's caches.
                         .filter(name => {
-                            return name.startsWith('static-') || 
-                                   name.startsWith('dynamic-') || 
-                                   name.startsWith('images-');
+                            return name.startsWith('static-devspace-') ||
+                                   name.startsWith('dynamic-devspace-') ||
+                                   name.startsWith('images-devspace-');
                         })
                         .filter(name => {
                             return name !== STATIC_CACHE && 
