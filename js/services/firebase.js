@@ -213,7 +213,7 @@ var FirebaseService = {
 
     // Create ONE private project only if absent. A Firestore transaction makes
     // the absence check atomic with creation, even across several devices.
-    // This is intentionally unreachable in production while the gate is false.
+    // Client gate is enabled only for the explicit migration flow above; Firestore Rules remain the server-side authority.
     createPrivateProjectIfAbsent: function(project, expectedUid) {
         this._lastPrivateCreateError = null;
         if (!this._privateProjectCreatesEnabled || !this._db ||
