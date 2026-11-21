@@ -1691,6 +1691,86 @@ test('App wires cross-tab project storage changes to a visible refresh', () => {
   assert.match(source, /Проекты обновлены из другой вкладки/);
 });
 
+test('StorageService.setIfUnchanged rejects stale writes without overwriting newer tab data', () => {
+  const values = new Map([['devspace_projects', '[{"id":"newer","name":"Latest"}]']]);
+  const events = [];
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) { return values.has(key) ? values.get(key) : null; },
+      setItem(key, value) { values.set(key, value); }
+    },
+    EventBus: { emit(name, payload) { events.push({ name, payload }); } }
+  });
+
+  assert.equal(ctx.StorageService.setIfUnchanged('projects', [{ id: 'stale' }], '[{"id":"older"}]'), false);
+  assert.equal(ctx.StorageService._lastWriteConflict, true);
+  assert.equal(values.get('devspace_projects'), '[{"id":"newer","name":"Latest"}]');
+  assert.equal(events[0].name, 'storage:conflict');
+});
+
+test('StorageService.setIfUnchanged writes when the stored snapshot still matches', () => {
+  const values = new Map([['devspace_projects', '[{"id":"p1"}]']]);
+  const ctx = execute('js/core/storage.js', {
+    localStorage: {
+      getItem(key) { return values.has(key) ? values.get(key) : null; },
+      setItem(key, value) { values.set(key, value); }
+    },
+    EventBus: { emit() {} }
+  });
+
+  assert.equal(ctx.StorageService.setIfUnchanged('projects', [{ id: 'p1', name: 'Updated' }], '[{"id":"p1"}]'), true);
+  assert.equal(values.get('devspace_projects'), '[{"id":"p1","name":"Updated"}]');
+  assert.equal(ctx.StorageService._lastWriteConflict, false);
+});
+
+test('StateManager refuses a stale project edit and keeps the newer stored snapshot', () => {
+  const latestRaw = '[{"id":"p1","name":"Edited in another tab"}]';
+  const events = [];
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      _lastWriteConflict: false,
+      setIfUnchanged(key, data, expected) {
+        this._lastWriteConflict = expected !== latestRaw;
+        return !this._lastWriteConflict;
+      },
+      getRaw() { return latestRaw; }
+    },
+    EventBus: { emit(name) { events.push(name); } }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'p1', name: 'Stale local version' }];
+  state._projectsStorageSnapshot = '[{"id":"p1","name":"Original"}]';
+
+  assert.equal(state.updateProject('p1', { name: 'Stale overwrite attempt' }), null);
+  assert.equal(state.getProject('p1').name, 'Stale local version');
+  assert.equal(state._projectsStorageSnapshot, '[{"id":"p1","name":"Original"}]');
+  assert.equal(state._projectsConflict, true);
+  assert.equal(events.includes('projects:conflict'), true);
+  assert.equal(events.includes('projects:saved'), false);
+});
+
+test('StateManager refreshes its compare-and-set snapshot after an accepted save', () => {
+  let raw = '[]';
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects' },
+      setIfUnchanged(key, data, expected) {
+        if (expected !== raw) return false;
+        raw = JSON.stringify(data);
+        return true;
+      },
+      getRaw() { return raw; }
+    },
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  state._projectsStorageSnapshot = '[]';
+  state._state.projects = [];
+  assert.ok(state.addProject({ id: 'p1', name: 'New project' }));
+  assert.equal(state._projectsStorageSnapshot, '[{"id":"p1","name":"New project"}]');
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
