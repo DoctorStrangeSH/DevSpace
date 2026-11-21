@@ -181,6 +181,40 @@ const StateManager = {
         });
     },
 
+    handleExternalProjectsStorageChange(event) {
+        if (!event || event.key !== StorageService._getKey(StorageService.KEYS.PROJECTS)) return false;
+
+        let nextProjects;
+        try {
+            nextProjects = event.newValue === null ? [] : JSON.parse(event.newValue);
+        } catch (error) {
+            this._projectsLoadError = true;
+            EventBus.emit('storage:error', {
+                key: StorageService.KEYS.PROJECTS,
+                error: 'В другой вкладке сохранён некорректный список проектов'
+            });
+            return false;
+        }
+
+        if (!Array.isArray(nextProjects)) {
+            this._projectsLoadError = true;
+            EventBus.emit('storage:error', {
+                key: StorageService.KEYS.PROJECTS,
+                error: 'В другой вкладке сохранён список проектов неверного формата'
+            });
+            return false;
+        }
+
+        this._state.projects = nextProjects;
+        this._projectsLoadError = false;
+        this._projectMutationVersion++;
+        this._history = [JSON.parse(JSON.stringify(nextProjects))];
+        this._historyIndex = 0;
+        this._updateStats();
+        EventBus.emit('projects:external-updated', nextProjects);
+        return true;
+    },
+
     saveProjects() {
         const saved = StorageService.set(StorageService.KEYS.PROJECTS, this._state.projects);
         if (!saved) return false;
