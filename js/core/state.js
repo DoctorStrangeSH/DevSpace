@@ -341,21 +341,49 @@ const StateManager = {
     },
 
     importData(data) {
-        if (!data || !data.projects) {
+        if (!data || !Array.isArray(data.projects)) {
             throw new Error('Invalid data format');
         }
-        
+
+        const hasTheme = data.theme !== undefined && data.theme !== null;
+        if (hasTheme && data.theme !== 'dark' && data.theme !== 'light') {
+            throw new Error('Invalid theme');
+        }
+
+        const previousStoredTheme = hasTheme
+            ? StorageService.get(StorageService.KEYS.THEME)
+            : null;
+
+        if (hasTheme && !StorageService.set(StorageService.KEYS.THEME, data.theme)) {
+            return false;
+        }
+
+        if (!StorageService.set(StorageService.KEYS.PROJECTS, data.projects)) {
+            if (hasTheme) {
+                const restored = previousStoredTheme === null
+                    ? StorageService.remove(StorageService.KEYS.THEME)
+                    : StorageService.set(StorageService.KEYS.THEME, previousStoredTheme);
+                if (!restored) {
+                    console.error('StateManager: failed to restore theme after import failure');
+                    EventBus.emit('storage:error', {
+                        key: StorageService.KEYS.THEME,
+                        error: 'Не удалось восстановить тему после неудачного импорта'
+                    });
+                }
+            }
+            return false;
+        }
+
         this._state.projects = data.projects;
-        
-        if (data.theme) {
+        if (hasTheme) {
             this._state.theme = data.theme;
             document.documentElement.setAttribute('data-bs-theme', data.theme);
-            StorageService.set(StorageService.KEYS.THEME, data.theme);
         }
-        
-        this.saveProjects();
+
+        this._updateStats();
+        this._saveToHistory();
+        EventBus.emit('projects:saved', this._state.projects);
         EventBus.emit('data:imported');
-        
         return true;
     }
 };
