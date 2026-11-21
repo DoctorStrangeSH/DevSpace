@@ -5,6 +5,7 @@
 
 var ProjectDetailModule = {
     _currentProjectId: null,
+    _returnFocusTarget: null,
     _notesFilter: null,
     _selectedNoteIds: null,
 
@@ -28,6 +29,23 @@ var ProjectDetailModule = {
         EventBus.on('notes:focus', function(data) {
             if (data && String(data.projectId) === String(self._currentProjectId)) self._focusNote(data.projectId, data.noteId);
         });
+
+        var detailModal = document.getElementById('projectDetailModal');
+        if (detailModal) {
+            detailModal.addEventListener('hidden.bs.modal', function() {
+                sessionStorage.removeItem('devspace_modal');
+                sessionStorage.removeItem('devspace_detail_project');
+
+                var target = self._returnFocusTarget;
+                self._returnFocusTarget = null;
+                if (target && target.isConnected && !target.disabled && target.getClientRects().length) {
+                    target.focus({ preventScroll: true });
+                    return;
+                }
+                var fallback = document.getElementById('tabButtonProjects');
+                if (fallback && fallback.isConnected && fallback.getClientRects().length) fallback.focus({ preventScroll: true });
+            });
+        }
     },
 
     showTask: function(projectId, taskId) {
@@ -58,6 +76,11 @@ var ProjectDetailModule = {
             return;
         }
 
+        var activeElement = document.activeElement;
+        if (activeElement && activeElement !== document.body && !document.getElementById('projectDetailModal').contains(activeElement)) {
+            this._returnFocusTarget = activeElement;
+        }
+
         this._currentProjectId = projectId;
         this._notesFilter = { search: '', priority: '', completed: '', type: '', sort: 'priority' };
         this._selectedNoteIds = new Set();
@@ -76,16 +99,8 @@ var ProjectDetailModule = {
         this._initDetailUpdates(project);
         this._initDetailNotes(project);
 
-        var modal = new bootstrap.Modal(document.getElementById('projectDetailModal'));
+        var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('projectDetailModal'));
         modal.show();
-        
-        var modalEl = document.getElementById('projectDetailModal');
-        if (modalEl) {
-            modalEl.addEventListener('hidden.bs.modal', function() {
-                sessionStorage.removeItem('devspace_modal');
-                sessionStorage.removeItem('devspace_detail_project');
-            }, { once: true });
-        }
     },
 
     _renderDetail: function(project) {
