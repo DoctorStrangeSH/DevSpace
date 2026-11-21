@@ -6,6 +6,8 @@
 const StorageService = {
     // Префикс для всех ключей
     _prefix: 'devspace_',
+    _lastReadError: null,
+    _lastReadKey: null,
     
     // Доступные ключи
     KEYS: {
@@ -45,6 +47,8 @@ const StorageService = {
     
     // Загрузка данных
     get(key, defaultValue = null) {
+        this._lastReadError = null;
+        this._lastReadKey = key;
         try {
             const fullKey = this._getKey(key);
             const data = localStorage.getItem(fullKey);
@@ -55,6 +59,7 @@ const StorageService = {
             
             return JSON.parse(data);
         } catch (error) {
+            this._lastReadError = error;
             console.error('StorageService: load error:', error);
             if (typeof EventBus !== 'undefined') {
                 EventBus.emit('storage:error', { key, error: error.message });
