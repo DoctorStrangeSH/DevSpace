@@ -191,7 +191,7 @@ self.addEventListener('fetch', (event) => {
                     .then(page => page || Response.error());
             }
 
-            return Response.error();
+            return null;
         });
     };
 
@@ -205,7 +205,7 @@ self.addEventListener('fetch', (event) => {
                 }
                 return response;
             })
-            .catch(() => cachedFallback())
+            .catch(() => cachedFallback().then(cached => cached || Response.error()))
     );
 
     // Keep the worker alive until the runtime cache write settles.
