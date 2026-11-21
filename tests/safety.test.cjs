@@ -3433,6 +3433,44 @@ test('service worker serves cached app shell during temporary HTTP 503 outage', 
   assert.ok(seen.includes(scope + 'index.html'), '503 fallback must use the app subpath');
 });
 
+test('service worker does not replace a valid HTTP 404 with stale cached content', async () => {
+  const handlers = {};
+  const scope = 'https://doctorstrangesh.github.io/DevSpace/';
+  const notFound = { ok: false, status: 404, statusText: 'Not Found' };
+  const sandbox = {
+    console: { log() {}, error() {} },
+    Promise,
+    URL,
+    Response,
+    self: {
+      registration: { scope },
+      addEventListener(name, callback) { handlers[name] = callback; }
+    },
+    caches: {
+      match: async () => ({ ok: true, source: 'stale-content' }),
+      open: async () => ({ put: async () => {} })
+    },
+    fetch: async () => notFound
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), sandbox);
+
+  let responsePromise;
+  let lifetimePromise;
+  handlers.fetch({
+    request: {
+      url: scope + 'missing-page',
+      method: 'GET',
+      mode: 'navigate',
+      headers: { get: () => 'text/html' }
+    },
+    respondWith(promise) { responsePromise = promise; },
+    waitUntil(promise) { lifetimePromise = promise; }
+  });
+
+  assert.equal(await responsePromise, notFound);
+  await lifetimePromise;
+});
+
 test('PWA manifest icon declarations resolve to real PNGs', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.ok(manifest.icons.length >= 2);
