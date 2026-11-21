@@ -178,23 +178,18 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     
-    // Для остального - network first с fallback к кешу
+    // Для остального - network first с fallback к кешу.
+    // Один сетевой запрос обслуживает и страницу, и обязательную запись в runtime cache.
+    const networkResponse = fetch(event.request);
+
     event.respondWith(
-        fetch(event.request)
-            .then(response => {
-                if (response.ok) {
-                    const clone = response.clone();
-                    caches.open(DYNAMIC_CACHE)
-                        .then(cache => cache.put(event.request, clone))
-                        .catch(() => {});
-                }
-                return response;
-            })
+        networkResponse
+            .then(response => response)
             .catch(() => {
                 return caches.match(event.request)
                     .then(cached => {
                         if (cached) return cached;
-                        
+
                         // GitHub Pages hosts the app below /DevSpace/, not at /.
                         // Cache.match returns a Promise, so both candidates must be awaited.
                         if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
@@ -202,10 +197,21 @@ self.addEventListener('fetch', (event) => {
                                 .then(page => page || caches.match(new URL('./', self.registration.scope).href))
                                 .then(page => page || Response.error());
                         }
-                        
+
                         throw new Error('Network unavailable');
-                    });
+                    })
             })
+    );
+
+    // Keep the worker alive until the runtime cache write settles.
+    event.waitUntil(
+        networkResponse
+            .then(response => {
+                if (!response.ok) return;
+                return caches.open(DYNAMIC_CACHE)
+                    .then(cache => cache.put(event.request, response.clone()));
+            })
+            .catch(() => {})
     );
 });
 
