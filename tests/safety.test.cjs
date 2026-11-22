@@ -1741,8 +1741,11 @@ test('initial project seeding never overwrites user changes made while the reque
   const stored = new Map();
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      KEYS: { THEME: 'theme', PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
       get(key) { return key === 'theme' ? 'dark' : null; },
+      getSnapshot(key, fallback) { return { raw: stored.has(key) ? JSON.stringify(stored.get(key)) : null, value: stored.has(key) ? stored.get(key) : fallback, error: null }; },
+      getRawSnapshot(key) { const raw = stored.has(key) ? JSON.stringify(stored.get(key)) : null; return { exists: raw !== null, raw, error: null }; },
+      restoreRaw(key, snapshot) { if (snapshot.exists) stored.set(key, JSON.parse(snapshot.raw)); else stored.delete(key); return true; },
       has() { return false; },
       set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
     },
@@ -2307,7 +2310,7 @@ test('StateManager reports project persistence failures and only emits saved aft
 test('project create, update and delete roll back in-memory state when storage is full', () => {
   const events = [];
   const ctx = execute('js/core/state.js', {
-    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return false; } },
+    StorageService: { KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' }, getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; }, set() { return false; } },
     EventBus: { emit(name) { events.push(name); } }
   });
   const state = ctx.StateManager;
@@ -2431,7 +2434,10 @@ test('StateManager records successful project CRUD operations for undo and redo'
   const events = [];
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { PROJECTS: 'projects' },
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; },
+      getRawSnapshot() { return { exists: false, raw: null, error: null }; },
+      restoreRaw() { return true; },
       set() { return true; }
     },
     EventBus: { emit(name) { events.push(name); } }
@@ -2485,7 +2491,8 @@ test('StateManager excludes UI-only state changes from project undo history', ()
 test('StateManager does not add failed project mutations to undo history', () => {
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { PROJECTS: 'projects' },
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; },
       set() { return false; }
     },
     EventBus: { emit() {} }
@@ -3383,8 +3390,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.29'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.29'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.30'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.30'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -3949,7 +3956,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.29" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.30" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -3990,7 +3997,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.30"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -4017,7 +4024,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.30"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -4117,7 +4124,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.30"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
