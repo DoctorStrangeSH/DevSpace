@@ -749,6 +749,49 @@ test('backup restore options allow restoring projects without replacing unchecke
   assert.deepEqual(values.get('activity'), [{ id: 'keep-event' }]);
 });
 
+test('backup center preview accepts legacy project-array archives', async () => {
+  const preview = { textContent: '' };
+  const restore = { disabled: true };
+  const input = { files: [{ size: 100 }] };
+  const ctx = execute('js/modules/export.js', {
+    document: { getElementById(id) {
+      return id === 'backupCenterFile' ? input : id === 'backupCenterPreview' ? preview : restore;
+    } },
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify([{ id: 'legacy', name: 'Legacy project' }])) }
+  });
+  ctx.ExportModule._previewSelectedBackup();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(restore.disabled, false);
+  assert.match(preview.textContent, /Файл проверен\. Проектов: 1/);
+  assert.match(preview.textContent, /Старая копия без контрольной суммы/);
+});
+
+test('backup center ignores an older file inspection that resolves after a newer selection', async () => {
+  const preview = { textContent: '' };
+  const restore = { disabled: true };
+  let resolveFirst;
+  let currentFile = { size: 100, name: 'first' };
+  const input = { get files() { return [currentFile]; } };
+  const ctx = execute('js/modules/export.js', {
+    document: { getElementById(id) {
+      return id === 'backupCenterFile' ? input : id === 'backupCenterPreview' ? preview : restore;
+    } },
+    Helpers: { readFile(file) {
+      if (file.name === 'first') return new Promise(resolve => { resolveFirst = resolve; });
+      return Promise.resolve(JSON.stringify({ projects: [{ id: 'second', name: 'Second' }] }));
+    } }
+  });
+  ctx.ExportModule._previewSelectedBackup();
+  currentFile = { size: 100, name: 'second' };
+  ctx.ExportModule._previewSelectedBackup();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(preview.textContent, /Проектов: 1/);
+  resolveFirst(JSON.stringify({ projects: [{ id: 'first', name: 'First' }] }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(preview.textContent, /Проектов: 1/);
+  assert.equal(preview.textContent.includes('First'), false);
+});
+
 test('backup center preview validates checksum and enables restore only after valid file inspection', async () => {
   const preview = { textContent: '', };
   const restore = { disabled: true };
