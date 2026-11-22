@@ -14,7 +14,8 @@ const StorageService = {
         PROJECTS: 'projects',
         THEME: 'theme',
         SETTINGS: 'settings',
-        ACTIVITY: 'activity'
+        ACTIVITY: 'activity',
+        DELETED_PROJECTS: 'deletedProjects'
     },
     
     // Получение полного ключа с префиксом
