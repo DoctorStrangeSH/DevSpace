@@ -35,9 +35,19 @@ var ExportModule = {
         var backupBtn = document.getElementById('footerBackupBtn');
         if (backupBtn) {
             backupBtn.addEventListener('click', function() {
-                self.createBackup();
+                self.openBackupCenter();
             });
         }
+        var centerCreate = document.getElementById('backupCenterCreateBtn');
+        if (centerCreate) centerCreate.addEventListener('click', function() { self.createBackup(); });
+        var centerFile = document.getElementById('backupCenterFile');
+        if (centerFile) centerFile.addEventListener('change', function() { self._previewSelectedBackup(); });
+        var centerRestore = document.getElementById('backupCenterRestoreBtn');
+        if (centerRestore) centerRestore.addEventListener('click', function() {
+            var file = centerFile && centerFile.files && centerFile.files[0];
+            if (!file) return;
+            self._importFile(file, self._getRestoreOptions());
+        });
         
         // GitHub импорт
         var githubBtn = document.getElementById('importGithubBtn');
@@ -175,6 +185,74 @@ var ExportModule = {
         var result = this._tasksCsv(StateManager.get('projects') || []);
         Helpers.downloadFile(result.csv, 'devspace-tasks-' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv;charset=utf-8');
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Экспортировано задач: ' + result.count);
+    },
+
+    openBackupCenter: function() {
+        var modalElement = document.getElementById('backupCenterModal');
+        if (!modalElement || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            this.createBackup();
+            return;
+        }
+        var file = document.getElementById('backupCenterFile');
+        var preview = document.getElementById('backupCenterPreview');
+        var restore = document.getElementById('backupCenterRestoreBtn');
+        if (file) file.value = '';
+        if (preview) preview.textContent = 'Выберите JSON-файл, чтобы проверить его содержимое перед восстановлением.';
+        if (restore) restore.disabled = true;
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    },
+
+    _getRestoreOptions: function() {
+        var options = { projects: true };
+        ['theme', 'favorites', 'achievements', 'settings', 'activity', 'healthHistory'].forEach(function(key) {
+            var input = document.getElementById('backupRestore_' + key);
+            options[key] = !!(input && input.checked);
+        });
+        return options;
+    },
+
+    _previewSelectedBackup: function() {
+        var input = document.getElementById('backupCenterFile');
+        var preview = document.getElementById('backupCenterPreview');
+        var restore = document.getElementById('backupCenterRestoreBtn');
+        var file = input && input.files && input.files[0];
+        if (restore) restore.disabled = true;
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            if (preview) preview.textContent = 'Файл превышает ограничение 5 МБ.';
+            return;
+        }
+        var self = this;
+        Helpers.readFile(file).then(function(text) {
+            var data = JSON.parse(text);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Неподдерживаемый формат резервной копии');
+            if (data.format !== undefined && data.format !== 'devspace-backup') throw new Error('Неизвестный формат резервной копии');
+            if (data.schemaVersion !== undefined && (!Number.isInteger(data.schemaVersion) || data.schemaVersion !== 1)) {
+                throw new Error('Эта версия резервной копии не поддерживается');
+            }
+            if (data.integrity) {
+                var copy = Object.assign({}, data);
+                delete copy.integrity;
+                if (data.integrity.algorithm !== 'fnv1a32' || self._backupChecksum(copy) !== data.integrity.checksum) {
+                    throw new Error('Контрольная сумма не совпадает: файл повреждён');
+                }
+            }
+            var projects = self._validateBackupProjects(data.projects);
+            var summary = self._buildBackupPreview(data, projects);
+            var sections = summary.sections.length ? summary.sections.join(', ') : 'нет дополнительных разделов';
+            if (preview) preview.textContent = [
+                'Файл проверен. Проектов: ' + summary.projects,
+                'Задач: ' + summary.tasks + ' · Заметок: ' + summary.notes,
+                'Разделы: ' + sections,
+                'Версия: ' + summary.version,
+                'Дата: ' + (summary.timestamp || 'не указана'),
+                data.integrity ? 'Контрольная сумма совпадает.' : 'Старая копия без контрольной суммы.'
+            ].join('\\n');
+            if (restore) restore.disabled = false;
+        }).catch(function(error) {
+            if (preview) preview.textContent = 'Не удалось проверить файл: ' + error.message;
+            if (restore) restore.disabled = true;
+        });
     },
 
     _backupChecksum: function(value) {
@@ -349,11 +427,15 @@ var ExportModule = {
         input.click();
     },
 
-    _importFile: function(file) {
+    _importFile: function(file, restoreOptions) {
         var self = this;
         Helpers.readFile(file)
             .then(function(text) {
                 var data = JSON.parse(text);
+                var selected = restoreOptions || {
+                    projects: true, theme: true, favorites: true, achievements: true,
+                    settings: true, activity: true, healthHistory: true
+                };
 
                 if (data && !Array.isArray(data) && typeof data === 'object') {
                     if (data.format !== undefined && data.format !== 'devspace-backup') {
@@ -388,9 +470,9 @@ var ExportModule = {
                 }
                 projects = self._validateBackupProjects(projects);
 
-                var importedFavorites = data && data.favorites !== undefined
+                var importedFavorites = selected.favorites && data && data.favorites !== undefined
                     ? self._validateBackupMetadata(data.favorites, true, 5000, 'избранное') : undefined;
-                var importedAchievements = data && data.achievements !== undefined
+                var importedAchievements = selected.achievements && data && data.achievements !== undefined
                     ? self._validateBackupMetadata(data.achievements, true, 5000, 'достижения') : undefined;
                 [importedFavorites, importedAchievements].forEach(function(items) {
                     if (items === undefined) return;
@@ -402,17 +484,17 @@ var ExportModule = {
                         seenItems.add(item);
                     });
                 });
-                var importedSettings = data && data.settings !== undefined
+                var importedSettings = selected.settings && data && data.settings !== undefined
                     ? self._validateBackupMetadata(data.settings, false, 500, 'настройки') : undefined;
-                var importedActivity = data && data.activity !== undefined
+                var importedActivity = selected.activity && data && data.activity !== undefined
                     ? self._validateBackupMetadata(data.activity, true, 10000, 'активность') : undefined;
-                if (data && data.theme !== undefined && !['dark', 'light'].includes(data.theme)) {
+                if (selected.theme && data && data.theme !== undefined && !['dark', 'light'].includes(data.theme)) {
                     throw new Error('Некорректная тема в бэкапе');
                 }
 
                 // Validate health history before any project replacement.
                 var mergedHistory = null;
-                if (data && data.healthHistory !== undefined) {
+                if (selected.healthHistory && data && data.healthHistory !== undefined) {
                     var importedHistory = self._validateImportedHealthHistory(data.healthHistory);
                     mergedHistory = self._mergeHealthHistory(StorageService.get('healthHistory', []), importedHistory);
                 }
@@ -434,7 +516,7 @@ var ExportModule = {
                     preview.timestamp ? 'Дата архива: ' + preview.timestamp : 'Дата архива: не указана',
                     data && data.integrity ? 'Целостность: контрольная сумма совпадает' : 'Целостность: старый архив без контрольной суммы',
                     '',
-                    'Текущие проекты будут заменены. Продолжить?'
+                    'Будут восстановлены только выбранные разделы. Текущие проекты будут заменены. Продолжить?'
                 ].join('\\n');
                 if (!confirm(previewMessage)) return;
 
@@ -477,7 +559,7 @@ var ExportModule = {
                         throw new Error('Не удалось сохранить проекты. Проверьте свободное место в хранилище; прежние данные восстановлены.');
                     }
     
-                    if (data && data.theme) {
+                    if (selected.theme && data && data.theme) {
                         if (typeof ThemeModule !== 'undefined' && typeof ThemeModule.setTheme === 'function') {
                             ThemeModule.setTheme(data.theme, true);
                         } else {
@@ -494,7 +576,7 @@ var ExportModule = {
                         }
                     }
     
-                    if (data && data.favorites) {
+                    if (selected.favorites && data && data.favorites !== undefined) {
                         if (!StorageService.set('favorites', importedFavorites)) {
                             throw new Error('Проекты импортированы, но избранное не удалось сохранить');
                         }
@@ -505,21 +587,21 @@ var ExportModule = {
                             }
                         }
                     }
-                    if (data && data.achievements) {
+                    if (selected.achievements && data && data.achievements !== undefined) {
                         if (!StorageService.set('achievements', importedAchievements)) {
                             throw new Error('Проекты импортированы, но достижения не удалось сохранить');
                         }
                         if (typeof AchievementsModule !== 'undefined') AchievementsModule.unlocked = importedAchievements;
                     }
-                    if (data && data.settings !== undefined &&
+                    if (selected.settings && data && data.settings !== undefined &&
                         !StorageService.set(StorageService.KEYS.SETTINGS, importedSettings)) {
                         throw new Error('Проекты импортированы, но настройки не удалось сохранить');
                     }
-                    if (data && data.activity !== undefined &&
+                    if (selected.activity && data && data.activity !== undefined &&
                         !StorageService.set(StorageService.KEYS.ACTIVITY, importedActivity)) {
                         throw new Error('Проекты импортированы, но журнал активности не удалось сохранить');
                     }
-                    if (mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
+                    if (selected.healthHistory && mergedHistory && !StorageService.set('healthHistory', mergedHistory)) {
                         throw new Error('Проекты импортированы, но историю оценок не удалось сохранить');
                     }
                     
