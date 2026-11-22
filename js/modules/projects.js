@@ -269,11 +269,15 @@ var ProjectsModule = {
             return false;
         }
 
-        if (!confirm('Вы уверены, что хотите удалить проект "' + project.name + '"?\n\nЭто действие нельзя отменить.')) {
+        if (!confirm('Удалить проект "' + project.name + '"?\n\nЛокальную копию можно восстановить из корзины в течение 30 дней.')) {
             return false;
         }
 
         var removed = StateManager.removeProject(projectId);
+        if (!removed) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Проект не удалён: не удалось сохранить безопасную копию.');
+            return false;
+        }
         if (removed) {
             if (typeof NotificationModule !== 'undefined') NotificationModule.success('Проект "' + project.name + '" удален');
             this._cache.filteredProjects = null;
