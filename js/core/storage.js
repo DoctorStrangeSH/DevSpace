@@ -68,8 +68,8 @@ const StorageService = {
     // Capture raw bytes without parsing so malformed legacy data can be restored exactly.
     getRawSnapshot(key) {
         try {
-            return { exists: localStorage.getItem(this._getKey(key)) !== null,
-                raw: localStorage.getItem(this._getKey(key)), error: null };
+            const raw = localStorage.getItem(this._getKey(key));
+            return { exists: raw !== null, raw, error: null };
         } catch (error) {
             this._lastReadError = error;
             this._lastReadKey = key;
