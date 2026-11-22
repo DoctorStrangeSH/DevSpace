@@ -6602,6 +6602,9 @@ test('workspace diagnostics are read-only and report corrupt storage, duplicate 
   assert.equal(report.summary.errors > 0, true);
   assert.equal(report.summary.warnings > 0, true);
   assert.equal(JSON.stringify(projects), before, 'diagnostics must not mutate source project data');
+  const serializedReport = JSON.stringify(report);
+  assert.equal(serializedReport.includes('Связанная задача'), false, 'reports must not include task text');
+  assert.equal(serializedReport.includes('Осиротевшая заметка'), false, 'reports must not include note titles');
 });
 
 test('workspace diagnostics accept a consistent workspace and protect unreadable project storage', () => {
