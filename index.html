@@ -496,6 +496,27 @@
                     </div>
                     <div class="backup-center-card mb-4">
                         <div class="d-flex align-items-start gap-3">
+                            <div class="backup-center-icon"><i class="bi bi-shield-lock" aria-hidden="true"></i></div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">Автоматические снимки</h6>
+                                <p class="text-muted small mb-2">DevSpace сохраняет до 7 локальных снимков: ежедневно и после изменений проектов. Перед восстановлением создаётся защитная копия текущего состояния.</p>
+                                <div id="backupAutoStatus" class="small mb-2" role="status" aria-live="polite">Проверяем автоматические копии…</div>
+                                <div id="backupAutoList" class="backup-trash-list" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="backup-center-card mb-4">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="backup-center-icon"><i class="bi bi-hdd-stack" aria-hidden="true"></i></div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">Состояние хранилища</h6>
+                                <p class="text-muted small mb-1">Оценка браузера для локальных данных и кешей этого сайта.</p>
+                                <div id="backupStorageHealth" class="small" role="status" aria-live="polite">Проверяем свободное место…</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="backup-center-card mb-4">
+                        <div class="d-flex align-items-start gap-3">
                             <div class="backup-center-icon"><i class="bi bi-trash3" aria-hidden="true"></i></div>
                             <div class="flex-grow-1">
                                 <h6 class="mb-1">Недавно удалённые</h6>
