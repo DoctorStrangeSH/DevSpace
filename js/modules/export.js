@@ -244,7 +244,13 @@ var ExportModule = {
             }
             var projects = self._validateBackupProjects(Array.isArray(data) ? data : data.projects);
             var summary = self._buildBackupPreview(data, projects);
-            var sections = summary.sections.length ? summary.sections.join(', ') : 'нет дополнительных разделов';
+            var sectionLabels = {
+                theme: 'тема', favorites: 'избранное', achievements: 'достижения',
+                settings: 'настройки', activity: 'журнал активности', healthHistory: 'история оценок'
+            };
+            var sections = summary.sections.length
+                ? summary.sections.map(function(key) { return sectionLabels[key] || key; }).join(', ')
+                : 'нет дополнительных разделов';
             if (requestId !== self._backupPreviewRequestId) return;
             if (preview) preview.textContent = [
                 'Файл проверен. Проектов: ' + summary.projects,
