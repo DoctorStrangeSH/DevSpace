@@ -6721,6 +6721,7 @@ test('safe repair center refuses to mutate when protective backup cannot be veri
   assert.equal(result, false);
   assert.equal(updates, 0);
   assert.equal(project.notes[0].linkedTaskId, undefined);
+  assert.equal(ctx.StorageService._data.repairLog[0].status, 'failed');
 });
 
 test('safe repair center creates a verified backup before restoring a unique reverse link', async () => {
@@ -6904,4 +6905,97 @@ test('safe repair center does not mutate when the journal has a concurrent write
   assert.equal(result, false);
   assert.equal(updates, 0);
   assert.equal(backups, 0);
+});
+
+
+test('safe repair center refuses an invalid backup checksum before changing project data', async () => {
+  const project = {
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one' }]
+  };
+  const storage = { repairLog: [] };
+  let updates = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [project] : null; },
+      getProject() { return project; },
+      updateProject() { updates++; return project; }
+    },
+    StorageService: {
+      getRawSnapshot(key) {
+        const value = storage[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      },
+      setIfUnchanged(key, value, expectedRaw) {
+        const current = storage[key] === undefined ? null : JSON.stringify(storage[key]);
+        if (current !== expectedRaw) return false;
+        storage[key] = value;
+        return true;
+      },
+      getRaw(key) { return storage[key] === undefined ? null : JSON.stringify(storage[key]); }
+    },
+    ExportModule: {
+      async _saveAutoBackup() { return { data: { integrity: { checksum: 'bad' } } }; },
+      _isBackupIntact() { return false; }
+    },
+    DiagnosticsModule: { run() { return Promise.resolve({ summary: { status: 'healthy', errors: 0 } }); } },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
+  assert.ok(candidate);
+  assert.equal(await ctx.RepairModule.apply(candidate.id), false);
+  assert.equal(updates, 0);
+  assert.equal(project.notes[0].linkedTaskId, undefined);
+  assert.equal(storage.repairLog[0].status, 'failed');
+});
+
+test('safe repair center marks rollback_failed rather than overwriting a concurrent favorites update', async () => {
+  const storage = {
+    favorites: ['orphan-project'],
+    deletedProjects: [],
+    repairLog: []
+  };
+  let diagnosticCalls = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [] : null; }
+    },
+    StorageService: {
+      getRawSnapshot(key) {
+        const value = storage[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      },
+      setIfUnchanged(key, value, expectedRaw) {
+        const current = storage[key] === undefined ? null : JSON.stringify(storage[key]);
+        if (current !== expectedRaw) return false;
+        storage[key] = value;
+        return true;
+      },
+      getRaw(key) { return storage[key] === undefined ? null : JSON.stringify(storage[key]); },
+      get(key) { return storage[key]; }
+    },
+    ExportModule: {
+      async _saveAutoBackup() { return { data: { integrity: { checksum: 'ok' } } }; },
+      _isBackupIntact() { return true; }
+    },
+    DiagnosticsModule: {
+      run() {
+        diagnosticCalls++;
+        if (diagnosticCalls === 2) storage.favorites = ['external-tab-update'];
+        return Promise.resolve({ summary: { status: diagnosticCalls === 1 ? 'healthy' : 'error', errors: diagnosticCalls === 1 ? 0 : 1 } });
+      }
+    },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'favorite');
+  assert.ok(candidate);
+  assert.equal(await ctx.RepairModule.apply(candidate.id), false);
+  assert.deepEqual(storage.favorites, ['external-tab-update']);
+  assert.equal(storage.repairLog[0].status, 'rollback_failed');
 });
