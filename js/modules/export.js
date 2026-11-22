@@ -177,6 +177,34 @@ var ExportModule = {
         if (typeof NotificationModule !== 'undefined') NotificationModule.success('Экспортировано задач: ' + result.count);
     },
 
+    _backupChecksum: function(value) {
+        var serialized = JSON.stringify(value);
+        var hash = 2166136261;
+        for (var i = 0; i < serialized.length; i++) {
+            hash ^= serialized.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+    },
+
+    _buildBackupPreview: function(data, projects) {
+        var taskCount = 0;
+        var noteCount = 0;
+        projects.forEach(function(project) {
+            taskCount += Array.isArray(project.checklist) ? project.checklist.length : 0;
+            noteCount += Array.isArray(project.notes) ? project.notes.length : 0;
+        });
+        return {
+            projects: projects.length,
+            tasks: taskCount,
+            notes: noteCount,
+            sections: ['theme', 'favorites', 'achievements', 'settings', 'activity', 'healthHistory']
+                .filter(function(key) { return Object.prototype.hasOwnProperty.call(data, key); }),
+            version: typeof data.version === 'string' ? data.version : 'Старая версия',
+            timestamp: typeof data.timestamp === 'string' ? data.timestamp : null
+        };
+    },
+
     createBackup: function() {
         try {
             var rawProjects = StateManager.get('projects') || [];
@@ -212,6 +240,10 @@ var ExportModule = {
                 throw new Error('Тема приложения содержит некорректное значение');
             }
 
+            data.integrity = {
+                algorithm: 'fnv1a32',
+                checksum: this._backupChecksum(data)
+            };
             var json = JSON.stringify(data, null, 2);
             if (!json || json.length > 5 * 1024 * 1024) {
                 throw new Error('Резервная копия превышает 5 МБ и не сможет быть импортирована');
@@ -331,6 +363,18 @@ var ExportModule = {
                         (!Number.isInteger(data.schemaVersion) || data.schemaVersion !== 1)) {
                         throw new Error('Эта версия резервной копии не поддерживается. Обновите DevSpace.');
                     }
+                    if (data.integrity !== undefined) {
+                        if (!data.integrity || data.integrity.algorithm !== 'fnv1a32' ||
+                            typeof data.integrity.checksum !== 'string' ||
+                            !/^[a-f0-9]{8}$/.test(data.integrity.checksum)) {
+                            throw new Error('Некорректная контрольная сумма резервной копии');
+                        }
+                        var integrityCopy = Object.assign({}, data);
+                        delete integrityCopy.integrity;
+                        if (self._backupChecksum(integrityCopy) !== data.integrity.checksum) {
+                            throw new Error('Резервная копия повреждена: контрольная сумма не совпадает. Исходные данные не изменены.');
+                        }
+                    }
                 }
 
                 // Validate and clone all imported project records before touching user data.
@@ -372,7 +416,27 @@ var ExportModule = {
                     var importedHistory = self._validateImportedHealthHistory(data.healthHistory);
                     mergedHistory = self._mergeHealthHistory(StorageService.get('healthHistory', []), importedHistory);
                 }
-                if (!confirm('Импортировать ' + projects.length + ' проектов? Текущие будут заменены.')) return;
+                var preview = self._buildBackupPreview(data && typeof data === 'object' ? data : {}, projects);
+                var sectionLabels = {
+                    theme: 'тема', favorites: 'избранное', achievements: 'достижения',
+                    settings: 'настройки', activity: 'активность', healthHistory: 'история оценок'
+                };
+                var previewMessage = [
+                    'ПРЕДПРОСМОТР ВОССТАНОВЛЕНИЯ',
+                    '',
+                    'Проектов: ' + preview.projects,
+                    'Задач: ' + preview.tasks,
+                    'Заметок: ' + preview.notes,
+                    'Дополнительные разделы: ' + (preview.sections.length
+                        ? preview.sections.map(function(key) { return sectionLabels[key] || key; }).join(', ')
+                        : 'нет'),
+                    'Версия DevSpace в архиве: ' + preview.version,
+                    preview.timestamp ? 'Дата архива: ' + preview.timestamp : 'Дата архива: не указана',
+                    data && data.integrity ? 'Целостность: контрольная сумма совпадает' : 'Целостность: старый архив без контрольной суммы',
+                    '',
+                    'Текущие проекты будут заменены. Продолжить?'
+                ].join('\\n');
+                if (!confirm(previewMessage)) return;
 
                 projects = projects.map(function(p) {
                     p.name = p.name.replace(/\s*\(копия\)\s*/gi, '').trim();
