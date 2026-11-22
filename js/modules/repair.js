@@ -22,6 +22,7 @@ var RepairModule = {
                 self.apply(button.getAttribute('data-repair-candidate'));
             });
         }
+        this.renderJournal();
     },
 
     _projects: function() {
@@ -154,6 +155,38 @@ var RepairModule = {
         });
     },
 
+    renderJournal: function() {
+        if (typeof document === 'undefined') return;
+        var target = document.getElementById('workspaceRepairJournal');
+        if (!target) return;
+        target.textContent = '';
+        try {
+            var entries = this._readJournal().entries.slice().reverse().slice(0, 8);
+            if (!entries.length) {
+                target.textContent = 'Пока нет выполненных или начатых операций.';
+                return;
+            }
+            entries.forEach(function(entry) {
+                var row = document.createElement('div');
+                row.className = 'workspace-repair-journal-entry';
+                var heading = document.createElement('strong');
+                var statusLabel = entry.status === 'completed' ? 'Выполнено'
+                    : entry.status === 'prepared' ? 'Подготовлено'
+                    : entry.status === 'rollback_failed' ? 'Нужна ручная проверка' : 'Не выполнено';
+                heading.textContent = statusLabel + ' · ' + entry.type;
+                var detail = document.createElement('p');
+                detail.className = 'small mb-0';
+                detail.textContent = [entry.createdAt, entry.projectId ? 'Проект: ' + entry.projectId : '',
+                    entry.entityId ? 'ID: ' + entry.entityId : '', entry.message || ''].filter(Boolean).join(' · ');
+                row.appendChild(heading);
+                row.appendChild(detail);
+                target.appendChild(row);
+            });
+        } catch (error) {
+            target.textContent = 'Журнал недоступен: ' + (error && error.message ? error.message : 'ошибка чтения');
+        }
+    },
+
     _backupBeforeRepair: function() {
         if (typeof ExportModule === 'undefined' || typeof ExportModule._saveAutoBackup !== 'function' ||
             typeof ExportModule._isBackupIntact !== 'function') {
@@ -241,10 +274,18 @@ var RepairModule = {
         var mutation = null;
         var journalEntry = null;
         var transactionStarted = false;
+        var baselineReport = null;
 
         function fail(error) {
             var message = error && error.message ? error.message : 'Не удалось выполнить исправление.';
-            var rollbackResult = mutation ? self._rollbackMutation(mutation) : true;
+            var rollbackResult = true;
+            if (mutation) {
+                try { rollbackResult = self._rollbackMutation(mutation); }
+                catch (rollbackError) {
+                    console.error('Repair rollback failed:', rollbackError);
+                    rollbackResult = false;
+                }
+            }
             var journalResult = journalEntry
                 ? Promise.resolve().then(function() {
                     return self._updateJournalEntry(journalEntry, rollbackResult ? 'failed' : 'rollback_failed',
@@ -261,13 +302,15 @@ var RepairModule = {
                         : ' Автоматический откат не удался; не повторяйте операцию до проверки данных.') : ''));
                 }
                 self.scan();
+                self.renderJournal();
                 return false;
             });
         }
 
         var diagnosticRun = typeof DiagnosticsModule !== 'undefined' && typeof DiagnosticsModule.run === 'function'
-            ? DiagnosticsModule.run() : Promise.resolve();
-        return Promise.resolve(diagnosticRun).then(function() {
+            ? DiagnosticsModule.run() : Promise.resolve(null);
+        return Promise.resolve(diagnosticRun).then(function(report) {
+            baselineReport = report || (typeof DiagnosticsModule !== 'undefined' ? DiagnosticsModule._lastReport : null);
             var fresh = self._buildCandidates().find(function(item) { return item.id === candidateId; });
             if (!fresh || fresh.fingerprint !== candidate.fingerprint) {
                 if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Данные изменились после предпросмотра. Обновите список и проверьте исправление заново.');
@@ -346,13 +389,16 @@ var RepairModule = {
                 return typeof DiagnosticsModule !== 'undefined' && typeof DiagnosticsModule.run === 'function'
                     ? DiagnosticsModule.run() : Promise.resolve(null);
             }).then(function(report) {
-                if (transactionStarted && report && report.summary && report.summary.status === 'error') {
-                    throw new Error('После исправления диагностика обнаружила критические проблемы.');
+                var beforeErrors = baselineReport && baselineReport.summary ? baselineReport.summary.errors : 0;
+                var afterErrors = report && report.summary ? report.summary.errors : beforeErrors;
+                if (transactionStarted && afterErrors > beforeErrors) {
+                    throw new Error('После исправления количество критических проблем увеличилось.');
                 }
                 self._updateJournalEntry(journalEntry, 'completed', 'Исправление сохранено; повторная проверка завершена.');
                 mutation = null;
                 if (typeof NotificationModule !== 'undefined') NotificationModule.success('Исправление сохранено и проверено. Запись добавлена в журнал.');
                 self.scan();
+                self.renderJournal();
                 return true;
             }).catch(fail);
         }).catch(fail);
