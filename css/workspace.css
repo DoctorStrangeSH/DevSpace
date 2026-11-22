@@ -589,3 +589,9 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
     .backup-trash-actions { display:grid; grid-template-columns:1fr 1fr; }
     .backup-trash-actions .btn { min-height:40px; }
 }
+
+
+/* Automatic backup vault and storage health states. */
+#backupAutoStatus[data-tone="success"], #backupStorageHealth[data-tone="success"] { color: var(--bs-success); }
+#backupAutoStatus[data-tone="warning"], #backupStorageHealth[data-tone="warning"] { color: var(--bs-warning); }
+.backup-auto-note { overflow-wrap:anywhere; }
