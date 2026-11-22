@@ -185,12 +185,19 @@ var ExportModule = {
         return this._readAutoBackups().then(function(records) {
             container.textContent = '';
             if (!records.length) {
+                self._setAutoBackupStatus('Автоматические копии ещё не созданы.', 'neutral');
                 var empty = document.createElement('p');
                 empty.className = 'small text-muted mb-0';
-                empty.textContent = 'Автоматических копий пока нет. DevSpace создаст первую после запуска или изменения проекта.';
+                empty.textContent = 'DevSpace создаст первую копию после запуска приложения, если IndexedDB доступен.';
                 container.appendChild(empty);
                 return records;
             }
+            var latestIntact = self._isBackupIntact(records[0].data);
+            self._setAutoBackupStatus(
+                'Последняя копия: ' + new Date(records[0].createdAt).toLocaleString('ru-RU') +
+                ' · ' + (latestIntact ? 'целостность подтверждена' : 'последняя копия повреждена'),
+                latestIntact ? 'success' : 'warning'
+            );
             records.forEach(function(record) {
                 var intact = self._isBackupIntact(record.data);
                 var item = document.createElement('div');
