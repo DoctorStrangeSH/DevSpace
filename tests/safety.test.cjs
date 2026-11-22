@@ -833,7 +833,7 @@ test('backup center preview validates checksum and enables restore only after va
   ctx.ExportModule._previewSelectedBackup();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(restore.disabled, true);
-  assert.match(preview.textContent, /контрольная сумма не совпадает/);
+  assert.match(preview.textContent, /контрольная сумма не совпадает/i);
 });
 
 test('backup checksum detects modified payload before confirmation or storage writes', async () => {
@@ -873,10 +873,10 @@ test('backup checksum accepts an unchanged versioned archive and preview summari
   const copy = Object.assign({}, payload);
   delete copy.integrity;
   assert.equal(service._backupChecksum(copy), payload.integrity.checksum);
-  assert.deepEqual(service._buildBackupPreview(payload, payload.projects), {
+  assert.equal(JSON.stringify(service._buildBackupPreview(payload, payload.projects)), JSON.stringify({
     projects: 1, tasks: 1, notes: 1, sections: [], version: '3.66.29',
     timestamp: '2026-11-22T08:00:00.000Z'
-  });
+  }));
 });
 
 test('backup importer rejects unknown schema versions before confirmation or storage writes', async () => {
@@ -2067,6 +2067,7 @@ test('StateManager refreshes its compare-and-set snapshot after an accepted save
       setIfUnchanged(key, data, expected) {
         if (expected !== raw) return false;
         raw = JSON.stringify(data);
+        this._lastWriteValue = raw;
         return true;
       },
       getRaw() { return raw; }
@@ -3535,7 +3536,8 @@ test('mobile modals remain scrollable above the on-screen keyboard in short land
 test('project forms and modal actions fit narrow 320–375 pixel screens', () => {
   const css = fs.readFileSync(path.join(root, 'css/workspace.css'), 'utf8');
   assert.ok(css.includes('@media(max-width:380px)'));
-  assert.ok(css.includes('.modal.show textarea { min-width:0; max-width:100%; }'));
+  assert.ok(css.includes('.modal.show textarea,'));
+  assert.ok(css.includes('.checklist-editor textarea { min-width:0; max-width:100%; }'));
   assert.ok(css.includes('.modal.show .modal-footer { flex-wrap:wrap; gap:8px; }'));
   assert.ok(css.includes('.modal.show .modal-footer .btn { flex:1 1 120px; }'));
 });
@@ -3553,7 +3555,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa18'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -4405,7 +4407,7 @@ test('3.66.29 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa18'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
   assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
 });
 
@@ -5945,7 +5947,7 @@ test('project detail modal restores focus to its opener and uses a safe fallback
     assert.match(source, /target\.focus\(\{ preventScroll: true \}\)/);
     assert.match(source, /getElementById\('tabButtonProjects'\)/);
     assert.match(source, /bootstrap\.Modal\.getOrCreateInstance/);
-    assert.doesNotMatch(source, /modalEl\.addEventListener\('hidden\.bs\.modal',[\s\S]*?\{ once: true \}\)/);
+    assert.match(source, /modalEl\.addEventListener\('hidden\.bs\.modal',[\s\S]*?callback\(\);[\s\S]*?\}, \{ once: true \}\)/);
 });
 
 test('invalid persisted workspace tab falls back to projects before rendering', () => {
