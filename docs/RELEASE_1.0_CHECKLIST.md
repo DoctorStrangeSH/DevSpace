@@ -368,3 +368,9 @@
 - [x] Если откат невозможен, журнал явно помечает rollback_failed и предлагает ручную проверку.
 - [ ] Расширенные тесты на конфликт журнала и конкурентные изменения между вкладками.
 - [ ] Ручная проверка на GitHub Pages и в отдельном профиле браузера.
+
+### CI после журнала и защиты отката
+- [x] PR #75: Node regression tests 317/317 PASS; Firestore Rules Emulator PASS.
+- [x] PR #76: Node regression tests 319/319 PASS; Firestore Rules Emulator PASS.
+- [x] Main commit 0e5fef549248d14be9cc8a991c9c52a4f23dc729: Node regression tests 319/319 PASS; build PASS; Firestore Rules Emulator PASS.
+- [ ] Подтвердить завершение GitHub Pages deployment для main commit 0e5fef549248d14be9cc8a991c9c52a4f23dc729.
