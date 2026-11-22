@@ -123,6 +123,7 @@ var RepairModule = {
     },
 
     render: function() {
+        if (typeof document === 'undefined') return;
         var status = document.getElementById('workspaceRepairStatus');
         var results = document.getElementById('workspaceRepairResults');
         if (!status || !results) return;
