@@ -1741,8 +1741,11 @@ test('initial project seeding never overwrites user changes made while the reque
   const stored = new Map();
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      KEYS: { THEME: 'theme', PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
       get(key) { return key === 'theme' ? 'dark' : null; },
+      getSnapshot(key, fallback) { return { raw: stored.has(key) ? JSON.stringify(stored.get(key)) : null, value: stored.has(key) ? stored.get(key) : fallback, error: null }; },
+      getRawSnapshot(key) { const raw = stored.has(key) ? JSON.stringify(stored.get(key)) : null; return { exists: raw !== null, raw, error: null }; },
+      restoreRaw(key, snapshot) { if (snapshot.exists) stored.set(key, JSON.parse(snapshot.raw)); else stored.delete(key); return true; },
       has() { return false; },
       set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
     },
@@ -1792,8 +1795,11 @@ test('initial project seeding stays disabled after create-then-delete leaves an 
   const stored = new Map();
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      KEYS: { THEME: 'theme', PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
       get(key) { return key === 'theme' ? 'dark' : null; },
+      getSnapshot(key, fallback) { return { raw: stored.has(key) ? JSON.stringify(stored.get(key)) : null, value: stored.has(key) ? stored.get(key) : fallback, error: null }; },
+      getRawSnapshot(key) { const raw = stored.has(key) ? JSON.stringify(stored.get(key)) : null; return { exists: raw !== null, raw, error: null }; },
+      restoreRaw(key, snapshot) { if (snapshot.exists) stored.set(key, JSON.parse(snapshot.raw)); else stored.delete(key); return true; },
       has() { return false; },
       set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
     },
@@ -2081,6 +2087,99 @@ test('StateManager refreshes its compare-and-set snapshot after an accepted save
   assert.equal(state._projectsStorageSnapshot, '[{"id":"p1","name":"New project"}]');
 });
 
+test('StateManager archives deleted projects and restores them with nested data intact', () => {
+  const values = new Map([['devspace_projects', JSON.stringify([
+    { id: 'p1', name: 'Important project', checklist: [{ id: 't1', text: 'Task' }], notes: [{ id: 'n1', text: 'Note' }] }
+  ])]]);
+  const storage = {
+    KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+    getSnapshot(key, fallback) {
+      const raw = values.get('devspace_' + key) ?? null;
+      try { return { raw, value: raw === null ? fallback : JSON.parse(raw), error: null }; }
+      catch (error) { return { raw: null, value: fallback, error }; }
+    },
+    getRawSnapshot(key) {
+      const raw = values.get('devspace_' + key) ?? null;
+      return { exists: raw !== null, raw, error: null };
+    },
+    restoreRaw(key, snapshot) {
+      if (snapshot.exists) values.set('devspace_' + key, snapshot.raw);
+      else values.delete('devspace_' + key);
+      return true;
+    },
+    set(key, data) { values.set('devspace_' + key, JSON.stringify(data)); return true; },
+    setIfUnchanged(key, data, expected) {
+      if ((values.get('devspace_' + key) ?? null) !== expected) return false;
+      const raw = JSON.stringify(data);
+      values.set('devspace_' + key, raw);
+      this._lastWriteValue = raw;
+      return true;
+    },
+    getRaw(key) { return values.get('devspace_' + key) ?? null; }
+  };
+  const events = [];
+  const ctx = execute('js/core/state.js', { StorageService: storage, EventBus: { emit(name) { events.push(name); } } });
+  const state = ctx.StateManager;
+  state._state.projects = JSON.parse(values.get('devspace_projects'));
+  state._projectsStorageSnapshot = values.get('devspace_projects');
+
+  assert.equal(state.removeProject('p1'), true);
+  assert.deepEqual(Array.from(state.get('projects'), project => project.id), []);
+  const archived = state.getDeletedProjects();
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0].project.checklist[0].text, 'Task');
+  assert.equal(archived[0].project.notes[0].text, 'Note');
+  assert.equal(events.includes('project:removed'), true);
+
+  assert.equal(state.restoreDeletedProject(archived[0].id), true);
+  assert.equal(state.getProject('p1').name, 'Important project');
+  assert.equal(state.getProject('p1').checklist[0].id, 't1');
+  assert.equal(state.getDeletedProjects().length, 0);
+  assert.equal(events.includes('project:restored'), true);
+});
+
+test('StateManager refuses project deletion when a safe archive cannot be written', () => {
+  const project = { id: 'p1', name: 'Keep me' };
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot() { return { raw: null, value: [], error: null }; },
+      set() { return false; }
+    },
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [project];
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(state.getProject('p1').name, 'Keep me');
+});
+
+test('StateManager rolls back the trash archive when project persistence fails', () => {
+  const values = new Map([['devspace_projects', JSON.stringify([{ id: 'p1', name: 'Keep me' }])]]);
+  const storage = {
+    KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+    getSnapshot(key, fallback) {
+      const raw = values.get('devspace_' + key) ?? null;
+      return { raw, value: raw === null ? fallback : JSON.parse(raw), error: null };
+    },
+    set(key, data) { values.set('devspace_' + key, JSON.stringify(data)); return true; },
+    restoreRaw(key, snapshot) {
+      if (snapshot.exists) values.set('devspace_' + key, snapshot.raw);
+      else values.delete('devspace_' + key);
+      return true;
+    },
+    setIfUnchanged() { return false; }
+  };
+  const ctx = execute('js/core/state.js', { StorageService: storage, EventBus: { emit() {} } });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'p1', name: 'Keep me' }];
+  state._projectsStorageSnapshot = values.get('devspace_projects');
+
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(state.getProject('p1').name, 'Keep me');
+  assert.equal(values.has('devspace_deletedProjects'), false);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
@@ -2214,7 +2313,7 @@ test('StateManager reports project persistence failures and only emits saved aft
 test('project create, update and delete roll back in-memory state when storage is full', () => {
   const events = [];
   const ctx = execute('js/core/state.js', {
-    StorageService: { KEYS: { PROJECTS: 'projects' }, set() { return false; } },
+    StorageService: { KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' }, getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; }, set() { return false; } },
     EventBus: { emit(name) { events.push(name); } }
   });
   const state = ctx.StateManager;
@@ -2338,7 +2437,10 @@ test('StateManager records successful project CRUD operations for undo and redo'
   const events = [];
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { PROJECTS: 'projects' },
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; },
+      getRawSnapshot() { return { exists: false, raw: null, error: null }; },
+      restoreRaw() { return true; },
       set() { return true; }
     },
     EventBus: { emit(name) { events.push(name); } }
@@ -2392,7 +2494,8 @@ test('StateManager excludes UI-only state changes from project undo history', ()
 test('StateManager does not add failed project mutations to undo history', () => {
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { PROJECTS: 'projects' },
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot(key, fallback) { return { raw: null, value: fallback, error: null }; },
       set() { return false; }
     },
     EventBus: { emit() {} }
@@ -3290,8 +3393,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.30'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.30'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -3555,7 +3658,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.30-pwa30'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -3856,7 +3959,7 @@ test('featured projects are accessible links and GitHub Pages cache is scoped', 
   for (const slug of ['skyward-tales', 'last-ritual', 'ghost-signal', 'workpilot']) {
     assert.ok(html.includes(`href="#project/${slug}"`));
   }
-  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.29" defer></script>'));
+  assert.ok(html.includes('<script src="js/portfolio.js?v=3.66.30" defer></script>'));
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(worker.includes("'css/portfolio.css'"));
   assert.ok(worker.includes("'js/portfolio.js'"));
@@ -3897,7 +4000,7 @@ test('GitHub live metadata is allowlisted, optional and token-free', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const source = fs.readFileSync(path.join(root, 'js/github-metadata.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/github-metadata.js?v=3.66.30"'));
   assert.ok(worker.includes("'js/github-metadata.js'"));
   assert.ok(source.includes('value.private !== false'));
   assert.ok(source.includes('value.full_name !=='));
@@ -3924,7 +4027,7 @@ test('portfolio has a dedicated accessible screenshot viewer', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(html.includes('id="portfolioGalleryViewer"'));
   assert.ok(html.includes('aria-modal="true"'));
-  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/portfolio-gallery.js?v=3.66.30"'));
   assert.ok(sw.includes("'js/portfolio-gallery.js'"));
   for (const key of ['Escape', 'ArrowLeft', 'ArrowRight', 'Tab']) assert.ok(source.includes(key));
   assert.ok(source.includes('stopImmediatePropagation'));
@@ -4024,7 +4127,7 @@ test('mobile navigation is labelled and collapses after in-page navigation', () 
   const source = fs.readFileSync(path.join(root, 'js/portfolio-nav.js'), 'utf8');
   assert.ok(html.includes('aria-controls="navbarContent"'));
   assert.ok(html.includes('aria-label="Открыть меню навигации"'));
-  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.29"'));
+  assert.ok(html.includes('src="js/portfolio-nav.js?v=3.66.30"'));
   assert.ok(worker.includes("'js/portfolio-nav.js'"));
   assert.ok(source.includes("navigation.classList.contains('show')"));
   assert.ok(source.includes('getOrCreateInstance'));
@@ -4402,13 +4505,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.66.29 cache, HTML fallback and visible application version are aligned', () => {
+test('3.66.30 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
-  assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
+  assert.ok(app.includes("version: '3.66.30'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.30-pwa30'"));
+  assert.ok(html.includes('id="appVersion">v3.66.30</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -4418,10 +4521,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.66.29', `${file} is not versioned`);
+    assert.equal(version, '?v=3.66.30', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.66.29'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.66.30'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
@@ -4827,7 +4930,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.29/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.30/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
