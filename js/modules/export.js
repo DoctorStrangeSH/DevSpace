@@ -482,6 +482,7 @@ var ExportModule = {
         this.renderAutoBackups();
         this.refreshStorageHealth();
         bootstrap.Modal.getOrCreateInstance(modalElement).show();
+        if (typeof DiagnosticsModule !== 'undefined') DiagnosticsModule.run();
     },
 
     renderDeletedProjects: function() {

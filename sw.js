@@ -3,8 +3,8 @@
    Пути к файлам задаются здесь
    ============================================ */
 
-const CACHE_VERSION = 'devspace-v3.66.31-pwa31';
-const ASSET_VERSION = '3.66.31';
+const CACHE_VERSION = 'devspace-v3.66.32-pwa32';
+const ASSET_VERSION = '3.66.32';
 const STATIC_CACHE = 'static-' + CACHE_VERSION;
 const DYNAMIC_CACHE = 'dynamic-' + CACHE_VERSION;
 const IMAGES_CACHE = 'images-' + CACHE_VERSION;
@@ -68,6 +68,7 @@ const PRECACHE_URLS = [
     'js/modules/gallery.js',
     'js/modules/project-detail.js',
     'js/modules/export.js',
+    'js/modules/diagnostics.js',
     'js/modules/share.js',
     'js/modules/achievements.js',
     'js/modules/timetracker.js',
