@@ -22,6 +22,7 @@ var RepairModule = {
                 self.apply(button.getAttribute('data-repair-candidate'));
             });
         }
+        this.renderJournal();
     },
 
     _projects: function() {
@@ -154,6 +155,38 @@ var RepairModule = {
         });
     },
 
+    renderJournal: function() {
+        if (typeof document === 'undefined') return;
+        var target = document.getElementById('workspaceRepairJournal');
+        if (!target) return;
+        target.textContent = '';
+        try {
+            var entries = this._readJournal().entries.slice().reverse().slice(0, 8);
+            if (!entries.length) {
+                target.textContent = 'Пока нет выполненных или начатых операций.';
+                return;
+            }
+            entries.forEach(function(entry) {
+                var row = document.createElement('div');
+                row.className = 'workspace-repair-journal-entry';
+                var heading = document.createElement('strong');
+                var statusLabel = entry.status === 'completed' ? 'Выполнено'
+                    : entry.status === 'prepared' ? 'Подготовлено'
+                    : entry.status === 'rollback_failed' ? 'Нужна ручная проверка' : 'Не выполнено';
+                heading.textContent = statusLabel + ' · ' + entry.type;
+                var detail = document.createElement('p');
+                detail.className = 'small mb-0';
+                detail.textContent = [entry.createdAt, entry.projectId ? 'Проект: ' + entry.projectId : '',
+                    entry.entityId ? 'ID: ' + entry.entityId : '', entry.message || ''].filter(Boolean).join(' · ');
+                row.appendChild(heading);
+                row.appendChild(detail);
+                target.appendChild(row);
+            });
+        } catch (error) {
+            target.textContent = 'Журнал недоступен: ' + (error && error.message ? error.message : 'ошибка чтения');
+        }
+    },
+
     _backupBeforeRepair: function() {
         if (typeof ExportModule === 'undefined' || typeof ExportModule._saveAutoBackup !== 'function' ||
             typeof ExportModule._isBackupIntact !== 'function') {
@@ -167,13 +200,117 @@ var RepairModule = {
         });
     },
 
+    _readJournal: function() {
+        var snapshot = StorageService.getRawSnapshot('repairLog');
+        if (snapshot.error) throw snapshot.error;
+        var entries = snapshot.raw === null ? [] : JSON.parse(snapshot.raw);
+        if (!Array.isArray(entries)) throw new Error('Журнал восстановления повреждён. Исправление отменено.');
+        return { entries: entries, raw: snapshot.raw };
+    },
+
+    _writeJournal: function(entries, expectedRaw) {
+        if (typeof StorageService.setIfUnchanged !== 'function' ||
+            !StorageService.setIfUnchanged('repairLog', entries, expectedRaw)) {
+            throw new Error('Не удалось безопасно обновить журнал восстановления. Возможно, он изменился в другой вкладке.');
+        }
+        return typeof StorageService.getRaw === 'function'
+            ? StorageService.getRaw('repairLog') : JSON.stringify(entries);
+    },
+
+    _createJournalEntry: function(candidate) {
+        var journal = this._readJournal();
+        var now = Date.now();
+        var entry = {
+            id: 'repair-' + now + '-' + Math.random().toString(36).slice(2, 8),
+            createdAt: new Date(now).toISOString(),
+            type: candidate.type,
+            projectId: candidate.projectId || null,
+            entityId: candidate.entityId || candidate.projectId || null,
+            status: 'prepared',
+            message: 'Операция подготовлена; ожидает защитную копию и проверку состояния.'
+        };
+        var entries = journal.entries.concat([entry]).slice(-50);
+        this._writeJournal(entries, journal.raw);
+        return entry;
+    },
+
+    _updateJournalEntry: function(entry, status, message) {
+        var journal = this._readJournal();
+        var index = journal.entries.findIndex(function(item) { return item && item.id === entry.id; });
+        if (index === -1) throw new Error('Запись операции исчезла из журнала восстановления.');
+        var next = journal.entries.slice();
+        next[index] = Object.assign({}, next[index], {
+            status: status,
+            updatedAt: new Date().toISOString(),
+            message: String(message || '').slice(0, 240)
+        });
+        this._writeJournal(next.slice(-50), journal.raw);
+        return true;
+    },
+
+    _rollbackMutation: function(mutation) {
+        if (!mutation) return true;
+        if (mutation.type === 'favorite') {
+            if (typeof StorageService.getRaw !== 'function' ||
+                StorageService.getRaw('favorites') !== mutation.writtenRaw) return false;
+            return StorageService.restoreRaw('favorites', mutation.snapshot);
+        }
+        if (mutation.type === 'project') {
+            var current = StateManager.getProject(mutation.projectId);
+            if (!current || JSON.stringify(current) !== JSON.stringify(mutation.updatedProject)) return false;
+            return StateManager.updateProject(mutation.projectId, {
+                checklist: mutation.previousProject.checklist || [],
+                notes: mutation.previousProject.notes || []
+            }) !== null;
+        }
+        return false;
+    },
+
     apply: function(candidateId) {
         var self = this;
         var candidate = this._candidates.find(function(item) { return item.id === candidateId; });
         if (!candidate) return Promise.resolve(false);
+
+        var mutation = null;
+        var journalEntry = null;
+        var transactionStarted = false;
+        var baselineReport = null;
+
+        function fail(error) {
+            var message = error && error.message ? error.message : 'Не удалось выполнить исправление.';
+            var rollbackResult = true;
+            if (mutation) {
+                try { rollbackResult = self._rollbackMutation(mutation); }
+                catch (rollbackError) {
+                    console.error('Repair rollback failed:', rollbackError);
+                    rollbackResult = false;
+                }
+            }
+            var journalResult = journalEntry
+                ? Promise.resolve().then(function() {
+                    return self._updateJournalEntry(journalEntry, rollbackResult ? 'failed' : 'rollback_failed',
+                        rollbackResult ? message : message + ' Откат не выполнен автоматически: требуется ручная проверка.');
+                }).catch(function(journalError) {
+                    console.error('Repair journal update failed:', journalError);
+                    return false;
+                })
+                : Promise.resolve(false);
+            return journalResult.then(function() {
+                if (typeof NotificationModule !== 'undefined') {
+                    NotificationModule.error(message + (mutation ? (rollbackResult
+                        ? ' Изменение отменено, исходные данные восстановлены.'
+                        : ' Автоматический откат не удался; не повторяйте операцию до проверки данных.') : ''));
+                }
+                self.scan();
+                self.renderJournal();
+                return false;
+            });
+        }
+
         var diagnosticRun = typeof DiagnosticsModule !== 'undefined' && typeof DiagnosticsModule.run === 'function'
-            ? DiagnosticsModule.run() : Promise.resolve();
-        return Promise.resolve(diagnosticRun).then(function() {
+            ? DiagnosticsModule.run() : Promise.resolve(null);
+        return Promise.resolve(diagnosticRun).then(function(report) {
+            baselineReport = report || (typeof DiagnosticsModule !== 'undefined' ? DiagnosticsModule._lastReport : null);
             var fresh = self._buildCandidates().find(function(item) { return item.id === candidateId; });
             if (!fresh || fresh.fingerprint !== candidate.fingerprint) {
                 if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Данные изменились после предпросмотра. Обновите список и проверьте исправление заново.');
@@ -181,69 +318,90 @@ var RepairModule = {
                 return false;
             }
             if (typeof StateManager !== 'undefined' && (StateManager._projectsLoadError || StateManager._projectsConflict)) {
-                if (typeof NotificationModule !== 'undefined') NotificationModule.error('Есть конфликт или ошибка чтения проектов. Исправление отменено.');
-                return false;
-            }
-            return self._backupBeforeRepair().then(function() {
-            var postBackup = self._buildCandidates().find(function(item) { return item.id === candidateId; });
-            if (!postBackup || postBackup.fingerprint !== candidate.fingerprint) {
-                throw new Error('Данные изменились во время создания защитной копии. Исправление отменено.');
-            }
-            var result = false;
-            if (candidate.type === 'favorite') {
-                var snapshot = StorageService.getRawSnapshot('favorites');
-                if (snapshot.error) throw snapshot.error;
-                var current = snapshot.raw === null ? [] : JSON.parse(snapshot.raw);
-                if (!Array.isArray(current) || current.indexOf(candidate.projectId) === -1) {
-                    throw new Error('Избранное изменилось после предпросмотра. Исправление отменено.');
-                }
-                var projects = self._projects() || [];
-                var trash = StorageService.get('deletedProjects') || [];
-                var knownIds = new Set(projects.map(function(project) { return project && project.id; }).filter(Boolean));
-                (Array.isArray(trash) ? trash : []).forEach(function(entry) {
-                    if (entry && entry.project && entry.project.id) knownIds.add(entry.project.id);
-                });
-                if (knownIds.has(candidate.projectId)) throw new Error('Проект снова найден в рабочем пространстве. Исправление отменено.');
-                var next = current.filter(function(id) { return id !== candidate.projectId; });
-                if (typeof StorageService.setIfUnchanged !== 'function' ||
-                    !StorageService.setIfUnchanged('favorites', next, snapshot.raw)) {
-                    throw new Error('Не удалось безопасно сохранить избранное: данные могли измениться в другой вкладке.');
-                }
-                result = true;
-            } else {
-                var project = StateManager.getProject(candidate.projectId);
-                if (!project || JSON.stringify(project) !== candidate.fingerprint) {
-                    throw new Error('Проект изменился после предпросмотра. Исправление отменено.');
-                }
-                var checklist = JSON.parse(JSON.stringify(project.checklist || []));
-                var notes = JSON.parse(JSON.stringify(project.notes || []));
-                if (candidate.type === 'task-to-note') {
-                    var task = checklist.find(function(item) { return item && item.id === candidate.entityId; });
-                    var linkedNote = task && notes.find(function(item) { return item && item.id === task.sourceNoteId; });
-                    if (!task || !linkedNote || linkedNote.linkedTaskId) throw new Error('Связь больше не является однозначной.');
-                    linkedNote.linkedTaskId = task.id;
-                } else if (candidate.type === 'note-to-task') {
-                    var sourceNote = notes.find(function(item) { return item && item.id === candidate.entityId; });
-                    var linkedTask = sourceNote && checklist.find(function(item) { return item && item.id === sourceNote.linkedTaskId; });
-                    if (!sourceNote || !linkedTask || linkedTask.sourceNoteId) throw new Error('Связь больше не является однозначной.');
-                    linkedTask.sourceNoteId = sourceNote.id;
-                } else {
-                    throw new Error('Неизвестный тип исправления.');
-                }
-                result = StateManager.updateProject(candidate.projectId, { checklist: checklist, notes: notes }) !== null;
-                if (!result) throw new Error('Не удалось сохранить исправление. Возможно, данные изменились в другой вкладке.');
+                throw new Error('Есть конфликт или ошибка чтения проектов. Исправление отменено.');
             }
 
-            if (!result) throw new Error('Исправление не выполнено.');
-            if (typeof NotificationModule !== 'undefined') NotificationModule.success('Исправление сохранено. Проверяем результат…');
-            self.scan();
-            if (typeof DiagnosticsModule !== 'undefined') DiagnosticsModule.run();
-            return true;
-            });
-        }).catch(function(error) {
-            if (typeof NotificationModule !== 'undefined') NotificationModule.error(error && error.message ? error.message : 'Не удалось выполнить исправление.');
-            return false;
-        });
+            journalEntry = self._createJournalEntry(candidate);
+            return self._backupBeforeRepair().then(function() {
+                var postBackup = self._buildCandidates().find(function(item) { return item.id === candidateId; });
+                if (!postBackup || postBackup.fingerprint !== candidate.fingerprint) {
+                    throw new Error('Данные изменились во время создания защитной копии. Исправление отменено.');
+                }
+
+                if (candidate.type === 'favorite') {
+                    var snapshot = StorageService.getRawSnapshot('favorites');
+                    if (snapshot.error) throw snapshot.error;
+                    var current = snapshot.raw === null ? [] : JSON.parse(snapshot.raw);
+                    if (!Array.isArray(current) || current.indexOf(candidate.projectId) === -1) {
+                        throw new Error('Избранное изменилось после предпросмотра. Исправление отменено.');
+                    }
+                    var projects = self._projects() || [];
+                    var trash = StorageService.get('deletedProjects') || [];
+                    var knownIds = new Set(projects.map(function(project) { return project && project.id; }).filter(Boolean));
+                    (Array.isArray(trash) ? trash : []).forEach(function(entry) {
+                        if (entry && entry.project && entry.project.id) knownIds.add(entry.project.id);
+                    });
+                    if (knownIds.has(candidate.projectId)) throw new Error('Проект снова найден в рабочем пространстве. Исправление отменено.');
+                    var next = current.filter(function(id) { return id !== candidate.projectId; });
+                    if (typeof StorageService.setIfUnchanged !== 'function' ||
+                        !StorageService.setIfUnchanged('favorites', next, snapshot.raw)) {
+                        throw new Error('Не удалось безопасно сохранить избранное: данные могли измениться в другой вкладке.');
+                    }
+                    mutation = {
+                        type: 'favorite',
+                        snapshot: snapshot,
+                        writtenRaw: typeof StorageService.getRaw === 'function' ? StorageService.getRaw('favorites') : JSON.stringify(next)
+                    };
+                } else {
+                    var project = StateManager.getProject(candidate.projectId);
+                    if (!project || JSON.stringify(project) !== candidate.fingerprint) {
+                        throw new Error('Проект изменился после предпросмотра. Исправление отменено.');
+                    }
+                    var previousProject = JSON.parse(JSON.stringify(project));
+                    var checklist = JSON.parse(JSON.stringify(project.checklist || []));
+                    var notes = JSON.parse(JSON.stringify(project.notes || []));
+                    if (candidate.type === 'task-to-note') {
+                        var task = checklist.find(function(item) { return item && item.id === candidate.entityId; });
+                        var linkedNote = task && notes.find(function(item) { return item && item.id === task.sourceNoteId; });
+                        if (!task || !linkedNote || linkedNote.linkedTaskId) throw new Error('Связь больше не является однозначной.');
+                        linkedNote.linkedTaskId = task.id;
+                    } else if (candidate.type === 'note-to-task') {
+                        var sourceNote = notes.find(function(item) { return item && item.id === candidate.entityId; });
+                        var linkedTask = sourceNote && checklist.find(function(item) { return item && item.id === sourceNote.linkedTaskId; });
+                        if (!sourceNote || !linkedTask || linkedTask.sourceNoteId) throw new Error('Связь больше не является однозначной.');
+                        linkedTask.sourceNoteId = sourceNote.id;
+                    } else {
+                        throw new Error('Неизвестный тип исправления.');
+                    }
+                    var updatedProject = StateManager.updateProject(candidate.projectId, { checklist: checklist, notes: notes });
+                    if (!updatedProject) throw new Error('Не удалось сохранить исправление. Возможно, данные изменились в другой вкладке.');
+                    mutation = {
+                        type: 'project',
+                        projectId: candidate.projectId,
+                        previousProject: previousProject,
+                        updatedProject: JSON.parse(JSON.stringify(updatedProject))
+                    };
+                }
+
+                transactionStarted = true;
+                var stillCandidate = self._buildCandidates().some(function(item) { return item.id === candidateId; });
+                if (stillCandidate) throw new Error('Повторная проверка не подтвердила исправление.');
+                return typeof DiagnosticsModule !== 'undefined' && typeof DiagnosticsModule.run === 'function'
+                    ? DiagnosticsModule.run() : Promise.resolve(null);
+            }).then(function(report) {
+                var beforeErrors = baselineReport && baselineReport.summary ? baselineReport.summary.errors : 0;
+                var afterErrors = report && report.summary ? report.summary.errors : beforeErrors;
+                if (transactionStarted && afterErrors > beforeErrors) {
+                    throw new Error('После исправления количество критических проблем увеличилось.');
+                }
+                self._updateJournalEntry(journalEntry, 'completed', 'Исправление сохранено; повторная проверка завершена.');
+                mutation = null;
+                if (typeof NotificationModule !== 'undefined') NotificationModule.success('Исправление сохранено и проверено. Запись добавлена в журнал.');
+                self.scan();
+                self.renderJournal();
+                return true;
+            }).catch(fail);
+        }).catch(fail);
     }
 };
 
