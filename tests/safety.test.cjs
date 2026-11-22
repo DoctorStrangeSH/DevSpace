@@ -6696,7 +6696,18 @@ test('safe repair center refuses to mutate when protective backup cannot be veri
       updateProject() { updates++; return project; }
     },
     StorageService: {
-      getRawSnapshot(key) { return { raw: key === 'favorites' ? '[]' : '[]', error: null }; }
+      _data: { repairLog: [] },
+      getRawSnapshot(key) {
+        const value = this._data[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      },
+      setIfUnchanged(key, value, expectedRaw) {
+        const current = this._data[key] === undefined ? null : JSON.stringify(this._data[key]);
+        if (current !== expectedRaw) return false;
+        this._data[key] = value;
+        return true;
+      },
+      getRaw(key) { return this._data[key] === undefined ? null : JSON.stringify(this._data[key]); }
     },
     ExportModule: {
       _saveAutoBackup: async () => { throw new Error('backup unavailable'); },
@@ -6730,12 +6741,23 @@ test('safe repair center creates a verified backup before restoring a unique rev
       getProject() { return project; },
       updateProject(id, changes) {
         updates++;
-        Object.assign(project, changes);
+        Object.assign(project, changes, { updatedAt: '2026-11-22T00:00:00.000Z' });
         return project;
       }
     },
     StorageService: {
-      getRawSnapshot(key) { return { raw: '[]', error: null }; },
+      _data: { repairLog: [] },
+      getRawSnapshot(key) {
+        const value = this._data[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      },
+      setIfUnchanged(key, value, expectedRaw) {
+        const current = this._data[key] === undefined ? null : JSON.stringify(this._data[key]);
+        if (current !== expectedRaw) return false;
+        this._data[key] = value;
+        return true;
+      },
+      getRaw(key) { return this._data[key] === undefined ? null : JSON.stringify(this._data[key]); },
       get() { return []; }
     },
     ExportModule: {
@@ -6746,7 +6768,7 @@ test('safe repair center creates a verified backup before restoring a unique rev
       },
       _isBackupIntact(data) { return data.integrity.checksum === 'verified'; }
     },
-    DiagnosticsModule: { run() { diagnosticCalls++; } },
+    DiagnosticsModule: { run() { diagnosticCalls++; return Promise.resolve({ summary: { status: 'healthy', errors: 0 } }); } },
     NotificationModule: { error() {}, warning() {}, success() {} }
   });
   const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
@@ -6758,4 +6780,68 @@ test('safe repair center creates a verified backup before restoring a unique rev
   assert.equal(project.notes[0].linkedTaskId, 'task-one');
   assert.equal(diagnosticCalls, 2, 'diagnostics run before and after the repair');
   assert.equal(ctx.RepairModule._candidates.length, 0);
+  const journal = ctx.StorageService._data.repairLog;
+  assert.equal(journal.length, 1);
+  assert.equal(journal[0].status, 'completed');
+  assert.equal(journal[0].type, 'task-to-note');
+  assert.equal(JSON.stringify(journal).includes('Private task'), false);
+});
+
+
+test('safe repair center rolls back a mutation when post-repair verification fails', async () => {
+  const project = {
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one' }]
+  };
+  const storage = { repairLog: [] };
+  let updateCalls = 0;
+  let diagnosticCalls = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [project] : null; },
+      getProject() { return project; },
+      updateProject(id, changes) {
+        updateCalls++;
+        Object.assign(project, changes, { updatedAt: '2026-11-22T00:00:00.000Z' });
+        return project;
+      }
+    },
+    StorageService: {
+      getRawSnapshot(key) {
+        const value = storage[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      },
+      setIfUnchanged(key, value, expectedRaw) {
+        const current = storage[key] === undefined ? null : JSON.stringify(storage[key]);
+        if (current !== expectedRaw) return false;
+        storage[key] = value;
+        return true;
+      },
+      getRaw(key) { return storage[key] === undefined ? null : JSON.stringify(storage[key]); },
+      get() { return []; }
+    },
+    ExportModule: {
+      async _saveAutoBackup() { return { data: { integrity: { checksum: 'ok' } } }; },
+      _isBackupIntact() { return true; }
+    },
+    DiagnosticsModule: {
+      run() {
+        diagnosticCalls++;
+        return Promise.resolve({ summary: { status: diagnosticCalls === 1 ? 'healthy' : 'error', errors: diagnosticCalls === 1 ? 0 : 1 } });
+      }
+    },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
+  assert.ok(candidate);
+  const result = await ctx.RepairModule.apply(candidate.id);
+  assert.equal(result, false);
+  assert.equal(updateCalls, 2, 'one write and one conditional rollback');
+  assert.equal(project.notes[0].linkedTaskId, undefined, 'original link state must be restored');
+  assert.equal(storage.repairLog.length, 1);
+  assert.equal(storage.repairLog[0].status, 'failed');
 });
