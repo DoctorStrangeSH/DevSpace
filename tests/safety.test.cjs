@@ -1795,8 +1795,11 @@ test('initial project seeding stays disabled after create-then-delete leaves an 
   const stored = new Map();
   const ctx = execute('js/core/state.js', {
     StorageService: {
-      KEYS: { THEME: 'theme', PROJECTS: 'projects' },
+      KEYS: { THEME: 'theme', PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
       get(key) { return key === 'theme' ? 'dark' : null; },
+      getSnapshot(key, fallback) { return { raw: stored.has(key) ? JSON.stringify(stored.get(key)) : null, value: stored.has(key) ? stored.get(key) : fallback, error: null }; },
+      getRawSnapshot(key) { const raw = stored.has(key) ? JSON.stringify(stored.get(key)) : null; return { exists: raw !== null, raw, error: null }; },
+      restoreRaw(key, snapshot) { if (snapshot.exists) stored.set(key, JSON.parse(snapshot.raw)); else stored.delete(key); return true; },
       has() { return false; },
       set(key, value) { stored.set(key, JSON.parse(JSON.stringify(value))); return true; }
     },
@@ -4927,7 +4930,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.29/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.30/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
