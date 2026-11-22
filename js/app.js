@@ -5,7 +5,7 @@
 var App = {
     config: {
         appName: 'DevSpace',
-        version: '3.66.32',
+        version: '3.66.33',
         debug: false
     },
 
@@ -127,7 +127,7 @@ var App = {
             'RendererModule', 'WorkspaceViewModule', 'ProjectsModule', 'ChecklistModule',
             'UpdatesModule', 'StatsModule', 'NotesModule',
             'TagsModule', 'FavoritesModule', 'GalleryModule',
-            'ProjectDetailModule', 'ExportModule', 'DiagnosticsModule', 'ShareModule',
+            'ProjectDetailModule', 'ExportModule', 'DiagnosticsModule', 'RepairModule', 'ShareModule',
             'AchievementsModule', 'TimeTrackerModule'
         ];
 

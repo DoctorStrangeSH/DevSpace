@@ -483,6 +483,7 @@ var ExportModule = {
         this.refreshStorageHealth();
         bootstrap.Modal.getOrCreateInstance(modalElement).show();
         if (typeof DiagnosticsModule !== 'undefined') DiagnosticsModule.run();
+        if (typeof RepairModule !== 'undefined') RepairModule.scan();
     },
 
     renderDeletedProjects: function() {
