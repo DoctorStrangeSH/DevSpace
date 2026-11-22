@@ -614,3 +614,11 @@ body:has(#projects:target) .workspace-launch { opacity:.3; }
 .workspace-repair-candidate { display:grid; gap:6px; padding:12px; border:1px solid rgba(160,146,226,.2); border-radius:11px; background:rgba(255,255,255,.025); overflow-wrap:anywhere; }
 .workspace-repair-candidate strong { font-size:.86rem; }
 .workspace-repair-candidate p { overflow-wrap:anywhere; }
+
+
+/* Privacy-safe repair operation history. */
+.workspace-repair-journal-wrap { border-top:1px solid rgba(160,146,226,.18); padding-top:12px; }
+.workspace-repair-journal { display:grid; gap:7px; }
+.workspace-repair-journal-entry { padding:9px 10px; border:1px solid rgba(160,146,226,.14); border-radius:9px; background:rgba(255,255,255,.02); overflow-wrap:anywhere; }
+.workspace-repair-journal-entry strong { display:block; font-size:.8rem; }
+.workspace-repair-journal-entry p { color:var(--text-secondary); overflow-wrap:anywhere; }
