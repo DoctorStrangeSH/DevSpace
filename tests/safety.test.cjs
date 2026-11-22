@@ -703,6 +703,76 @@ test('backup creation declares a versioned portable format', () => {
   assert.equal(downloaded.version, '3.66.29');
 });
 
+test('backup restore options allow restoring projects without replacing unchecked metadata', async () => {
+  const state = { projects: [{ id: 'old', name: 'Old project' }], theme: 'dark' };
+  const values = new Map([
+    ['favorites', ['keep-favorite']],
+    ['achievements', ['keep-achievement']],
+    ['settings', { compactMode: true }],
+    ['activity', [{ id: 'keep-event' }]],
+    ['healthHistory', []]
+  ]);
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new', name: 'New project' }],
+      theme: 'light', favorites: ['replace'], achievements: ['replace'],
+      settings: { compactMode: false }, activity: [{ id: 'replace' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: {
+      KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+      get(key, fallback) { return values.has(key) ? values.get(key) : fallback; },
+      set(key, value) { values.set(key, value); return true; },
+      remove(key) { values.delete(key); return true; }
+    },
+    ThemeModule: { setTheme(value) { state.theme = value; } },
+    FavoritesModule: { favorites: ['keep-favorite'] },
+    AchievementsModule: { unlocked: ['keep-achievement'], _renderAchievements() {} },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {}, _updateQuickAccess() {} },
+    NotificationModule: { success() {}, error(message) { throw Error(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 100 }, {
+    projects: true, theme: false, favorites: false, achievements: false,
+    settings: false, activity: false, healthHistory: false
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.projects[0].id, 'new');
+  assert.equal(state.theme, 'dark');
+  assert.deepEqual(values.get('favorites'), ['keep-favorite']);
+  assert.deepEqual(values.get('settings'), { compactMode: true });
+  assert.deepEqual(values.get('activity'), [{ id: 'keep-event' }]);
+});
+
+test('backup center preview validates checksum and enables restore only after valid file inspection', async () => {
+  const preview = { textContent: '', };
+  const restore = { disabled: true };
+  const input = { files: [{ size: 100 }] };
+  const data = { format: 'devspace-backup', schemaVersion: 1, projects: [{ id: 'p1', name: 'Project' }] };
+  const checksumService = execute('js/modules/export.js').ExportModule;
+  data.integrity = { algorithm: 'fnv1a32', checksum: checksumService._backupChecksum(data) };
+  const ctx = execute('js/modules/export.js', {
+    document: { getElementById(id) {
+      return id === 'backupCenterFile' ? input : id === 'backupCenterPreview' ? preview : restore;
+    } },
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify(data)) }
+  });
+  ctx.ExportModule._previewSelectedBackup();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(restore.disabled, false);
+  assert.match(preview.textContent, /Файл проверен/);
+  data.projects[0].name = 'Tampered';
+  ctx.ExportModule._previewSelectedBackup();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(restore.disabled, true);
+  assert.match(preview.textContent, /контрольная сумма не совпадает/);
+});
+
 test('backup checksum detects modified payload before confirmation or storage writes', async () => {
   let writes = 0;
   let confirmations = 0;
