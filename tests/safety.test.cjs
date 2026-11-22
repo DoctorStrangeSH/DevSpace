@@ -6643,3 +6643,119 @@ test('workspace diagnostics accept a consistent workspace and protect unreadable
   assert.ok(unreadable.issues.some(issue => issue.code === 'projects-unreadable'));
   assert.ok(unreadable.issues.some(issue => issue.code === 'invalid-json'));
 });
+
+
+test('safe repair center previews only unambiguous orphan favorites and reciprocal links', () => {
+  const projects = [{
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', text: 'Private task text', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one', title: 'Private note title' }]
+  }];
+  const storage = {
+    favorites: ['orphan-project', 'archived-project'],
+    deletedProjects: [{ id: 'archive-one', project: { id: 'archived-project' } }]
+  };
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? projects : null; }
+    },
+    StorageService: {
+      getRawSnapshot(key) {
+        const value = storage[key];
+        return { raw: value === undefined ? null : JSON.stringify(value), error: null };
+      }
+    }
+  });
+  const candidates = ctx.RepairModule._buildCandidates();
+  assert.equal(candidates.length, 2);
+  assert.ok(candidates.some(item => item.id === 'favorite:orphan-project'));
+  assert.ok(candidates.some(item => item.id === 'task-to-note:project-one:task-one'));
+  assert.equal(candidates.some(item => item.id === 'favorite:archived-project'), false);
+  assert.equal(candidates.some(item => item.detail.includes('Private task text')), false);
+  assert.equal(candidates.some(item => item.detail.includes('Private note title')), false);
+  assert.equal(projects[0].notes[0].linkedTaskId, undefined, 'preview must not mutate source data');
+});
+
+test('safe repair center refuses to mutate when protective backup cannot be verified', async () => {
+  const project = {
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one' }]
+  };
+  let updates = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [project] : null; },
+      getProject() { return project; },
+      updateProject() { updates++; return project; }
+    },
+    StorageService: {
+      getRawSnapshot(key) { return { raw: key === 'favorites' ? '[]' : '[]', error: null }; }
+    },
+    ExportModule: {
+      _saveAutoBackup: async () => { throw new Error('backup unavailable'); },
+      _isBackupIntact: () => false
+    },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
+  assert.ok(candidate);
+  const result = await ctx.RepairModule.apply(candidate.id);
+  assert.equal(result, false);
+  assert.equal(updates, 0);
+  assert.equal(project.notes[0].linkedTaskId, undefined);
+});
+
+test('safe repair center creates a verified backup before restoring a unique reverse link', async () => {
+  const project = {
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one' }]
+  };
+  let backupCalls = 0;
+  let updates = 0;
+  let diagnosticCalls = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [project] : null; },
+      getProject() { return project; },
+      updateProject(id, changes) {
+        updates++;
+        Object.assign(project, changes);
+        return project;
+      }
+    },
+    StorageService: {
+      getRawSnapshot(key) { return { raw: '[]', error: null }; },
+      get() { return []; }
+    },
+    ExportModule: {
+      async _saveAutoBackup(reason) {
+        backupCalls++;
+        assert.equal(reason, 'repair-center');
+        return { data: { integrity: { checksum: 'verified' } } };
+      },
+      _isBackupIntact(data) { return data.integrity.checksum === 'verified'; }
+    },
+    DiagnosticsModule: { run() { diagnosticCalls++; } },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
+  assert.ok(candidate);
+  const result = await ctx.RepairModule.apply(candidate.id);
+  assert.equal(result, true);
+  assert.equal(backupCalls, 1);
+  assert.equal(updates, 1);
+  assert.equal(project.notes[0].linkedTaskId, 'task-one');
+  assert.equal(diagnosticCalls, 1);
+  assert.equal(ctx.RepairModule._candidates.length, 0);
+});
