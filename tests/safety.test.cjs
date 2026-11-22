@@ -703,6 +703,49 @@ test('backup creation declares a versioned portable format', () => {
   assert.equal(downloaded.version, '3.66.29');
 });
 
+test('backup checksum detects modified payload before confirmation or storage writes', async () => {
+  let writes = 0;
+  let confirmations = 0;
+  const errors = [];
+  const payload = {
+    format: 'devspace-backup',
+    schemaVersion: 1,
+    projects: [{ id: 'p1', name: 'Original' }]
+  };
+  const checksumContext = execute('js/modules/export.js').ExportModule;
+  payload.integrity = { algorithm: 'fnv1a32', checksum: checksumContext._backupChecksum(payload) };
+  payload.integrity.checksum = '00000000';
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify(payload)) },
+    confirm() { confirmations++; return true; },
+    StateManager: { get() { return []; }, set() {}, saveProjects() { writes++; return true; } },
+    StorageService: { KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' }, get(key, fallback) { return fallback; }, set() { writes++; return true; } },
+    NotificationModule: { error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(confirmations, 0);
+  assert.equal(writes, 0);
+  assert.match(errors[0], /контрольная сумма не совпадает/);
+});
+
+test('backup checksum accepts an unchanged versioned archive and preview summarizes workspace contents', () => {
+  const service = execute('js/modules/export.js').ExportModule;
+  const payload = {
+    format: 'devspace-backup', schemaVersion: 1,
+    projects: [{ id: 'p1', name: 'One', checklist: [{ text: 'Task' }], notes: [{ title: 'Note' }] }],
+    version: '3.66.29', timestamp: '2026-11-22T08:00:00.000Z'
+  };
+  payload.integrity = { algorithm: 'fnv1a32', checksum: service._backupChecksum(payload) };
+  const copy = Object.assign({}, payload);
+  delete copy.integrity;
+  assert.equal(service._backupChecksum(copy), payload.integrity.checksum);
+  assert.deepEqual(service._buildBackupPreview(payload, payload.projects), {
+    projects: 1, tasks: 1, notes: 1, sections: [], version: '3.66.29',
+    timestamp: '2026-11-22T08:00:00.000Z'
+  });
+});
+
 test('backup importer rejects unknown schema versions before confirmation or storage writes', async () => {
   let writes = 0;
   let confirmations = 0;
