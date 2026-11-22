@@ -65,6 +65,33 @@ const StorageService = {
         }
     },
 
+    // Capture raw bytes without parsing so malformed legacy data can be restored exactly.
+    getRawSnapshot(key) {
+        try {
+            return { exists: localStorage.getItem(this._getKey(key)) !== null,
+                raw: localStorage.getItem(this._getKey(key)), error: null };
+        } catch (error) {
+            this._lastReadError = error;
+            this._lastReadKey = key;
+            if (typeof EventBus !== 'undefined') EventBus.emit('storage:error', { key, error: error.message });
+            return { exists: false, raw: null, error };
+        }
+    },
+
+    // Restore an exact previously captured storage value.
+    restoreRaw(key, snapshot) {
+        if (!snapshot || snapshot.error) return false;
+        try {
+            const fullKey = this._getKey(key);
+            if (!snapshot.exists) localStorage.removeItem(fullKey);
+            else localStorage.setItem(fullKey, snapshot.raw);
+            return true;
+        } catch (error) {
+            if (typeof EventBus !== 'undefined') EventBus.emit('storage:error', { key, error: error.message });
+            return false;
+        }
+    },
+
     // Read the exact stored representation for optimistic concurrency checks.
     getRaw(key) {
         try {
