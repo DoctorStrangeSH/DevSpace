@@ -31,6 +31,8 @@ const StateManager = {
     _projectsStorageSnapshot: null,
     _projectsConflict: false,
     _maxHistory: 50,
+    _maxDeletedProjects: 20,
+    _deletedProjectRetentionMs: 30 * 24 * 60 * 60 * 1000,
     _initialized: false,
 
     init() {
@@ -329,14 +331,106 @@ const StateManager = {
         return replacements.map(item => item.updatedProject);
     },
 
+    getDeletedProjects() {
+        const key = StorageService.KEYS.DELETED_PROJECTS || 'deletedProjects';
+        const snapshot = typeof StorageService.getSnapshot === 'function'
+            ? StorageService.getSnapshot(key, [])
+            : { value: StorageService.get(key, []), error: StorageService._lastReadError };
+        if (snapshot.error || !Array.isArray(snapshot.value)) return [];
+        const cutoff = Date.now() - this._deletedProjectRetentionMs;
+        return snapshot.value.filter(entry =>
+            entry && typeof entry.id === 'string' && entry.project &&
+            typeof entry.deletedAt === 'string' && Date.parse(entry.deletedAt) >= cutoff
+        ).sort((a, b) => Date.parse(b.deletedAt) - Date.parse(a.deletedAt));
+    },
+
+    restoreDeletedProject(archiveId) {
+        const key = StorageService.KEYS.DELETED_PROJECTS || 'deletedProjects';
+        const archiveSnapshot = StorageService.getSnapshot(key, []);
+        if (archiveSnapshot.error || !Array.isArray(archiveSnapshot.value)) return false;
+        const entries = archiveSnapshot.value.slice();
+        const index = entries.findIndex(entry => entry && entry.id === archiveId);
+        if (index === -1) return false;
+        const entry = entries[index];
+        if (!entry.project || this.getProject(entry.project.id)) return false;
+
+        const projectsRawSnapshot = StorageService.getRawSnapshot(StorageService.KEYS.PROJECTS);
+        if (!projectsRawSnapshot || projectsRawSnapshot.error) return false;
+        const previousProjects = this._state.projects;
+        this._state.projects = previousProjects.concat([JSON.parse(JSON.stringify(entry.project))]);
+        if (!this.saveProjects()) {
+            this._state.projects = previousProjects;
+            this._updateStats();
+            return false;
+        }
+
+        entries.splice(index, 1);
+        if (!StorageService.set(key, entries)) {
+            this._state.projects = previousProjects;
+            this._updateStats();
+            const rolledBack = StorageService.restoreRaw(StorageService.KEYS.PROJECTS, projectsRawSnapshot);
+            this._projectsStorageSnapshot = projectsRawSnapshot.raw;
+            if (!rolledBack && typeof EventBus !== 'undefined') {
+                EventBus.emit('projects:rollback-failed', { operation: 'trash-restore' });
+            }
+            return false;
+        }
+
+        this._projectMutationVersion++;
+        this._saveToHistory();
+        this._updateStats();
+        EventBus.emit('project:restored', entry.project);
+        return true;
+    },
+
+    permanentlyDeleteArchivedProject(archiveId) {
+        const key = StorageService.KEYS.DELETED_PROJECTS || 'deletedProjects';
+        const snapshot = StorageService.getSnapshot(key, []);
+        if (snapshot.error || !Array.isArray(snapshot.value)) return false;
+        const entries = snapshot.value.filter(entry => entry && entry.id !== archiveId);
+        if (entries.length === snapshot.value.length) return false;
+        return StorageService.set(key, entries);
+    },
+
     removeProject(projectId) {
         const index = this._state.projects.findIndex(p => p.id === projectId);
         if (index === -1) return false;
 
-        const removed = this._state.projects.splice(index, 1)[0];
+        const trashKey = StorageService.KEYS.DELETED_PROJECTS || 'deletedProjects';
+        const trashSnapshot = StorageService.getSnapshot(trashKey, []);
+        if (trashSnapshot.error || !Array.isArray(trashSnapshot.value)) {
+            if (typeof EventBus !== 'undefined') EventBus.emit('project:archive-failed', { projectId });
+            return false;
+        }
+        const removed = this._state.projects[index];
+        const now = new Date().toISOString();
+        const retained = trashSnapshot.value.filter(entry =>
+            entry && typeof entry.deletedAt === 'string' &&
+            Date.parse(entry.deletedAt) >= Date.now() - this._deletedProjectRetentionMs
+        );
+        retained.push({
+            id: String(projectId) + ':' + Date.now(),
+            project: JSON.parse(JSON.stringify(removed)),
+            deletedAt: now
+        });
+        const nextTrash = retained.slice(-this._maxDeletedProjects);
+        if (!StorageService.set(trashKey, nextTrash)) {
+            if (typeof EventBus !== 'undefined') EventBus.emit('project:archive-failed', { projectId });
+            return false;
+        }
+
+        this._state.projects.splice(index, 1);
         if (!this.saveProjects()) {
             this._state.projects.splice(index, 0, removed);
             this._updateStats();
+            const rolledBack = StorageService.restoreRaw(trashKey, {
+                exists: trashSnapshot.raw !== null,
+                raw: trashSnapshot.raw,
+                error: null
+            });
+            if (!rolledBack && typeof EventBus !== 'undefined') {
+                EventBus.emit('projects:rollback-failed', { operation: 'trash-delete', projectId });
+            }
             return false;
         }
         this._projectMutationVersion++;
