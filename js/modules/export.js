@@ -48,7 +48,35 @@ var ExportModule = {
             if (!file) return;
             self._importFile(file, self._getRestoreOptions());
         });
-        
+        var trashList = document.getElementById('backupTrashList');
+        if (trashList) trashList.addEventListener('click', function(event) {
+            var button = event.target && event.target.closest
+                ? event.target.closest('button[data-trash-action]')
+                : null;
+            if (!button || !trashList.contains(button)) return;
+            var archiveId = button.getAttribute('data-archive-id');
+            var action = button.getAttribute('data-trash-action');
+            if (!archiveId) return;
+            if (action === 'restore') {
+                if (StateManager.restoreDeletedProject(archiveId)) {
+                    if (typeof NotificationModule !== 'undefined') NotificationModule.success('Проект восстановлен в мастерской');
+                    if (typeof RendererModule !== 'undefined') {
+                        RendererModule.renderProjects();
+                        RendererModule.renderStats();
+                    }
+                } else if (typeof NotificationModule !== 'undefined') {
+                    NotificationModule.error('Не удалось восстановить проект. Проверьте, нет ли проекта с таким ID.');
+                }
+            } else if (action === 'purge' && confirm('Удалить архивную копию навсегда? Это действие нельзя отменить.')) {
+                if (StateManager.permanentlyDeleteArchivedProject(archiveId)) {
+                    if (typeof NotificationModule !== 'undefined') NotificationModule.success('Архивная копия удалена');
+                } else if (typeof NotificationModule !== 'undefined') {
+                    NotificationModule.error('Не удалось удалить архивную копию');
+                }
+            }
+            self.renderDeletedProjects();
+        });
+
         // GitHub импорт
         var githubBtn = document.getElementById('importGithubBtn');
         if (githubBtn) {
@@ -199,7 +227,55 @@ var ExportModule = {
         if (file) file.value = '';
         if (preview) preview.textContent = 'Выберите JSON-файл, чтобы проверить его содержимое перед восстановлением.';
         if (restore) restore.disabled = true;
+        this.renderDeletedProjects();
         bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    },
+
+    renderDeletedProjects: function() {
+        var container = document.getElementById('backupTrashList');
+        if (!container || typeof StateManager === 'undefined' || !StateManager.getDeletedProjects) return;
+        container.textContent = '';
+        var entries = StateManager.getDeletedProjects();
+        if (!entries.length) {
+            var empty = document.createElement('p');
+            empty.className = 'small text-muted mb-0';
+            empty.textContent = 'Корзина пуста. Удалённые проекты будут храниться здесь до 30 дней.';
+            container.appendChild(empty);
+            return;
+        }
+        entries.forEach(function(entry) {
+            var item = document.createElement('div');
+            item.className = 'backup-trash-item';
+            var info = document.createElement('div');
+            info.className = 'backup-trash-info';
+            var title = document.createElement('strong');
+            title.textContent = entry.project && entry.project.name ? entry.project.name : 'Без названия';
+            var date = document.createElement('span');
+            date.className = 'small text-muted';
+            var parsed = new Date(entry.deletedAt);
+            date.textContent = 'Удалён: ' + (Number.isNaN(parsed.getTime()) ? 'дата неизвестна' : parsed.toLocaleString('ru-RU'));
+            info.appendChild(title);
+            info.appendChild(date);
+            var actions = document.createElement('div');
+            actions.className = 'backup-trash-actions';
+            var restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'btn btn-sm btn-gradient';
+            restore.textContent = 'Восстановить';
+            restore.setAttribute('data-trash-action', 'restore');
+            restore.setAttribute('data-archive-id', entry.id);
+            var purge = document.createElement('button');
+            purge.type = 'button';
+            purge.className = 'btn btn-sm btn-glass';
+            purge.textContent = 'Удалить навсегда';
+            purge.setAttribute('data-trash-action', 'purge');
+            purge.setAttribute('data-archive-id', entry.id);
+            actions.appendChild(restore);
+            actions.appendChild(purge);
+            item.appendChild(info);
+            item.appendChild(actions);
+            container.appendChild(item);
+        });
     },
 
     _getRestoreOptions: function() {
