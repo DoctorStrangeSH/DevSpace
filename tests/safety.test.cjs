@@ -6845,3 +6845,63 @@ test('safe repair center rolls back a mutation when post-repair verification fai
   assert.equal(storage.repairLog.length, 1);
   assert.equal(storage.repairLog[0].status, 'failed');
 });
+
+
+test('safe repair center rejects an ambiguous reverse link candidate', () => {
+  const projects = [{
+    id: 'project-ambiguous',
+    name: 'Ambiguous',
+    checklist: [
+      { id: 'task-one', sourceNoteId: 'note-one' },
+      { id: 'task-two', sourceNoteId: 'note-one' }
+    ],
+    notes: [{ id: 'note-one' }]
+  }];
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? projects : null; }
+    },
+    StorageService: {
+      getRawSnapshot() { return { raw: '[]', error: null }; }
+    }
+  });
+  assert.equal(ctx.RepairModule._buildCandidates().length, 0);
+});
+
+test('safe repair center does not mutate when the journal has a concurrent write conflict', async () => {
+  const project = {
+    id: 'project-one',
+    name: 'Проект',
+    checklist: [{ id: 'task-one', sourceNoteId: 'note-one' }],
+    notes: [{ id: 'note-one' }]
+  };
+  let updates = 0;
+  let backups = 0;
+  const ctx = execute('js/modules/repair.js', {
+    StateManager: {
+      _projectsLoadError: false,
+      _projectsConflict: false,
+      get(key) { return key === 'projects' ? [project] : null; },
+      getProject() { return project; },
+      updateProject() { updates++; return project; }
+    },
+    StorageService: {
+      getRawSnapshot() { return { raw: null, error: null }; },
+      setIfUnchanged() { return false; }
+    },
+    ExportModule: {
+      async _saveAutoBackup() { backups++; return { data: {} }; },
+      _isBackupIntact() { return true; }
+    },
+    DiagnosticsModule: { run() { return Promise.resolve({ summary: { status: 'healthy', errors: 0 } }); } },
+    NotificationModule: { error() {}, warning() {}, success() {} }
+  });
+  const candidate = ctx.RepairModule.scan().find(item => item.type === 'task-to-note');
+  assert.ok(candidate);
+  const result = await ctx.RepairModule.apply(candidate.id);
+  assert.equal(result, false);
+  assert.equal(updates, 0);
+  assert.equal(backups, 0);
+});
