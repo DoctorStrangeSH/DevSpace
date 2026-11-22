@@ -4930,7 +4930,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.32/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.33/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
@@ -6756,6 +6756,6 @@ test('safe repair center creates a verified backup before restoring a unique rev
   assert.equal(backupCalls, 1);
   assert.equal(updates, 1);
   assert.equal(project.notes[0].linkedTaskId, 'task-one');
-  assert.equal(diagnosticCalls, 1);
+  assert.equal(diagnosticCalls, 2, 'diagnostics run before and after the repair');
   assert.equal(ctx.RepairModule._candidates.length, 0);
 });
