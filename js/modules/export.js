@@ -3,9 +3,244 @@
    ============================================ */
 
 var ExportModule = {
+    _backupDbName: 'devspace-backup-vault',
+    _backupStoreName: 'snapshots',
+    _autoBackupLimit: 7,
+    _autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+    _autoBackupChangeIntervalMs: 6 * 60 * 60 * 1000,
+    _autoBackupTimer: null,
+    _backupDbPromise: null,
+
     init: function() {
         this._bindEvents();
+        this._bindAutoBackupEvents();
         console.log('ExportModule initialized');
+    },
+
+    _bindAutoBackupEvents: function() {
+        var self = this;
+        if (typeof EventBus === 'undefined' || typeof EventBus.on !== 'function' || this._autoBackupEventsBound) return;
+        this._autoBackupEventsBound = true;
+        EventBus.on('app:ready', function() { self._maybeCreateAutoBackup('daily'); });
+        ['project:added', 'project:updated', 'project:removed', 'project:restored'].forEach(function(eventName) {
+            EventBus.on(eventName, function() {
+                if (self._autoBackupTimer) clearTimeout(self._autoBackupTimer);
+                self._autoBackupTimer = setTimeout(function() {
+                    self._autoBackupTimer = null;
+                    self._maybeCreateAutoBackup('workspace-change');
+                }, 5000);
+            });
+        });
+    },
+
+    _openBackupVault: function() {
+        if (this._backupDbPromise) return this._backupDbPromise;
+        if (typeof indexedDB === 'undefined') return Promise.reject(new Error('Браузер не поддерживает локальное хранилище резервных копий'));
+        var self = this;
+        this._backupDbPromise = new Promise(function(resolve, reject) {
+            var request;
+            try { request = indexedDB.open(self._backupDbName, 1); }
+            catch (error) { self._backupDbPromise = null; reject(error); return; }
+            request.onupgradeneeded = function() {
+                var db = request.result;
+                if (!db.objectStoreNames.contains(self._backupStoreName)) {
+                    db.createObjectStore(self._backupStoreName, { keyPath: 'id' });
+                }
+            };
+            request.onsuccess = function() {
+                var db = request.result;
+                db.onversionchange = function() { db.close(); self._backupDbPromise = null; };
+                resolve(db);
+            };
+            request.onerror = function() { self._backupDbPromise = null; reject(request.error || new Error('Не удалось открыть хранилище резервных копий')); };
+            request.onblocked = function() { self._backupDbPromise = null; reject(new Error('Хранилище резервных копий занято другой вкладкой')); };
+        });
+        return this._backupDbPromise;
+    },
+
+    _readAutoBackups: function() {
+        return this._openBackupVault().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction('snapshots', 'readonly');
+                var request = tx.objectStore('snapshots').getAll();
+                request.onsuccess = function() {
+                    resolve((request.result || []).sort(function(a, b) { return b.createdAt - a.createdAt; }));
+                };
+                request.onerror = function() { reject(request.error || new Error('Не удалось прочитать резервные копии')); };
+                tx.onerror = function() { reject(tx.error || new Error('Ошибка чтения резервных копий')); };
+            });
+        });
+    },
+
+    _writeAutoBackup: function(record) {
+        var self = this;
+        return this._openBackupVault().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(self._backupStoreName, 'readwrite');
+                var store = tx.objectStore(self._backupStoreName);
+                var request = store.getAll();
+                request.onsuccess = function() {
+                    var records = (request.result || []).concat([record])
+                        .sort(function(a, b) { return b.createdAt - a.createdAt; });
+                    store.put(record);
+                    records.slice(self._autoBackupLimit).forEach(function(item) { store.delete(item.id); });
+                };
+                request.onerror = function() { try { tx.abort(); } catch (_) {} };
+                tx.oncomplete = function() { resolve(record); };
+                tx.onerror = function() { reject(tx.error || new Error('Не удалось записать автоматическую копию')); };
+                tx.onabort = function() { reject(tx.error || new Error('Запись автоматической копии отменена')); };
+            });
+        });
+    },
+
+    _maybeCreateAutoBackup: function(reason, force) {
+        var self = this;
+        return this._readAutoBackups().then(function(records) {
+            var latest = records.find(function(record) { return record && Number.isFinite(record.createdAt); });
+            var interval = reason === 'workspace-change' ? self._autoBackupChangeIntervalMs : self._autoBackupIntervalMs;
+            if (!force && latest && Date.now() - latest.createdAt < interval) return null;
+            return self._saveAutoBackup(reason || 'scheduled');
+        }).catch(function(error) {
+            console.warn('DevSpace automatic backup unavailable:', error);
+            self._setAutoBackupStatus('Автокопия недоступна: ' + error.message, 'warning');
+            return null;
+        });
+    },
+
+    _saveAutoBackup: function(reason) {
+        var self = this;
+        try {
+            var data = this._buildBackupPayload();
+            if (!this._isBackupIntact(data)) throw new Error('Проверка контрольной суммы не пройдена');
+            var now = Date.now();
+            var record = {
+                id: 'snapshot-' + now + '-' + Math.random().toString(36).slice(2, 8),
+                createdAt: now,
+                reason: String(reason || 'manual').slice(0, 40),
+                data: data
+            };
+            return this._writeAutoBackup(record).then(function(saved) {
+                self._setAutoBackupStatus('Последняя копия: ' + new Date(saved.createdAt).toLocaleString('ru-RU') + ' · ' + self._formatBytes(JSON.stringify(saved.data).length * 2), 'success');
+                self.renderAutoBackups();
+                return saved;
+            });
+        } catch (error) {
+            return Promise.reject(error);
+        }
+    },
+
+    _isBackupIntact: function(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data) || !data.integrity ||
+            data.integrity.algorithm !== 'fnv1a32' || typeof data.integrity.checksum !== 'string' ||
+            !/^[a-f0-9]{8}$/.test(data.integrity.checksum)) return false;
+        var copy = Object.assign({}, data);
+        delete copy.integrity;
+        return this._backupChecksum(copy) === data.integrity.checksum;
+    },
+
+    _setAutoBackupStatus: function(message, tone) {
+        var status = document.getElementById('backupAutoStatus');
+        if (status) {
+            status.textContent = message;
+            status.setAttribute('data-tone', tone || 'neutral');
+        }
+    },
+
+    _formatBytes: function(bytes) {
+        if (!Number.isFinite(bytes) || bytes < 0) return '—';
+        if (bytes < 1024) return bytes + ' Б';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+    },
+
+    refreshStorageHealth: function() {
+        var self = this;
+        var target = document.getElementById('backupStorageHealth');
+        if (!target) return Promise.resolve(null);
+        if (!navigator.storage || typeof navigator.storage.estimate !== 'function') {
+            target.textContent = 'Браузер не предоставляет оценку занятого места.';
+            return Promise.resolve(null);
+        }
+        return navigator.storage.estimate().then(function(estimate) {
+            var usage = Number(estimate.usage) || 0;
+            var quota = Number(estimate.quota) || 0;
+            var percent = quota > 0 ? Math.min(100, Math.round(usage / quota * 100)) : null;
+            var text = 'Использовано: ' + self._formatBytes(usage) +
+                (quota > 0 ? ' из ' + self._formatBytes(quota) + ' (' + percent + '%)' : '');
+            target.textContent = text;
+            target.setAttribute('data-tone', percent !== null && percent >= 85 ? 'warning' : 'success');
+            return estimate;
+        }).catch(function() {
+            target.textContent = 'Не удалось получить оценку хранилища.';
+            target.setAttribute('data-tone', 'warning');
+            return null;
+        });
+    },
+
+    renderAutoBackups: function() {
+        var self = this;
+        var container = document.getElementById('backupAutoList');
+        if (!container) return Promise.resolve([]);
+        container.textContent = 'Проверяем локальные снимки…';
+        return this._readAutoBackups().then(function(records) {
+            container.textContent = '';
+            if (!records.length) {
+                var empty = document.createElement('p');
+                empty.className = 'small text-muted mb-0';
+                empty.textContent = 'Автоматических копий пока нет. DevSpace создаст первую после запуска или изменения проекта.';
+                container.appendChild(empty);
+                return records;
+            }
+            records.forEach(function(record) {
+                var intact = self._isBackupIntact(record.data);
+                var item = document.createElement('div');
+                item.className = 'backup-trash-item';
+                var info = document.createElement('div');
+                info.className = 'backup-trash-info';
+                var title = document.createElement('strong');
+                title.textContent = new Date(record.createdAt).toLocaleString('ru-RU');
+                var meta = document.createElement('span');
+                meta.className = 'small text-muted';
+                meta.textContent = (record.reason === 'workspace-change' ? 'После изменения проекта' : record.reason === 'before-restore' ? 'Перед восстановлением' : 'Плановая копия') + ' · ' + (intact ? 'Контрольная сумма OK' : 'Копия повреждена');
+                info.appendChild(title);
+                info.appendChild(meta);
+                var actions = document.createElement('div');
+                actions.className = 'backup-trash-actions';
+                if (intact) {
+                    var restore = document.createElement('button');
+                    restore.type = 'button';
+                    restore.className = 'btn btn-sm btn-gradient';
+                    restore.textContent = 'Восстановить';
+                    restore.setAttribute('data-auto-backup-action', 'restore');
+                    restore.setAttribute('data-auto-backup-id', record.id);
+                    actions.appendChild(restore);
+                }
+                item.appendChild(info);
+                item.appendChild(actions);
+                container.appendChild(item);
+            });
+            return records;
+        }).catch(function(error) {
+            container.textContent = 'Не удалось прочитать автоматические копии: ' + error.message;
+            return [];
+        });
+    },
+
+    _restoreAutoBackup: function(id) {
+        var self = this;
+        return this._readAutoBackups().then(function(records) {
+            var record = records.find(function(item) { return item.id === id; });
+            if (!record || !self._isBackupIntact(record.data)) throw new Error('Копия отсутствует или повреждена. Восстановление отменено.');
+            return self._saveAutoBackup('before-restore').then(function() {
+                var file = new File([JSON.stringify(record.data)], 'devspace-auto-backup.json', { type: 'application/json' });
+                self._importFile(file, {
+                    projects: true, theme: true, favorites: true, achievements: true,
+                    settings: true, activity: true, healthHistory: true
+                });
+            });
+        }).catch(function(error) {
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось восстановить автоматическую копию: ' + error.message);
+        });
     },
 
     _bindEvents: function() {
@@ -47,6 +282,15 @@ var ExportModule = {
             var file = centerFile && centerFile.files && centerFile.files[0];
             if (!file) return;
             self._importFile(file, self._getRestoreOptions());
+        });
+        var autoList = document.getElementById('backupAutoList');
+        if (autoList) autoList.addEventListener('click', function(event) {
+            var button = event.target && event.target.closest ? event.target.closest('button[data-auto-backup-action="restore"]') : null;
+            if (!button || !autoList.contains(button)) return;
+            var id = button.getAttribute('data-auto-backup-id');
+            if (id && confirm('Восстановить выбранный снимок? Текущие данные будут заменены. Перед восстановлением DevSpace сохранит отдельную копию текущего состояния.')) {
+                self._restoreAutoBackup(id);
+            }
         });
         var trashList = document.getElementById('backupTrashList');
         if (trashList) trashList.addEventListener('click', function(event) {
@@ -228,6 +472,8 @@ var ExportModule = {
         if (preview) preview.textContent = 'Выберите JSON-файл, чтобы проверить его содержимое перед восстановлением.';
         if (restore) restore.disabled = true;
         this.renderDeletedProjects();
+        this.renderAutoBackups();
+        this.refreshStorageHealth();
         bootstrap.Modal.getOrCreateInstance(modalElement).show();
     },
 
@@ -372,9 +618,8 @@ var ExportModule = {
         };
     },
 
-    createBackup: function() {
-        try {
-            var rawProjects = StateManager.get('projects') || [];
+    _buildBackupPayload: function() {
+        var rawProjects = StateManager.get('projects') || [];
             var data = {
                 format: 'devspace-backup',
                 schemaVersion: 1,
@@ -416,16 +661,19 @@ var ExportModule = {
                 throw new Error('Резервная копия превышает 5 МБ и не сможет быть импортирована');
             }
 
+            return data;
+    },
+
+    createBackup: function() {
+        try {
+            var data = this._buildBackupPayload();
+            var json = JSON.stringify(data, null, 2);
             var filename = 'devspace-backup-' + new Date().toISOString().split('T')[0] + '.json';
             Helpers.downloadFile(json, filename);
-            if (typeof NotificationModule !== 'undefined') {
-                NotificationModule.success('Бэкап создан');
-            }
+            if (typeof NotificationModule !== 'undefined') NotificationModule.success('Бэкап создан');
             return true;
         } catch (error) {
-            if (typeof NotificationModule !== 'undefined') {
-                NotificationModule.error('Не удалось создать резервную копию: ' + error.message);
-            }
+            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Не удалось создать резервную копию: ' + error.message);
             return false;
         }
     },
