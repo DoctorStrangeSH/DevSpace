@@ -6515,6 +6515,23 @@ test('full backup export and import round-trip restores the same workspace in an
 });
 
 
+test('automatic backup scheduler respects daily and project-change cooldowns', async () => {
+  const service = execute('js/modules/export.js').ExportModule;
+  let saved = [];
+  service._readAutoBackups = async () => [{ id: 'latest', createdAt: Date.now() - 60 * 60 * 1000 }];
+  service._saveAutoBackup = async reason => { saved.push(reason); return { id: reason }; };
+
+  assert.equal(await service._maybeCreateAutoBackup('daily'), null);
+  assert.equal(await service._maybeCreateAutoBackup('workspace-change'), null);
+  assert.deepEqual(saved, []);
+
+  service._readAutoBackups = async () => [{ id: 'latest', createdAt: Date.now() - 7 * 60 * 60 * 1000 }];
+  assert.equal((await service._maybeCreateAutoBackup('workspace-change')).id, 'workspace-change');
+  service._readAutoBackups = async () => [{ id: 'latest', createdAt: Date.now() - 25 * 60 * 60 * 1000 }];
+  assert.equal((await service._maybeCreateAutoBackup('daily')).id, 'daily');
+  assert.deepEqual(saved, ['workspace-change', 'daily']);
+});
+
 test('automatic backup integrity validation rejects corrupted snapshots and formats storage sizes', () => {
   const service = execute('js/modules/export.js').ExportModule;
   const payload = { format: 'devspace-backup', schemaVersion: 1, projects: [], theme: 'dark', timestamp: '2026-11-22T00:00:00.000Z' };
