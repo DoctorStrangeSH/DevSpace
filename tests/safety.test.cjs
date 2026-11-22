@@ -749,6 +749,26 @@ test('backup restore options allow restoring projects without replacing unchecke
   assert.deepEqual(values.get('activity'), [{ id: 'keep-event' }]);
 });
 
+test('backup center preview uses localized labels for included data sections', async () => {
+  const preview = { textContent: '' };
+  const restore = { disabled: true };
+  const input = { files: [{ size: 100 }] };
+  const ctx = execute('js/modules/export.js', {
+    document: { getElementById(id) {
+      return id === 'backupCenterFile' ? input : id === 'backupCenterPreview' ? preview : restore;
+    } },
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'p1', name: 'Project' }],
+      favorites: [], achievements: [], settings: {}, activity: [], healthHistory: []
+    })) }
+  });
+  ctx.ExportModule._previewSelectedBackup();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(preview.textContent, /избранное/);
+  assert.match(preview.textContent, /история оценок/);
+  assert.equal(preview.textContent.includes('healthHistory'), false);
+});
+
 test('backup center preview accepts legacy project-array archives', async () => {
   const preview = { textContent: '' };
   const restore = { disabled: true };
