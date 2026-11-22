@@ -689,6 +689,104 @@ test('backup importer reports storage quota failures instead of claiming a full 
   assert.match(errors[0], /журнал активности не удалось сохранить/);
 });
 
+test('backup creation declares a versioned portable format', () => {
+  let downloaded = null;
+  const ctx = execute('js/modules/export.js', {
+    StateManager: { get(key) { return key === 'projects' ? [] : 'dark'; } },
+    StorageService: { KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' }, get(key, fallback) { return fallback; } },
+    Helpers: { downloadFile(data) { downloaded = JSON.parse(data); } },
+    App: { config: { version: '3.66.29' } }
+  });
+  assert.equal(ctx.ExportModule.createBackup(), true);
+  assert.equal(downloaded.format, 'devspace-backup');
+  assert.equal(downloaded.schemaVersion, 1);
+  assert.equal(downloaded.version, '3.66.29');
+});
+
+test('backup importer rejects unknown schema versions before confirmation or storage writes', async () => {
+  let writes = 0;
+  let confirmations = 0;
+  const errors = [];
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      format: 'devspace-backup', schemaVersion: 999,
+      projects: [{ id: 'new_project', name: 'New project' }]
+    })) },
+    confirm() { confirmations++; return true; },
+    StateManager: { get() { return []; }, set() {}, saveProjects() { writes++; return true; } },
+    StorageService: { KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' }, get(key, fallback) { return fallback; }, set() { writes++; return true; } },
+    NotificationModule: { error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(confirmations, 0);
+  assert.equal(writes, 0);
+  assert.match(errors[0], /версия резервной копии не поддерживается/);
+});
+
+test('backup importer preserves malformed raw storage bytes when a later section write fails', async () => {
+  const errors = [];
+  const rawValues = new Map([
+    ['devspace_theme', '"dark"'],
+    ['devspace_favorites', '{broken-json'],
+    ['devspace_achievements', '["old"]'],
+    ['devspace_settings', '{"compactMode":false}'],
+    ['devspace_activity', '[]'],
+    ['devspace_healthHistory', '[]']
+  ]);
+  let failActivity = true;
+  const storage = {
+    KEYS: { SETTINGS: 'settings', ACTIVITY: 'activity' },
+    get(key, fallback) {
+      const raw = rawValues.get('devspace_' + key);
+      if (raw === undefined) return fallback;
+      try { return JSON.parse(raw); } catch (_) { return fallback; }
+    },
+    getRawSnapshot(key) {
+      const raw = rawValues.get('devspace_' + key);
+      return { exists: raw !== undefined, raw: raw === undefined ? null : raw, error: null };
+    },
+    restoreRaw(key, snapshot) {
+      if (!snapshot.exists) rawValues.delete('devspace_' + key);
+      else rawValues.set('devspace_' + key, snapshot.raw);
+      return true;
+    },
+    set(key, value) {
+      if (key === 'activity' && failActivity) { failActivity = false; return false; }
+      rawValues.set('devspace_' + key, JSON.stringify(value));
+      return true;
+    },
+    remove(key) { rawValues.delete('devspace_' + key); return true; }
+  };
+  const state = { projects: [{ id: 'old_project', name: 'Old project' }], theme: 'dark' };
+  const ctx = execute('js/modules/export.js', {
+    Helpers: { readFile: () => Promise.resolve(JSON.stringify({
+      projects: [{ id: 'new_project', name: 'New project' }],
+      theme: 'light', favorites: ['new'], settings: { compactMode: true },
+      activity: [{ type: 'new-event' }]
+    })) },
+    confirm: () => true,
+    StateManager: {
+      get(key) { return state[key]; },
+      set(key, value) { state[key] = value; },
+      saveProjects() { return true; },
+      _updateStats() {}
+    },
+    StorageService: storage,
+    ThemeModule: { setTheme(value) { state.theme = value; rawValues.set('devspace_theme', JSON.stringify(value)); } },
+    FavoritesModule: { favorites: ['old'] },
+    RendererModule: { renderProjects() {}, renderStats() {}, _renderInsights() {}, _updateQuickAccess() {} },
+    NotificationModule: { success() { throw Error('must not report success'); }, error(message) { errors.push(message); } }
+  });
+  ctx.ExportModule._importFile({ size: 10 });
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  assert.equal(rawValues.get('devspace_favorites'), '{broken-json');
+  assert.equal(rawValues.get('devspace_theme'), '"dark"');
+  assert.equal(rawValues.get('devspace_settings'), '{"compactMode":false}');
+  assert.match(errors[0], /Импорт отменён, прежние данные восстановлены/);
+});
+
 test('backup importer rolls back every store when a later write fails', async () => {
   const errors = [];
   const values = new Map([
