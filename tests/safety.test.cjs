@@ -3290,8 +3290,8 @@ test('all external scripts load in parallel while preserving execution order', (
     assert.doesNotMatch(tag, /\sasync(?:\s|>)/, `${src} must retain dependency order`);
   }
   const sources = scripts.map(match => match[1]);
-  assert.ok(sources.indexOf('js/core/state.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
-  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.29') < sources.indexOf('js/app.js?v=3.66.29'));
+  assert.ok(sources.indexOf('js/core/state.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.29'));
+  assert.ok(sources.indexOf('js/core/sync.js?v=3.66.30') < sources.indexOf('js/app.js?v=3.66.29'));
 });
 
 test('Firebase cloud read starts after idle, loads SDKs in order, and never runs in local mode', async () => {
@@ -3555,7 +3555,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.30-pwa30'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -4402,13 +4402,13 @@ test('screenshot viewer keeps keyboard focus inside when focus starts outside', 
   assert.ok(source.includes('closeButton.focus()'));
 });
 
-test('3.66.29 cache, HTML fallback and visible application version are aligned', () => {
+test('3.66.30 cache, HTML fallback and visible application version are aligned', () => {
   const app = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  assert.ok(app.includes("version: '3.66.29'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.29-pwa29'"));
-  assert.ok(html.includes('id="appVersion">v3.66.29</span>'));
+  assert.ok(app.includes("version: '3.66.30'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.30-pwa30'"));
+  assert.ok(html.includes('id="appVersion">v3.66.30</span>'));
 });
 
 test('every local script and stylesheet is versioned and included in offline precache', () => {
@@ -4418,10 +4418,10 @@ test('every local script and stylesheet is versioned and included in offline pre
   const resources = [...html.matchAll(/(?:href|src)="((?:css|js)\/[^"?]+)(\?v=[^"]+)?"/g)];
   assert.ok(resources.length > 40);
   for (const [, file, version] of resources) {
-    assert.equal(version, '?v=3.66.29', `${file} is not versioned`);
+    assert.equal(version, '?v=3.66.30', `${file} is not versioned`);
     assert.ok(worker.includes(`'${file}'`), `${file} is not precached`);
   }
-  assert.ok(worker.includes("const ASSET_VERSION = '3.66.29'"));
+  assert.ok(worker.includes("const ASSET_VERSION = '3.66.30'"));
   assert.ok(worker.includes("].map(url => /^(css|js)\\//.test(url)"));
   assert.ok(app.includes("navigator.serviceWorker.register('sw.js?v='"));
 });
