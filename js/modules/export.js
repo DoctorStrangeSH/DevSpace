@@ -181,6 +181,8 @@ var ExportModule = {
         try {
             var rawProjects = StateManager.get('projects') || [];
             var data = {
+                format: 'devspace-backup',
+                schemaVersion: 1,
                 projects: this._validateBackupProjects(rawProjects),
                 theme: StateManager.get('theme') || 'dark',
                 favorites: this._validateBackupMetadata(
@@ -320,7 +322,17 @@ var ExportModule = {
         Helpers.readFile(file)
             .then(function(text) {
                 var data = JSON.parse(text);
-                
+
+                if (data && !Array.isArray(data) && typeof data === 'object') {
+                    if (data.format !== undefined && data.format !== 'devspace-backup') {
+                        throw new Error('Неизвестный формат резервной копии');
+                    }
+                    if (data.schemaVersion !== undefined &&
+                        (!Number.isInteger(data.schemaVersion) || data.schemaVersion !== 1)) {
+                        throw new Error('Эта версия резервной копии не поддерживается. Обновите DevSpace.');
+                    }
+                }
+
                 // Validate and clone all imported project records before touching user data.
                 var projects;
                 if (Array.isArray(data)) {
@@ -374,8 +386,16 @@ var ExportModule = {
                 var storageKeys = ['theme', 'favorites', 'achievements',
                     StorageService.KEYS.SETTINGS, StorageService.KEYS.ACTIVITY, 'healthHistory'];
                 var previousStorage = {};
+                var rawStorageSnapshots = typeof StorageService.getRawSnapshot === 'function' &&
+                    typeof StorageService.restoreRaw === 'function';
                 storageKeys.forEach(function(key) {
-                    previousStorage[key] = StorageService.get(key, missingValue);
+                    if (rawStorageSnapshots) {
+                        var snapshot = StorageService.getRawSnapshot(key);
+                        if (snapshot.error) throw new Error('Не удалось безопасно прочитать прежние данные раздела «' + key + '». Импорт отменён без изменений.');
+                        previousStorage[key] = snapshot;
+                    } else {
+                        previousStorage[key] = StorageService.get(key, missingValue);
+                    }
                 });
                 var previousProjects = StateManager.get('projects') || [];
                 var previousTheme = StateManager.get('theme');
@@ -454,6 +474,10 @@ var ExportModule = {
                     Object.keys(previousStorage).reverse().forEach(function(key) {
                         var previousValue = previousStorage[key];
                         try {
+                            if (rawStorageSnapshots) {
+                                if (!StorageService.restoreRaw(key, previousValue)) rollbackSucceeded = false;
+                                return;
+                            }
                             if (previousValue === missingValue) {
                                 if (typeof StorageService.remove === 'function') {
                                     if (StorageService.remove(key) === false) rollbackSucceeded = false;
