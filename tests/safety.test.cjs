@@ -2081,6 +2081,99 @@ test('StateManager refreshes its compare-and-set snapshot after an accepted save
   assert.equal(state._projectsStorageSnapshot, '[{"id":"p1","name":"New project"}]');
 });
 
+test('StateManager archives deleted projects and restores them with nested data intact', () => {
+  const values = new Map([['devspace_projects', JSON.stringify([
+    { id: 'p1', name: 'Important project', checklist: [{ id: 't1', text: 'Task' }], notes: [{ id: 'n1', text: 'Note' }] }
+  ])]]);
+  const storage = {
+    KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+    getSnapshot(key, fallback) {
+      const raw = values.get('devspace_' + key) ?? null;
+      try { return { raw, value: raw === null ? fallback : JSON.parse(raw), error: null }; }
+      catch (error) { return { raw: null, value: fallback, error }; }
+    },
+    getRawSnapshot(key) {
+      const raw = values.get('devspace_' + key) ?? null;
+      return { exists: raw !== null, raw, error: null };
+    },
+    restoreRaw(key, snapshot) {
+      if (snapshot.exists) values.set('devspace_' + key, snapshot.raw);
+      else values.delete('devspace_' + key);
+      return true;
+    },
+    set(key, data) { values.set('devspace_' + key, JSON.stringify(data)); return true; },
+    setIfUnchanged(key, data, expected) {
+      if ((values.get('devspace_' + key) ?? null) !== expected) return false;
+      const raw = JSON.stringify(data);
+      values.set('devspace_' + key, raw);
+      this._lastWriteValue = raw;
+      return true;
+    },
+    getRaw(key) { return values.get('devspace_' + key) ?? null; }
+  };
+  const events = [];
+  const ctx = execute('js/core/state.js', { StorageService: storage, EventBus: { emit(name) { events.push(name); } } });
+  const state = ctx.StateManager;
+  state._state.projects = JSON.parse(values.get('devspace_projects'));
+  state._projectsStorageSnapshot = values.get('devspace_projects');
+
+  assert.equal(state.removeProject('p1'), true);
+  assert.deepEqual(Array.from(state.get('projects'), project => project.id), []);
+  const archived = state.getDeletedProjects();
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0].project.checklist[0].text, 'Task');
+  assert.equal(archived[0].project.notes[0].text, 'Note');
+  assert.equal(events.includes('project:removed'), true);
+
+  assert.equal(state.restoreDeletedProject(archived[0].id), true);
+  assert.equal(state.getProject('p1').name, 'Important project');
+  assert.equal(state.getProject('p1').checklist[0].id, 't1');
+  assert.equal(state.getDeletedProjects().length, 0);
+  assert.equal(events.includes('project:restored'), true);
+});
+
+test('StateManager refuses project deletion when a safe archive cannot be written', () => {
+  const project = { id: 'p1', name: 'Keep me' };
+  const ctx = execute('js/core/state.js', {
+    StorageService: {
+      KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+      getSnapshot() { return { raw: null, value: [], error: null }; },
+      set() { return false; }
+    },
+    EventBus: { emit() {} }
+  });
+  const state = ctx.StateManager;
+  state._state.projects = [project];
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(state.getProject('p1').name, 'Keep me');
+});
+
+test('StateManager rolls back the trash archive when project persistence fails', () => {
+  const values = new Map([['devspace_projects', JSON.stringify([{ id: 'p1', name: 'Keep me' }])]]);
+  const storage = {
+    KEYS: { PROJECTS: 'projects', DELETED_PROJECTS: 'deletedProjects' },
+    getSnapshot(key, fallback) {
+      const raw = values.get('devspace_' + key) ?? null;
+      return { raw, value: raw === null ? fallback : JSON.parse(raw), error: null };
+    },
+    set(key, data) { values.set('devspace_' + key, JSON.stringify(data)); return true; },
+    restoreRaw(key, snapshot) {
+      if (snapshot.exists) values.set('devspace_' + key, snapshot.raw);
+      else values.delete('devspace_' + key);
+      return true;
+    },
+    setIfUnchanged() { return false; }
+  };
+  const ctx = execute('js/core/state.js', { StorageService: storage, EventBus: { emit() {} } });
+  const state = ctx.StateManager;
+  state._state.projects = [{ id: 'p1', name: 'Keep me' }];
+  state._projectsStorageSnapshot = values.get('devspace_projects');
+
+  assert.equal(state.removeProject('p1'), false);
+  assert.equal(state.getProject('p1').name, 'Keep me');
+  assert.equal(values.has('devspace_deletedProjects'), false);
+});
+
 test('StorageService.clearAll removes every app key but preserves unrelated origin data', () => {
   const values = new Map([
     ['devspace_projects', '[]'],
