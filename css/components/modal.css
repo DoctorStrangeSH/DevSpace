@@ -189,3 +189,46 @@
         padding: 0 20px 20px;
     }
 }
+
+/* Backup center */
+.backup-center .modal-header { padding: 24px 24px 12px; }
+.backup-center-card {
+    padding: 18px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg, 14px);
+    background: var(--bg-primary);
+}
+.backup-center-icon {
+    width: 44px; height: 44px; flex: 0 0 44px;
+    display: grid; place-items: center;
+    border-radius: 12px;
+    color: var(--accent);
+    background: var(--accent-light);
+    font-size: 1.25rem;
+}
+.backup-preview {
+    min-height: 92px;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: .875rem;
+    line-height: 1.65;
+    white-space: pre-line;
+}
+.backup-restore-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+}
+.backup-restore-options label {
+    display: flex; align-items: center; gap: 9px;
+    color: var(--text-secondary); font-size: .875rem;
+}
+.backup-restore-options input { accent-color: var(--accent); }
+#backupCenterRestoreBtn:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 575.98px) {
+    .backup-center-card { padding: 14px; }
+    .backup-restore-options { grid-template-columns: 1fr; }
+}
