@@ -3658,7 +3658,7 @@ test('mobile viewport respects device safe areas and keeps the workspace shortcu
   assert.match(html, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
   assert.ok(css.includes('bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px))'));
   assert.ok(css.includes('.workspace-launch { right:15px; bottom:max(16px,calc(env(safe-area-inset-bottom) + 10px)); padding:11px 14px; min-height:44px; }'));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.32-pwa31'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.32-pwa32'"));
 });
 
 test('mobile menu announces its state, supports Escape and fits the viewport', () => {
@@ -4510,7 +4510,7 @@ test('3.66.32 cache, HTML fallback and visible application version are aligned',
   const worker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.ok(app.includes("version: '3.66.32'"));
-  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.32-pwa31'"));
+  assert.ok(worker.includes("const CACHE_VERSION = 'devspace-v3.66.32-pwa32'"));
   assert.ok(html.includes('id="appVersion">v3.66.32</span>'));
 });
 
@@ -4930,7 +4930,7 @@ test('workspace navigation separates cloud, projects, planning and analytics', (
     assert.match(html, /id="cloudWorkspacePanel"/);
     assert.match(css, /data-workspace-view="cloud"/);
     assert.match(module, /devspace_workspace_view/);
-    assert.match(html, /css\/workspace\.css\?v=3\.66\.31/);
+    assert.match(html, /css\/workspace\.css\?v=3\.66\.32/);
 });
 
 test('project cards keep detailed content collapsible without hiding task data', () => {
