@@ -100,7 +100,8 @@ var RepairModule = {
                 var task = tasks.find(function(item) { return item && item.id === note.linkedTaskId; });
                 if (!task || task.sourceNoteId) return;
                 var otherNotes = notes.filter(function(item) { return item && item.id !== note.id && item.linkedTaskId === task.id; });
-                if (otherNotes.length) return;
+                var otherTasks = tasks.filter(function(item) { return item && item.id !== task.id && item.sourceNoteId === note.id; });
+                if (otherNotes.length || otherTasks.length) return;
                 candidates.push({
                     id: 'note-to-task:' + project.id + ':' + note.id,
                     type: 'note-to-task',
@@ -170,18 +171,24 @@ var RepairModule = {
         var self = this;
         var candidate = this._candidates.find(function(item) { return item.id === candidateId; });
         if (!candidate) return Promise.resolve(false);
-        var fresh = this._buildCandidates().find(function(item) { return item.id === candidateId; });
-        if (!fresh || fresh.fingerprint !== candidate.fingerprint) {
-            if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Данные изменились после предпросмотра. Обновите список и проверьте исправление заново.');
-            this.scan();
-            return Promise.resolve(false);
-        }
-        if (typeof StateManager !== 'undefined' && (StateManager._projectsLoadError || StateManager._projectsConflict)) {
-            if (typeof NotificationModule !== 'undefined') NotificationModule.error('Есть конфликт или ошибка чтения проектов. Исправление отменено.');
-            return Promise.resolve(false);
-        }
-
-        return this._backupBeforeRepair().then(function() {
+        var diagnosticRun = typeof DiagnosticsModule !== 'undefined' && typeof DiagnosticsModule.run === 'function'
+            ? DiagnosticsModule.run() : Promise.resolve();
+        return Promise.resolve(diagnosticRun).then(function() {
+            var fresh = self._buildCandidates().find(function(item) { return item.id === candidateId; });
+            if (!fresh || fresh.fingerprint !== candidate.fingerprint) {
+                if (typeof NotificationModule !== 'undefined') NotificationModule.warning('Данные изменились после предпросмотра. Обновите список и проверьте исправление заново.');
+                self.scan();
+                return false;
+            }
+            if (typeof StateManager !== 'undefined' && (StateManager._projectsLoadError || StateManager._projectsConflict)) {
+                if (typeof NotificationModule !== 'undefined') NotificationModule.error('Есть конфликт или ошибка чтения проектов. Исправление отменено.');
+                return false;
+            }
+            return self._backupBeforeRepair().then(function() {
+            var postBackup = self._buildCandidates().find(function(item) { return item.id === candidateId; });
+            if (!postBackup || postBackup.fingerprint !== candidate.fingerprint) {
+                throw new Error('Данные изменились во время создания защитной копии. Исправление отменено.');
+            }
             var result = false;
             if (candidate.type === 'favorite') {
                 var snapshot = StorageService.getRawSnapshot('favorites');
@@ -232,6 +239,7 @@ var RepairModule = {
             self.scan();
             if (typeof DiagnosticsModule !== 'undefined') DiagnosticsModule.run();
             return true;
+            });
         }).catch(function(error) {
             if (typeof NotificationModule !== 'undefined') NotificationModule.error(error && error.message ? error.message : 'Не удалось выполнить исправление.');
             return false;
