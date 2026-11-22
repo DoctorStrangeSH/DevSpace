@@ -211,7 +211,10 @@ var ExportModule = {
         return options;
     },
 
+    _backupPreviewRequestId: 0,
+
     _previewSelectedBackup: function() {
+        var requestId = ++this._backupPreviewRequestId;
         var input = document.getElementById('backupCenterFile');
         var preview = document.getElementById('backupCenterPreview');
         var restore = document.getElementById('backupCenterRestoreBtn');
@@ -225,21 +228,24 @@ var ExportModule = {
         var self = this;
         Helpers.readFile(file).then(function(text) {
             var data = JSON.parse(text);
-            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Неподдерживаемый формат резервной копии');
-            if (data.format !== undefined && data.format !== 'devspace-backup') throw new Error('Неизвестный формат резервной копии');
-            if (data.schemaVersion !== undefined && (!Number.isInteger(data.schemaVersion) || data.schemaVersion !== 1)) {
+            if (!data || typeof data !== 'object') throw new Error('Неподдерживаемый формат резервной копии');
+            if (!Array.isArray(data) && data.format !== undefined && data.format !== 'devspace-backup') throw new Error('Неизвестный формат резервной копии');
+            if (!Array.isArray(data) && data.schemaVersion !== undefined && (!Number.isInteger(data.schemaVersion) || data.schemaVersion !== 1)) {
                 throw new Error('Эта версия резервной копии не поддерживается');
             }
-            if (data.integrity) {
+            if (!Array.isArray(data) && data.integrity !== undefined) {
                 var copy = Object.assign({}, data);
                 delete copy.integrity;
-                if (data.integrity.algorithm !== 'fnv1a32' || self._backupChecksum(copy) !== data.integrity.checksum) {
+                if (!data.integrity || data.integrity.algorithm !== 'fnv1a32' ||
+                    typeof data.integrity.checksum !== 'string' || !/^[a-f0-9]{8}$/.test(data.integrity.checksum) ||
+                    self._backupChecksum(copy) !== data.integrity.checksum) {
                     throw new Error('Контрольная сумма не совпадает: файл повреждён');
                 }
             }
-            var projects = self._validateBackupProjects(data.projects);
+            var projects = self._validateBackupProjects(Array.isArray(data) ? data : data.projects);
             var summary = self._buildBackupPreview(data, projects);
             var sections = summary.sections.length ? summary.sections.join(', ') : 'нет дополнительных разделов';
+            if (requestId !== self._backupPreviewRequestId) return;
             if (preview) preview.textContent = [
                 'Файл проверен. Проектов: ' + summary.projects,
                 'Задач: ' + summary.tasks + ' · Заметок: ' + summary.notes,
@@ -250,6 +256,7 @@ var ExportModule = {
             ].join('\\n');
             if (restore) restore.disabled = false;
         }).catch(function(error) {
+            if (requestId !== self._backupPreviewRequestId) return;
             if (preview) preview.textContent = 'Не удалось проверить файл: ' + error.message;
             if (restore) restore.disabled = true;
         });
