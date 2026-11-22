@@ -473,6 +473,54 @@
     </div>
     
     <!-- Project Modal (Create/Edit) -->
+    <div class="modal fade" id="backupCenterModal" tabindex="-1" aria-labelledby="backupCenterTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content backup-center">
+                <div class="modal-header">
+                    <div>
+                        <div class="text-muted small mb-1">DEVSPACE · DATA SAFETY</div>
+                        <h5 class="modal-title" id="backupCenterTitle"><i class="bi bi-shield-check me-2" aria-hidden="true"></i>Резервные копии</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="backup-center-card mb-4">
+                        <div class="d-flex align-items-start gap-3">
+                            <div class="backup-center-icon"><i class="bi bi-cloud-arrow-down" aria-hidden="true"></i></div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">Сохранить рабочее пространство</h6>
+                                <p class="text-muted small mb-3">Создайте файл со всеми проектами, задачами, заметками, настройками и дополнительными данными.</p>
+                                <button type="button" class="btn btn-gradient btn-sm" id="backupCenterCreateBtn"><i class="bi bi-download me-1"></i>Скачать резервную копию</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="backup-center-card">
+                        <h6 class="mb-1">Восстановить из файла</h6>
+                        <p class="text-muted small">Сначала DevSpace проверит архив. Затем вы сможете выбрать, какие разделы восстановить.</p>
+                        <label class="form-label" for="backupCenterFile">Файл резервной копии (.json)</label>
+                        <input class="form-control" type="file" id="backupCenterFile" accept=".json,application/json">
+                        <div class="backup-preview mt-3" id="backupCenterPreview" role="status" aria-live="polite">Выберите JSON-файл, чтобы проверить его содержимое перед восстановлением.</div>
+                        <div class="backup-restore-options mt-3">
+                            <div class="small fw-semibold mb-2">Что восстановить</div>
+                            <label><input type="checkbox" checked disabled> Проекты, задачи и заметки <span class="text-muted">(обязательно)</span></label>
+                            <label><input type="checkbox" id="backupRestore_theme" checked> Тема оформления</label>
+                            <label><input type="checkbox" id="backupRestore_favorites" checked> Избранное</label>
+                            <label><input type="checkbox" id="backupRestore_achievements" checked> Достижения</label>
+                            <label><input type="checkbox" id="backupRestore_settings" checked> Настройки</label>
+                            <label><input type="checkbox" id="backupRestore_activity" checked> Журнал активности</label>
+                            <label><input type="checkbox" id="backupRestore_healthHistory" checked> История оценок</label>
+                        </div>
+                    </div>
+                    <p class="small text-warning mt-3 mb-0"><i class="bi bi-exclamation-triangle me-1"></i>Перед восстановлением текущие данные будут заменены в выбранных разделах. Не закрывайте вкладку до завершения операции.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Закрыть</button>
+                    <button type="button" class="btn btn-gradient" id="backupCenterRestoreBtn" disabled><i class="bi bi-arrow-counterclockwise me-1"></i>Восстановить выбранное</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="projectModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
             <div class="modal-content">
